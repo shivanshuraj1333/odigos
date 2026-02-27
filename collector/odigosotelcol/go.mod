@@ -6,6 +6,7 @@ go 1.26.0
 
 require (
 	github.com/odigos-io/odigos/collector/connectors/odigosrouterconnector v0.141.0
+	github.com/odigos-io/odigos/collector/extension/odigosworkloadconfigextension v0.0.0
 	github.com/odigos-io/odigos/collector/processor/odigoslogsresourceattrsprocessor v0.141.0
 	github.com/odigos-io/odigos/collector/processor/odigosurltemplateprocessor v0.141.0
 	github.com/odigos-io/odigos/collector/receivers/odigosebpfreceiver v0.141.0
@@ -743,6 +744,8 @@ replace github.com/odigos-io/odigos/collector/processor/odigoslogsresourceattrsp
 replace go.opentelemetry.io/collector/confmap/provider/odigosk8scmprovider => ../providers/odigosk8scmprovider
 
 replace github.com/odigos-io/odigos/collector/connectors/odigosrouterconnector => ../connectors/odigosrouterconnector
+
+replace github.com/odigos-io/odigos/collector/extension/odigosworkloadconfigextension => ../extension/odigosworkloadconfigextension
 
 replace github.com/odigos-io/odigos/collector/receivers/odigosebpfreceiver => ../receivers/odigosebpfreceiver
 
