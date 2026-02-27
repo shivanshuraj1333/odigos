@@ -230,7 +230,7 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 			podManifestInjectionOptional = false
 		}
 		// calculate the relevant collector configurations for the container.
-		currentContainerCollectorConfig := calculateContainerCollectorConfig(containerName, effectiveConfig, containerRuntimeDetails, distroPerLanguage, distroProvider.Getter, containerOverride, samplingRules, pw)
+		currentContainerCollectorConfig := calculateContainerCollectorConfig(containerName, effectiveConfig, containerRuntimeDetails, distroPerLanguage, distroProvider.Getter, containerOverride, agentLevelActions, samplingRules, pw)
 		if currentContainerCollectorConfig != nil {
 			collectorConfig = append(collectorConfig, *currentContainerCollectorConfig)
 		}
@@ -504,12 +504,13 @@ func calculateContainerCollectorConfig(containerName string,
 	distroPerLanguage map[common.ProgrammingLanguage]string,
 	distroGetter *distros.Getter,
 	containerOverride *odigosv1.ContainerOverride,
+	agentLevelActions *[]odigosv1.Action,
 	samplingRules *[]odigosv1.Sampling,
 	pw k8sconsts.PodWorkload,
 ) *odigosv1.ContainerCollectorConfig {
 
 	// If this container is ignored, runtime details are unavailable, or language is not supported,
-	// we don't need to add any sampling rules for it.
+	// we don't need to add any collector config for it.
 	if slices.Contains(effectiveConfig.IgnoredContainers, containerName) {
 		return nil
 	}
@@ -530,6 +531,7 @@ func calculateContainerCollectorConfig(containerName string,
 	}
 
 	noisyOps, relevantOps, costRules := sampling.FilterTailSamplingRulesForContainer(samplingRules, runtimeDetails.Language, pw, containerName, containerDistro)
+	urlTemplatizationConfig := filterUrlTemplateRulesForContainer(agentLevelActions, runtimeDetails.Language, pw)
 
 	return &odigosv1.ContainerCollectorConfig{
 		ContainerName: containerName,
@@ -538,6 +540,7 @@ func calculateContainerCollectorConfig(containerName string,
 			HighlyRelevantOperations: relevantOps,
 			CostReductionRules:       costRules,
 		},
+		UrlTemplatization: urlTemplatizationConfig,
 	}
 }
 
