@@ -27,6 +27,14 @@ const (
 	clusterCollectorMetricsExporterName = "otlp/out-cluster-collector-metrics"
 	clusterCollectorLogsExporterName    = "otlp/out-cluster-collector-logs"
 	resourceDetectionProcessorName      = "resourcedetection"
+	// odigosUrlTemplateProcessorName is the name of the URL templatization processor
+	// that runs in the node collector. It is always-on and uses the workload config
+	// extension to look up per-workload templatization rules at runtime.
+	odigosUrlTemplateProcessorName = "odigosurltemplate/node-collector"
+	// odigosWorkloadConfigExtensionName is the OTel extension type provided by
+	// odigosworkloadconfigextension (from Mike's PR). It maintains a live cache of
+	// per-workload collector config (including URL templatization rules) from InstrumentationConfigs.
+	odigosWorkloadConfigExtensionName = "odigos_workload_config"
 )
 
 func commonProcessors(nodeCG *odigosv1.CollectorsGroup, runningOnGKE bool) config.GenericMap {
@@ -122,6 +130,10 @@ func init() {
 				"action": "upsert",
 			}},
 		},
+		// URL templatization runs always-on in the node collector.
+		// At runtime it looks up per-workload rules from odigosworkloadconfigextension.
+		// If no rules are configured for a workload it is a no-op for that workload.
+		odigosUrlTemplateProcessorName: config.GenericMap{},
 	}
 
 	commonReceivers = config.GenericMap{
@@ -148,10 +160,13 @@ func init() {
 		pprofExtensionName: config.GenericMap{
 			"endpoint": "0.0.0.0:1777",
 		},
+		// odigosworkloadconfigextension maintains a live cache of per-workload collector config
+		// (including URL templatization rules) read from InstrumentationConfig CRs.
+		odigosWorkloadConfigExtensionName: config.GenericMap{},
 	}
 
 	commonService = config.Service{
-		Extensions: []string{healthCheckExtensionName, pprofExtensionName},
+		Extensions: []string{healthCheckExtensionName, pprofExtensionName, odigosWorkloadConfigExtensionName},
 	}
 }
 
