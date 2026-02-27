@@ -40,5 +40,8 @@ func createTracesProcessor(
 		return nil, err
 	}
 
-	return processorhelper.NewTraces(ctx, set, cfg, nextConsumer, tmp.processTraces, processorhelper.WithCapabilities(consumerCapabilities))
+	return processorhelper.NewTraces(ctx, set, cfg, nextConsumer, tmp.processTraces,
+		processorhelper.WithCapabilities(consumerCapabilities),
+		processorhelper.WithStart(tmp.Start),
+	)
 }

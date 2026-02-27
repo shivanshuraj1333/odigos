@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/processor"
@@ -15,6 +16,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// workloadConfigProvider is implemented by odigosworkloadconfigextension.
+// It provides per-workload URL templatization rules keyed by resource attributes.
+// Returns (rules, true) when the workload is configured for URL templatization
+// (rules may be empty, meaning only default heuristics apply).
+// Returns (nil, false) when the workload has no URL templatization configuration.
+type workloadConfigProvider interface {
+	GetWorkloadUrlTemplatizationRules(attrs pcommon.Map) ([]string, bool)
+}
+
 type urlTemplateProcessor struct {
 	logger              *zap.Logger
 	templatizationRules map[int][]TemplatizationRule // group templatization rules by segments length
@@ -22,6 +32,58 @@ type urlTemplateProcessor struct {
 
 	excludeMatcher *PropertiesMatcher
 	includeMatcher *PropertiesMatcher
+
+	// workloadConfigProvider is optionally set in Start() when odigosworkloadconfigextension
+	// is present. When set, per-workload rules override the static templatizationRules.
+	workloadConfigProvider workloadConfigProvider
+}
+
+// Start is called by the collector when the processor is started.
+// It searches all running extensions for one that implements workloadConfigProvider
+// (i.e. odigosworkloadconfigextension). If found, per-workload rules will be used
+// instead of the static templatizationRules for that workload.
+func (p *urlTemplateProcessor) Start(_ context.Context, host component.Host) error {
+	for _, ext := range host.GetExtensions() {
+		if provider, ok := ext.(workloadConfigProvider); ok {
+			p.workloadConfigProvider = provider
+			p.logger.Info("odigosurltemplateprocessor: found workload config extension, will use per-workload URL templatization rules")
+			break
+		}
+	}
+	return nil
+}
+
+// resolveRulesForResource returns the templatization rules to apply for the given resource.
+// When a workload config extension is available:
+//   - If the workload has URL templatization configured → return its specific rules.
+//   - If the workload is NOT configured → return nil, false (skip templatization).
+//
+// When no extension is available, falls back to the static templatizationRules.
+func (p *urlTemplateProcessor) resolveRulesForResource(attrs pcommon.Map) (map[int][]TemplatizationRule, bool) {
+	if p.workloadConfigProvider == nil {
+		// No extension: use static config. An empty static config means no templatization.
+		return p.templatizationRules, true
+	}
+
+	ruleStrings, participating := p.workloadConfigProvider.GetWorkloadUrlTemplatizationRules(attrs)
+	if !participating {
+		// Workload not configured for URL templatization — skip it entirely.
+		return nil, false
+	}
+
+	// Parse the per-workload rule strings into the internal representation.
+	parsedRules := map[int][]TemplatizationRule{}
+	for _, ruleStr := range ruleStrings {
+		parsedRule, err := parseUserInputRuleString(ruleStr)
+		if err != nil {
+			p.logger.Error("odigosurltemplateprocessor: invalid per-workload URL templatization rule, skipping",
+				zap.String("rule", ruleStr), zap.Error(err))
+			continue
+		}
+		n := len(parsedRule)
+		parsedRules[n] = append(parsedRules[n], parsedRule)
+	}
+	return parsedRules, true
 }
 
 func newUrlTemplateProcessor(set processor.Settings, config *Config) (*urlTemplateProcessor, error) {
@@ -84,11 +146,19 @@ func (p *urlTemplateProcessor) processTraces(ctx context.Context, td ptrace.Trac
 		}
 		// it is ok that both include and exclude matchers are nil, in that case we process all spans
 
+		// Resolve the templatization rules to use for this workload.
+		// When the workload config extension is present, rules come from InstrumentationConfig;
+		// workloads not configured for URL templatization are skipped entirely.
+		rules, participating := p.resolveRulesForResource(resourceSpans.Resource().Attributes())
+		if !participating {
+			continue
+		}
+
 		for j := 0; j < resourceSpans.ScopeSpans().Len(); j++ {
 			scopeSpans := resourceSpans.ScopeSpans().At(j)
 			for k := 0; k < scopeSpans.Spans().Len(); k++ {
 				span := scopeSpans.Spans().At(k)
-				p.processSpan(span)
+				p.processSpan(span, rules)
 			}
 		}
 	}
@@ -146,7 +216,7 @@ func getFullUrl(attr pcommon.Map) (string, bool) {
 	return "", false
 }
 
-func (p *urlTemplateProcessor) applyTemplatizationOnPath(path string) string {
+func (p *urlTemplateProcessor) applyTemplatizationOnPath(path string, rules map[int][]TemplatizationRule) string {
 	hasLeadingSlash := strings.HasPrefix(path, "/")
 	if !hasLeadingSlash {
 		path = "/" + path
@@ -159,9 +229,9 @@ func (p *urlTemplateProcessor) applyTemplatizationOnPath(path string) string {
 		return "/" // always set a leading slash even if missing
 	}
 
-	rules, found := p.templatizationRules[len(inputPathSegments)]
+	segmentRules, found := rules[len(inputPathSegments)]
 	if found {
-		for _, rule := range rules {
+		for _, rule := range segmentRules {
 			if templatedUrl, matched := attemptTemplateWithRule(inputPathSegments, rule); matched {
 				if hasLeadingSlash {
 					// if the path has a leading slash, we need to add it back
@@ -185,14 +255,14 @@ func (p *urlTemplateProcessor) applyTemplatizationOnPath(path string) string {
 	}
 }
 
-func (p *urlTemplateProcessor) calculateTemplatedUrlFromAttr(attr pcommon.Map) (string, bool) {
+func (p *urlTemplateProcessor) calculateTemplatedUrlFromAttr(attr pcommon.Map, rules map[int][]TemplatizationRule) (string, bool) {
 	// this processor enhances url template value, which it extracts from full url or url path.
 	// one of these is required for this processor to handle this span.
 	urlPath, urlPathFound := getUrlPath(attr)
 	if urlPathFound {
 		// if url path is available, we can use it to generate the templated url
 		// in case of query string, we only want the path part of the url (used with deprecated "http.target" attribute)
-		templatedUrl := p.applyTemplatizationOnPath(urlPath)
+		templatedUrl := p.applyTemplatizationOnPath(urlPath, rules)
 		return templatedUrl, true
 	}
 
@@ -204,7 +274,7 @@ func (p *urlTemplateProcessor) calculateTemplatedUrlFromAttr(attr pcommon.Map) (
 			// so we skip this span
 			return "", false
 		}
-		templatedUrl := p.applyTemplatizationOnPath(parsed.Path)
+		templatedUrl := p.applyTemplatizationOnPath(parsed.Path, rules)
 		return templatedUrl, true
 	}
 
@@ -232,7 +302,7 @@ func updateHttpSpanName(span ptrace.Span, httpMethod string, templatedUrl string
 	span.SetName(newSpanName)
 }
 
-func (p *urlTemplateProcessor) enhanceSpan(span ptrace.Span, httpMethod string, targetAttribute string) {
+func (p *urlTemplateProcessor) enhanceSpan(span ptrace.Span, httpMethod string, targetAttribute string, rules map[int][]TemplatizationRule) {
 
 	attr := span.Attributes()
 
@@ -250,7 +320,7 @@ func (p *urlTemplateProcessor) enhanceSpan(span ptrace.Span, httpMethod string, 
 		return
 	}
 
-	templatedUrl, found := p.calculateTemplatedUrlFromAttr(attr)
+	templatedUrl, found := p.calculateTemplatedUrlFromAttr(attr, rules)
 	if !found {
 		// don't modify the span if we are unable to calculate the templated url
 		return
@@ -261,7 +331,7 @@ func (p *urlTemplateProcessor) enhanceSpan(span ptrace.Span, httpMethod string, 
 	updateHttpSpanName(span, httpMethod, templatedUrl)
 }
 
-func (p *urlTemplateProcessor) processSpan(span ptrace.Span) {
+func (p *urlTemplateProcessor) processSpan(span ptrace.Span, rules map[int][]TemplatizationRule) {
 
 	attr := span.Attributes()
 
@@ -275,10 +345,10 @@ func (p *urlTemplateProcessor) processSpan(span ptrace.Span) {
 
 	case ptrace.SpanKindClient:
 		// client spans write the url templated value in "url.template" attribute.
-		p.enhanceSpan(span, httpMethod, semconv.AttributeURLTemplate)
+		p.enhanceSpan(span, httpMethod, semconv.AttributeURLTemplate, rules)
 	case ptrace.SpanKindServer:
 		// server spans write the url templated value in "http.route" attribute.
-		p.enhanceSpan(span, httpMethod, semconv.AttributeHTTPRoute)
+		p.enhanceSpan(span, httpMethod, semconv.AttributeHTTPRoute, rules)
 	default:
 		// http spans are either client or server
 		// all other spans are ignored and never enhanced
