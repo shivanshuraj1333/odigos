@@ -65,8 +65,9 @@ func (URLTemplatizationConfig) OrderHint() int {
 	return 1
 }
 
+// CollectorRoles: applied in node collector via InstrumentationConfig, not as a Processor CR.
 func (URLTemplatizationConfig) CollectorRoles() []k8sconsts.CollectorRole {
 	return []k8sconsts.CollectorRole{
-		k8sconsts.CollectorsRoleClusterGateway,
+		k8sconsts.CollectorsRoleNodeCollector,
 	}
 }
