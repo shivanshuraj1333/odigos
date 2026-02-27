@@ -283,7 +283,7 @@ func (r *ActionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// If the action is a URL templatization action, we should not need to transform it to a processor CR.
+	// URL templatization: no Processor CR; applied in node collector via InstrumentationConfig.
 	if action.Spec.URLTemplatization != nil {
 		err = r.reportProcessorNotRequired(ctx, action)
 		if err != nil {
