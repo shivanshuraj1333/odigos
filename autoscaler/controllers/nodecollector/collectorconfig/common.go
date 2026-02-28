@@ -8,6 +8,7 @@ import (
 	commonconf "github.com/odigos-io/odigos/autoscaler/controllers/common"
 	"github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/config"
+	commonconsts "github.com/odigos-io/odigos/common/consts"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
@@ -27,6 +28,9 @@ const (
 	clusterCollectorMetricsExporterName = "otlp/out-cluster-collector-metrics"
 	clusterCollectorLogsExporterName    = "otlp/out-cluster-collector-logs"
 	resourceDetectionProcessorName      = "resourcedetection"
+	// odigosUrlTemplateProcessorName is the URL templatization processor running in the node collector.
+	// It uses odigosworkloadconfigextension to look up per-workload rules at runtime.
+	odigosUrlTemplateProcessorName = "odigosurltemplate/node-collector"
 )
 
 func commonProcessors(nodeCG *odigosv1.CollectorsGroup, runningOnGKE bool) config.GenericMap {
@@ -122,6 +126,7 @@ func init() {
 				"action": "upsert",
 			}},
 		},
+		odigosUrlTemplateProcessorName: config.GenericMap{},
 	}
 
 	commonReceivers = config.GenericMap{
@@ -148,10 +153,11 @@ func init() {
 		pprofExtensionName: config.GenericMap{
 			"endpoint": "0.0.0.0:1777",
 		},
+		commonconsts.OdigosWorkloadConfigExtensionName: config.GenericMap{},
 	}
 
 	commonService = config.Service{
-		Extensions: []string{healthCheckExtensionName, pprofExtensionName},
+		Extensions: []string{healthCheckExtensionName, pprofExtensionName, commonconsts.OdigosWorkloadConfigExtensionName},
 	}
 }
 

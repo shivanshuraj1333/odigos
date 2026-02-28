@@ -107,6 +107,10 @@ func TracesConfig(nodeCG *odigosv1.CollectorsGroup, odigosNamespace string, mani
 		memoryLimiterProcessorName, // memory limiter is temporary, until we migrate all inputs to rtml based memory protection
 		nodeNameProcessorName,
 		resourceDetectionProcessorName,
+		// URL templatization runs after resource detection so k8s workload attributes are available
+		// for per-workload rule lookup via odigosworkloadconfigextension.
+		// It runs before odigosTrafficMetrics so metrics see low-cardinality URLs.
+		odigosUrlTemplateProcessorName,
 	}, manifestProcessorNames...)
 	tracePipelineProcessors = append(tracePipelineProcessors, odigosTrafficMetricsProcessorName) // keep traffic metrics last for most accurate tracking
 
