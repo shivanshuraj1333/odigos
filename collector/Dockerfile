@@ -1,3 +1,6 @@
+# Build stage: OCB compiles 70+ components (extensions, processors, exporters, etc.) into one binary.
+# First build can take 45–90+ min: module download + full compile. Use BuildKit cache mounts to speed up
+# subsequent builds. If you see 60+ min, ensure you're building for your host arch (no QEMU emulation).
 FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS builder
 COPY ./collector/ /go/src/collector
 # Need to copy the common folder to the collector for custom connector that uses it
@@ -6,7 +9,21 @@ WORKDIR /go/src/collector
 
 ARG TARGETARCH
 ARG RHEL=false
-RUN GOOS=linux GOARCH=$TARGETARCH make build-odigoscol
+# Set SKIP_TESTS=1 for faster local/Docker builds (e.g. make build-collector BUILD_ARGS="--build-arg SKIP_TESTS=1")
+ARG SKIP_TESTS=0
+# Split into two steps so you can see progress: [builder 5/6] = generate + download deps (~10–25 min), [builder 6/6] = compile (~45–70 min).
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    if [ "$SKIP_TESTS" = "1" ]; then \
+      GOOS=linux GOARCH=$TARGETARCH make build-odigoscol-get-modules-only; \
+    fi
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    if [ "$SKIP_TESTS" = "1" ]; then \
+      GOOS=linux GOARCH=$TARGETARCH make build-odigoscol-skip-tests; \
+    else \
+      GOOS=linux GOARCH=$TARGETARCH make build-odigoscol; \
+    fi
 RUN if [ "$RHEL" = "true" ] ; then \
       make licenses ; \
     fi

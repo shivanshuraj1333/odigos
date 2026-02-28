@@ -282,22 +282,16 @@ func (p *urlTemplateProcessor) calculateTemplatedUrlFromAttr(attr pcommon.Map, r
 }
 
 func updateHttpSpanName(span ptrace.Span, httpMethod string, templatedUrl string) {
-	currentName := span.Name()
-	if currentName != httpMethod {
-		// be conservative and only update the name for the use case "GET" => "GET /user/{id}"
-		// if the span name is set to something else, keep it and don't override it.
-		// we might want to revisit this in the future based on real world feedback.
-		return
-	}
-
-	// if the templated url is not available, we keep the span name as is.
 	if templatedUrl == "" {
 		return
 	}
-
-	// generate span name based on semantic conventions:
-	// HTTP span names SHOULD be {method} {target} if there is a (low-cardinality) target available.
-	// the "target" in our case is the templated url (which is either http.route or url.template attributes).
+	currentName := span.Name()
+	// Update when: name is exactly the method ("GET") or name is "{method} {path}" (e.g. "GET /items/1").
+	// This allows templatization to normalize high-cardinality span names to "{method} {templatedPath}".
+	if currentName != httpMethod && !strings.HasPrefix(currentName, httpMethod+" ") {
+		return
+	}
+	// HTTP span names SHOULD be {method} {target} per semantic conventions (low-cardinality target).
 	newSpanName := fmt.Sprintf("%s %s", httpMethod, templatedUrl)
 	span.SetName(newSpanName)
 }
@@ -306,27 +300,16 @@ func (p *urlTemplateProcessor) enhanceSpan(span ptrace.Span, httpMethod string, 
 
 	attr := span.Attributes()
 
-	// edge case: target attribute (http.route) exists but is empty (e.g. no path)
-	// in this case, we align and normalize the value to "/" to denote that.
-	if val, found := attr.Get(targetAttribute); found {
-		if val.Type() != pcommon.ValueTypeStr {
-			// should not happen.
-			return
-		}
-		if val.Str() == "" {
-			updateHttpSpanName(span, httpMethod, "/")
-		}
-		// avoid overriding the attribute if it is already set
-		return
-	}
-
 	templatedUrl, found := p.calculateTemplatedUrlFromAttr(attr, rules)
 	if !found {
-		// don't modify the span if we are unable to calculate the templated url
+		// edge case: target attribute exists but is empty (e.g. no path) — normalize span name to method + "/"
+		if val, ok := attr.Get(targetAttribute); ok && val.Type() == pcommon.ValueTypeStr && val.Str() == "" {
+			updateHttpSpanName(span, httpMethod, "/")
+		}
 		return
 	}
 
-	// set the templated url in the target attribute and update the span name if needed
+	// set the templated url in the target attribute and update the span name (overriding any existing value)
 	attr.PutStr(targetAttribute, templatedUrl)
 	updateHttpSpanName(span, httpMethod, templatedUrl)
 }

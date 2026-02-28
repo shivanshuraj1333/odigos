@@ -80,6 +80,8 @@ type ActionSpec struct {
 	Samplers *actionsv1.SamplersConfig `json:"samplers,omitempty"`
 
 	// URLTemplatization is the config for the URLTemplatization Action.
+	// This config is consumed by the node collector (via InstrumentationConfig) and by future UI/GraphQL.
+	// Do not add required fields without defaults so that programmatic creation (e.g. empty rules) remains valid.
 	URLTemplatization *actions.URLTemplatizationConfig `json:"urlTemplatization,omitempty"`
 
 	// SpanRenamer is the config for the SpanRenamer Action.

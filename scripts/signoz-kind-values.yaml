@@ -1,0 +1,7 @@
+# Minimal values for SigNoz on kind (local-dev-cluster).
+# See https://signoz.io/docs/install/kubernetes/local/
+global:
+  storageClass: standard
+
+clickhouse:
+  installCustomStorageClass: false

@@ -8,6 +8,8 @@ signals:
 
 image:
   tag: ''
+  # Set to IfNotPresent for local kind dev so nodes use loaded images instead of pulling.
+  pullPolicy: ''
 imagePullSecrets: []
 
 # @schema

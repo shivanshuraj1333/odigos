@@ -42,6 +42,16 @@ test-odigossamplingprocessor:
 build-odigoscol: download_builder test-odigossamplingprocessor
 	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml --skip-generate --skip-get-modules
 
+# For Docker/local dev: skip tests to avoid long or hanging test run; full build still takes 15–30+ min.
+.PHONY: build-odigoscol-skip-tests
+build-odigoscol-skip-tests: download_builder
+	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml --skip-generate --skip-get-modules
+
+# Generate source + download modules only (no compile). Used in Docker to split long build into visible steps.
+.PHONY: build-odigoscol-get-modules-only
+build-odigoscol-get-modules-only: download_builder
+	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml --skip-build
+
 .PHONY: install-tools
 install-tools:
 	cd ./internal/tools && go install github.com/client9/misspell/cmd/misspell

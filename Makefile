@@ -103,6 +103,7 @@ $(HELM_SCHEMA_BIN):
 helm-schema-clean:
 	rm -f $(HELM_SCHEMA_BIN)
 
+BUILD_ARGS ?=
 build-image/%:
 	docker build $(TARGET_FLAG) \
 	-t $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(BUILD_DIR) -f $(DOCKERFILE) \
@@ -113,7 +114,8 @@ build-image/%:
 	--build-arg SUMMARY="$(SUMMARY)" \
 	--build-arg DESCRIPTION="$(DESCRIPTION)" \
 	--build-arg LD_FLAGS="$(LD_FLAGS)" \
-	--build-arg RHEL="$(RHEL)"
+	--build-arg RHEL="$(RHEL)" \
+	$(BUILD_ARGS)
 
 .PHONY: build-operator-index
 build-operator-index:
@@ -150,7 +152,7 @@ build-scheduler:
 
 .PHONY: build-collector
 build-collector:
-	$(MAKE) build-image/collector DOCKERFILE=collector/$(DOCKERFILE) SUMMARY="Odigos Collector" DESCRIPTION="The Odigos build of the OpenTelemetry Collector." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
+	$(MAKE) build-image/collector DOCKERFILE=collector/$(DOCKERFILE) SUMMARY="Odigos Collector" DESCRIPTION="The Odigos build of the OpenTelemetry Collector." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX) BUILD_ARGS="$(BUILD_ARGS)"
 
 .PHONY: build-ui
 build-ui:
@@ -227,11 +229,11 @@ push-images-rhel:
 	$(MAKE) push-images RHEL=true TAG=$(TAG) ORG=$(ORG)
 
 load-to-kind-%:
-	kind load docker-image $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG)
+	kind load docker-image $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG)$(if $(CLUSTER_NAME), --name $(CLUSTER_NAME))
 
 .PHONY: load-to-kind
 load-to-kind:
-	make -j 6 load-to-kind-instrumentor load-to-kind-autoscaler load-to-kind-scheduler load-to-kind-odiglet load-to-kind-collector load-to-kind-ui load-to-kind-cli load-to-kind-agents ORG=$(ORG) TAG=$(TAG) IMG_SUFFIX=$(IMG_SUFFIX) DOCKERFILE=$(DOCKERFILE)
+	make -j 6 load-to-kind-instrumentor load-to-kind-autoscaler load-to-kind-scheduler load-to-kind-odiglet load-to-kind-collector load-to-kind-ui load-to-kind-cli load-to-kind-agents ORG=$(ORG) TAG=$(TAG) IMG_SUFFIX=$(IMG_SUFFIX) DOCKERFILE=$(DOCKERFILE) CLUSTER_NAME="$(CLUSTER_NAME)"
 
 .PHONY: restart-ui
 restart-ui:

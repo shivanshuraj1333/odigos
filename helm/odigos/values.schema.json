@@ -529,6 +529,11 @@
           "default": "",
           "title": "tag",
           "type": "string"
+        },
+        "pullPolicy": {
+          "default": "",
+          "title": "pullPolicy",
+          "type": "string"
         }
       },
       "required": [],
