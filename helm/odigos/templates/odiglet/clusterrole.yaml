@@ -61,6 +61,7 @@ rules:
       - get
       - patch
       - update
+  # get/list/watch required for odigos_workload_config extension (InstrumentationConfig informer) in node collector
   - apiGroups:
       - odigos.io
     resources:

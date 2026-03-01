@@ -28,7 +28,6 @@ type internalCustomIdConfig struct {
 }
 
 func resourceToWorkloadStringRepresentation(resource pcommon.Resource) (workloadStringRepresentation, error) {
-
 	ns, ok := resource.Attributes().Get(string(semconv.K8SNamespaceNameKey))
 	if !ok {
 		return "", fmt.Errorf("namespace not found in resource")

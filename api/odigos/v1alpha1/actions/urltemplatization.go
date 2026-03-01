@@ -2,7 +2,6 @@ package actions
 
 import (
 	"github.com/odigos-io/odigos/api/k8sconsts"
-	"github.com/odigos-io/odigos/common"
 )
 
 const ActionNameURLTemplatization = "URLTemplatization"
@@ -31,10 +30,9 @@ type URLTemplatizationRule struct {
 // Filters, if set, are ANDed together, e.g. for the templatization rules to be applied, all set filters must be true.
 // If no filters are set, the rules will be applied to all spans.
 type UrlTemplatizationRulesGroup struct {
-	FilterProgrammingLanguage *common.ProgrammingLanguage `json:"filterProgrammingLanguage,omitempty"`
-	FilterK8sNamespace        string                      `json:"filterK8sNamespace,omitempty"`
-	FilterK8sWorkloadKind     *k8sconsts.WorkloadKind     `json:"filterK8sWorkloadKind,omitempty"`
-	FilterK8sWorkloadName     string                      `json:"filterK8sWorkloadName,omitempty"`
+	FilterK8sNamespace    string                  `json:"filterK8sNamespace,omitempty"`
+	FilterK8sWorkloadKind *k8sconsts.WorkloadKind `json:"filterK8sWorkloadKind,omitempty"`
+	FilterK8sWorkloadName string                  `json:"filterK8sWorkloadName,omitempty"`
 
 	// the rules that will be applied to the spans matching the above filters.
 	TemplatizationRules []URLTemplatizationRule `json:"templatizationRules,omitempty"`
@@ -66,7 +64,8 @@ func (URLTemplatizationConfig) OrderHint() int {
 }
 
 func (URLTemplatizationConfig) CollectorRoles() []k8sconsts.CollectorRole {
+	// Node collector only; rules are derived from InstrumentationConfig via the workload config extension.
 	return []k8sconsts.CollectorRole{
-		k8sconsts.CollectorsRoleClusterGateway,
+		k8sconsts.CollectorsRoleNodeCollector,
 	}
 }

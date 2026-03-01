@@ -233,7 +233,7 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 			podManifestInjectionOptional = false
 		}
 		// calculate the relevant collector configurations for the container.
-		currentContainerCollectorConfig := calculateContainerCollectorConfig(containerName, effectiveConfig, containerRuntimeDetails, distroPerLanguage, distroProvider.Getter, containerOverride, samplingRules, pw)
+		currentContainerCollectorConfig := calculateContainerCollectorConfig(containerName, effectiveConfig, containerRuntimeDetails, distroPerLanguage, distroProvider.Getter, containerOverride, agentLevelActions, samplingRules, pw)
 		if currentContainerCollectorConfig != nil {
 			collectorConfig = append(collectorConfig, *currentContainerCollectorConfig)
 		}
@@ -433,10 +433,10 @@ func getEnvInjectionDecision(
 	return &envInjectionDecision, nil
 }
 
-// filterUrlTemplateRulesForContainer filters template rules to only include those relevant to the container.
+// filterUrlTemplateRulesForContainer filters template rules to only include those relevant to the workload.
 // A rule group is applied if ALL set filters match (AND logic).
-// If no filters are set in a group, it's considered global and applies to all containers.
-func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, language common.ProgrammingLanguage, pw k8sconsts.PodWorkload) *commonapi.UrlTemplatizationConfig {
+// If no filters are set in a group, it's considered global and applies to all workloads.
+func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw k8sconsts.PodWorkload) *commonapi.UrlTemplatizationConfig {
 	var rules []string
 	participating := false
 
@@ -447,7 +447,7 @@ func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, la
 		}
 
 		for _, rulesGroup := range action.Spec.URLTemplatization.TemplatizationRulesGroups {
-			if templatizationRulesGroupMatchesContainer(rulesGroup, language, pw) {
+			if templatizationRulesGroupMatchesContainer(rulesGroup, pw) {
 				participating = true
 				for _, rule := range rulesGroup.TemplatizationRules {
 					rules = append(rules, rule.Template)
@@ -467,16 +467,9 @@ func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, la
 	}
 }
 
-// templatizationRulesGroupMatchesContainer checks if a rules group matches the container based on all set filters.
+// templatizationRulesGroupMatchesContainer checks if a rules group matches the workload based on all set filters.
 // Returns true if all explicitly-set filters match (AND logic), or if no filters are set (global rule).
-func templatizationRulesGroupMatchesContainer(rulesGroup actions.UrlTemplatizationRulesGroup, language common.ProgrammingLanguage, pw k8sconsts.PodWorkload) bool {
-	// Filter by programming language
-	if rulesGroup.FilterProgrammingLanguage != nil {
-		if *rulesGroup.FilterProgrammingLanguage != language {
-			return false
-		}
-	}
-
+func templatizationRulesGroupMatchesContainer(rulesGroup actions.UrlTemplatizationRulesGroup, pw k8sconsts.PodWorkload) bool {
 	// Filter by k8s namespace
 	if rulesGroup.FilterK8sNamespace != "" {
 		if rulesGroup.FilterK8sNamespace != pw.Namespace {
@@ -507,6 +500,7 @@ func calculateContainerCollectorConfig(containerName string,
 	distroPerLanguage map[common.ProgrammingLanguage]string,
 	distroGetter *distros.Getter,
 	containerOverride *odigosv1.ContainerOverride,
+	agentLevelActions *[]odigosv1.Action,
 	samplingRules *[]odigosv1.Sampling,
 	pw k8sconsts.PodWorkload,
 ) *commonapi.ContainerCollectorConfig {
@@ -534,14 +528,18 @@ func calculateContainerCollectorConfig(containerName string,
 
 	noisyOps, relevantOps, costRules := sampling.FilterTailSamplingRulesForContainer(samplingRules, runtimeDetails.Language, pw, containerName, containerDistro)
 
-	return &commonapi.ContainerCollectorConfig{
+	urlTemplatization := filterUrlTemplateRulesForContainer(agentLevelActions, pw)
+
+	cc := &commonapi.ContainerCollectorConfig{
 		ContainerName: containerName,
 		TailSampling: &commonapi.SamplingCollectorConfig{
 			NoisyOperations:          noisyOps,
 			HighlyRelevantOperations: relevantOps,
 			CostReductionRules:       costRules,
 		},
+		UrlTemplatization: urlTemplatization,
 	}
+	return cc
 }
 
 func calculateContainerInstrumentationConfig(containerName string,
@@ -588,7 +586,7 @@ func calculateContainerInstrumentationConfig(containerName string,
 		}
 	}
 
-	filteredTemplateRules := filterUrlTemplateRulesForContainer(agentLevelActions, runtimeDetails.Language, pw)
+	filteredTemplateRules := filterUrlTemplateRulesForContainer(agentLevelActions, pw)
 
 	d, err := resolveContainerDistro(containerName, containerOverride, runtimeDetails.Language, distroPerLanguage, distroGetter)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/collector/processor"
 	"go.opentelemetry.io/collector/processor/processorhelper"
 
+	"github.com/odigos-io/odigos/collector/extension/odigosworkloadconfigextension"
 	"github.com/odigos-io/odigos/collector/processor/odigosurltemplateprocessor/internal/metadata"
 )
 
@@ -28,6 +29,30 @@ func createDefaultConfig() component.Config {
 	return &Config{}
 }
 
+// extensionStartWrapper runs at Start to inject the workload config extension into the processor.
+type extensionStartWrapper struct {
+	inner *urlTemplateProcessor
+	extID string
+}
+
+func (w *extensionStartWrapper) Start(ctx context.Context, host component.Host) error {
+	if w.extID == "" {
+		return nil
+	}
+	ext, ok := host.GetExtensions()[component.MustNewID(w.extID)]
+	if !ok || ext == nil {
+		w.inner.warnExtensionNotFound(w.extID)
+		return nil
+	}
+	wc, ok := ext.(*odigosworkloadconfigextension.OdigosWorkloadConfig)
+	if !ok {
+		w.inner.warnExtensionWrongType(w.extID)
+		return nil
+	}
+	w.inner.workloadRulesProvider = wc
+	return nil
+}
+
 func createTracesProcessor(
 	ctx context.Context,
 	set processor.Settings,
@@ -40,5 +65,10 @@ func createTracesProcessor(
 		return nil, err
 	}
 
-	return processorhelper.NewTraces(ctx, set, cfg, nextConsumer, tmp.processTraces, processorhelper.WithCapabilities(consumerCapabilities))
+	opts := []processorhelper.Option{processorhelper.WithCapabilities(consumerCapabilities)}
+	if oCfg.WorkloadConfigExtensionID != "" {
+		wrapper := &extensionStartWrapper{inner: tmp, extID: oCfg.WorkloadConfigExtensionID}
+		opts = append(opts, processorhelper.WithStart(wrapper.Start))
+	}
+	return processorhelper.NewTraces(ctx, set, cfg, nextConsumer, tmp.processTraces, opts...)
 }

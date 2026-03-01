@@ -4,16 +4,16 @@
 > This can lead to performance degradation and excessive costs in telemetry backends.
 > It is highly recommended to test and monitor templatization results in staging before deploying to production. Use `include`/`exclude` filters and custom regex rules judiciously.
 
-This processor fills a gap between semantic conventions and real users needs.
+This processor fills a gap between [semantic conventions](https://opentelemetry.io/docs/specs/semconv/http/http-spans/) and real-world instrumentation.
 
-According to http semantic conventions for span names:
+**HTTP span names ([Name](https://opentelemetry.io/docs/specs/semconv/http/http-spans/#name)):**
 
-> HTTP span names SHOULD be {method} {target} if there is a (low-cardinality) target available. If there is no (low-cardinality) {target} available, HTTP span names SHOULD be {method}.
+- HTTP span names **SHOULD** be `{method} {target}` if there is a (low-cardinality) target available.
+- If there is no (low-cardinality) target, HTTP span names **SHOULD** be `{method}`.
+- `{method}` MUST be `http.request.method` when known; when `http.request.method` is `_OTHER`, `{method}` MUST be `HTTP`.
+- `{target}` SHOULD be `http.route` (server) or `url.template` (client). Instrumentation **MUST NOT** use the URI path as target (high cardinality).
 
-The target should be a templated string (e.g. `/user/{id}`, not `/user/1234`).
-Templated value is **sometimes** available in server spans where the framework and instrumentation library supports such feature, but it is almost **never** available in client spans.
-
-When the templated path is not collected at instrumentation level, this processor will attempt to heuristically "guess" a templated value, and update span names and relevant attribute accordingly, enhancing the usability of the data for humans and machines.
+The target must be a templated string (e.g. `/user/{id}`). Templated value is sometimes available from the framework; when it is not, this processor heuristically derives a templated value and sets the span name and `http.route` / `url.template` accordingly.
 
 ## Mechanism
 
@@ -36,9 +36,9 @@ For spans that match the above constraints, the processor will calculate the tem
 
 ### Span Name
 
-If the span name equals the method (e.g. "GET"), and the processor is able to calculate a templated route, the span name will be set to `{method} {target}`. Otherwise, the span name will not be modified.
+The processor sets the span name to `{method} {target}` per the [HTTP semconv Name section](https://opentelemetry.io/docs/specs/semconv/http/http-spans/#name) when it can compute a low-cardinality target. It only updates when the current name looks HTTP-generated (equals `{method}` or starts with `{method} `), so custom names (e.g. `"some-other-name"`) are left unchanged. When `http.request.method` is `_OTHER`, the name uses `HTTP` as the method placeholder.
 
-When `target` is empty string, for example `http://example.com`, the target will be set to `"/"` for enhanced usability (differentiate root path from missing target).
+When the target is empty (e.g. `http://example.com`), it is normalized to `"/"` in the name and attribute.
 
 ## Configuration
 
