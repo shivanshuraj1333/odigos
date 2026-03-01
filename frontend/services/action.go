@@ -6,7 +6,9 @@ import (
 	"fmt"
 
 	actionsv1 "github.com/odigos-io/odigos/api/actions/v1alpha1"
+	"github.com/odigos-io/odigos/api/k8sconsts"
 	"github.com/odigos-io/odigos/api/odigos/v1alpha1"
+	urlactions "github.com/odigos-io/odigos/api/odigos/v1alpha1/actions"
 	"github.com/odigos-io/odigos/frontend/graph/model"
 	"github.com/odigos-io/odigos/frontend/kube"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
@@ -44,6 +46,9 @@ func deriveTypeFromAction(action *model.Action) model.ActionType {
 	}
 	if len(action.Fields.AttributeFilters) > 0 {
 		return model.ActionTypeSpanAttributeSampler
+	}
+	if len(action.Fields.URLTemplatizationRulesGroups) > 0 {
+		return model.ActionTypeURLTemplatization
 	}
 
 	return model.ActionTypeUnknownType
@@ -186,6 +191,7 @@ func getSpecFromInput(input model.ActionInput, existingAction *v1alpha1.Action) 
 
 	spec.PiiMasking = convertPiiMaskingFromInput(input.Fields, existingAction)
 	spec.Samplers = convertSamplersFromInput(input.Fields, existingAction)
+	spec.URLTemplatization = convertUrlTemplatizationFromInput(input.Fields, existingAction)
 
 	return &spec, nil
 }
@@ -548,6 +554,77 @@ func convertJSONConditionFromInput(condition *model.JSONConditionInput) *actions
 	}
 }
 
+func convertUrlTemplatizationFromInput(details *model.ActionFieldsInput, existingAction *v1alpha1.Action) *urlactions.URLTemplatizationConfig {
+	if len(details.URLTemplatizationRulesGroups) == 0 {
+		if existingAction != nil && existingAction.Spec.URLTemplatization != nil {
+			return existingAction.Spec.URLTemplatization
+		}
+		return nil
+	}
+	groups := make([]urlactions.UrlTemplatizationRulesGroup, 0, len(details.URLTemplatizationRulesGroups))
+	for _, g := range details.URLTemplatizationRulesGroups {
+		group := urlactions.UrlTemplatizationRulesGroup{
+			FilterK8sNamespace: DerefString(g.FilterK8sNamespace),
+			Notes:              DerefString(g.Notes),
+		}
+		for _, wf := range g.WorkloadFilters {
+			filter := urlactions.WorkloadFilter{
+				Name: DerefString(wf.Name),
+			}
+			if wf.Kind != nil {
+				wk := k8sconsts.WorkloadKind(*wf.Kind)
+				filter.Kind = &wk
+			}
+			group.WorkloadFilters = append(group.WorkloadFilters, filter)
+		}
+
+		for _, r := range g.TemplatizationRules {
+			group.TemplatizationRules = append(group.TemplatizationRules, urlactions.URLTemplatizationRule{
+				Template: r.Template,
+				Notes:    DerefString(r.Notes),
+			})
+		}
+		groups = append(groups, group)
+	}
+	return &urlactions.URLTemplatizationConfig{TemplatizationRulesGroups: groups}
+}
+
+func convertUrlTemplatizationToModel(config *urlactions.URLTemplatizationConfig) []*model.URLTemplatizationRulesGroup {
+	if config == nil {
+		return nil
+	}
+	groups := make([]*model.URLTemplatizationRulesGroup, 0, len(config.TemplatizationRulesGroups))
+	for _, g := range config.TemplatizationRulesGroups {
+		mg := &model.URLTemplatizationRulesGroup{}
+		if g.FilterK8sNamespace != "" {
+			mg.FilterK8sNamespace = &g.FilterK8sNamespace
+		}
+		for _, wf := range g.WorkloadFilters {
+			mwf := &model.TemplatizationScopeFilter{}
+			if wf.Kind != nil {
+				wk := model.WorkloadKind(*wf.Kind)
+				mwf.Kind = &wk
+			}
+			if wf.Name != "" {
+				mwf.Name = &wf.Name
+			}
+			mg.WorkloadFilters = append(mg.WorkloadFilters, mwf)
+		}
+		if g.Notes != "" {
+			mg.Notes = &g.Notes
+		}
+		for _, r := range g.TemplatizationRules {
+			rule := &model.URLTemplatizationRule{Template: r.Template}
+			if r.Notes != "" {
+				rule.Notes = &r.Notes
+			}
+			mg.TemplatizationRules = append(mg.TemplatizationRules, rule)
+		}
+		groups = append(groups, mg)
+	}
+	return groups
+}
+
 func convertActionToModel(action *v1alpha1.Action) (*model.Action, error) {
 	var labelAttrs []*model.K8sLabelAttribute
 	if action.Spec.K8sAttributes != nil {
@@ -600,15 +677,16 @@ func convertActionToModel(action *v1alpha1.Action) (*model.Action, error) {
 	}
 
 	responseFields := &model.ActionFields{
-		LabelsAttributes:      labelAttrs,
-		AnnotationsAttributes: annotAttrs,
-		ClusterAttributes:     clustAttrs,
-		Renames:               renames,
-		PiiCategories:         piiCategories,
-		FallbackSamplingRatio: fallbackSamplingRatio,
-		EndpointsFilters:      endpointsFilters,
-		ServicesNameFilters:   servicesNameFilters,
-		AttributeFilters:      attributeFilters,
+		LabelsAttributes:             labelAttrs,
+		AnnotationsAttributes:        annotAttrs,
+		ClusterAttributes:            clustAttrs,
+		Renames:                      renames,
+		PiiCategories:                piiCategories,
+		FallbackSamplingRatio:        fallbackSamplingRatio,
+		EndpointsFilters:             endpointsFilters,
+		ServicesNameFilters:          servicesNameFilters,
+		AttributeFilters:             attributeFilters,
+		URLTemplatizationRulesGroups: convertUrlTemplatizationToModel(action.Spec.URLTemplatization),
 	}
 
 	// Handle K8sAttributes fields

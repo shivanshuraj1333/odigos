@@ -646,31 +646,8 @@ spec:
                         If no filters are set, the rules will be applied to all spans.
                       properties:
                         filterK8sNamespace:
-                          type: string
-                        filterK8sWorkloadKind:
-                          description: |-
-                            1. the pascal case representation of the workload kind
-                            it is used in k8s api objects as the `Kind` field.
-                          type: string
-                        filterK8sWorkloadName:
-                          type: string
-                        filterProgrammingLanguage:
-                          enum:
-                          - java
-                          - python
-                          - go
-                          - dotnet
-                          - javascript
-                          - php
-                          - ruby
-                          - rust
-                          - cplusplus
-                          - mysql
-                          - nginx
-                          - redis
-                          - postgres
-                          - unknown
-                          - ignored
+                          description: 'FilterK8sNamespace scopes the group to a specific
+                            namespace. Optional: if empty, matches all namespaces.'
                           type: string
                         notes:
                           description: |-
@@ -701,6 +678,26 @@ spec:
                                 type: string
                             required:
                             - template
+                            type: object
+                          type: array
+                        workloadFilters:
+                          description: |-
+                            WorkloadFilters is a list of workload (kind, name) pairs this group targets.
+                            Each entry is ORed: the group matches if the workload matches any entry.
+                            Within an entry, set fields are ANDed (both kind and name must match if both are set).
+                            If the list is empty, the group matches all workloads (subject to FilterK8sNamespace).
+                          items:
+                            description: |-
+                              WorkloadFilter targets a specific workload by kind and/or name.
+                              Both fields are optional: omitting kind matches any kind, omitting name matches any name.
+                            properties:
+                              kind:
+                                description: |-
+                                  1. the pascal case representation of the workload kind
+                                  it is used in k8s api objects as the `Kind` field.
+                                type: string
+                              name:
+                                type: string
                             type: object
                           type: array
                       type: object

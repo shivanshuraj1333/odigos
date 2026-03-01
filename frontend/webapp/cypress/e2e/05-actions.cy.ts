@@ -90,6 +90,11 @@ describe('Actions CRUD', () => {
             break;
           }
 
+          case 'URLTemplatization': {
+            cy.get('input[placeholder="e.g. /user/{id}"]').type('/user/{id}');
+            break;
+          }
+
           default: {
             // purposely fail the test
             cy.get('unknown action').should('eq', true);

@@ -5,10 +5,21 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/processor/processortest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
+
+// mockWorkloadRulesProvider is a test double for workloadRulesProvider.
+type mockWorkloadRulesProvider struct {
+	rules         []string
+	participating bool
+}
+
+func (m *mockWorkloadRulesProvider) GetWorkloadUrlTemplatizationRules(_ pcommon.Map) ([]string, bool) {
+	return m.rules, m.participating
+}
 
 func generateTraceData(serviceName, spanName string, kind ptrace.SpanKind, spanAttrs map[string]any) ptrace.Traces {
 	td := ptrace.NewTraces()
@@ -201,6 +212,30 @@ func TestProcessor_Traces(t *testing.T) {
 			expectedAttrValue: "/user/{id}", // should exist
 		},
 		{
+			name:          "span name is method plus path (e.g. GET /user/1234) gets templated",
+			spanKind:      ptrace.SpanKindServer,
+			inputSpanName: "GET /user/1234",
+			inputSpanAttrs: map[string]any{
+				"http.request.method": "GET",
+				"url.path":            "/user/1234",
+			},
+			expectedSpanName:  "GET /user/{id}",
+			expectedAttrKey:   "http.route",
+			expectedAttrValue: "/user/{id}",
+		},
+		{
+			name:          "http.request.method _OTHER uses HTTP in span name per semconv",
+			spanKind:      ptrace.SpanKindServer,
+			inputSpanName: "HTTP",
+			inputSpanAttrs: map[string]any{
+				"http.request.method": "_OTHER",
+				"url.path":            "/user/1234",
+			},
+			expectedSpanName:  "HTTP /user/{id}",
+			expectedAttrKey:   "http.route",
+			expectedAttrValue: "/user/{id}",
+		},
+		{
 			name:          "ignore internal span",
 			spanKind:      ptrace.SpanKindInternal,
 			inputSpanName: "GET",
@@ -243,7 +278,9 @@ func TestProcessor_Traces(t *testing.T) {
 				"url.path":            "/user/1234",
 				"http.route":          "/user/<id>",
 			},
-			expectedSpanName:  "GET", // do not modify span name as the attribute exists
+			// http.route is already set by the agent; processor does not overwrite the value.
+			// It does normalize the span name to "{method} {route}" per OTel HTTP semconv.
+			expectedSpanName:  "GET /user/<id>",
 			expectedAttrKey:   "http.route",
 			expectedAttrValue: "/user/<id>", // should not be modified
 		},
@@ -256,7 +293,9 @@ func TestProcessor_Traces(t *testing.T) {
 				"url.full":            "http://example.com/user/1234?name=John",
 				"url.template":        "/user/<id>",
 			},
-			expectedSpanName:  "GET", // do not modify span name as the attribute exists
+			// url.template is already set by the agent; processor does not overwrite the value.
+			// It does normalize the span name to "{method} {template}" per OTel HTTP semconv.
+			expectedSpanName:  "GET /user/<id>",
 			expectedAttrKey:   "url.template",
 			expectedAttrValue: "/user/<id>", // should not be modified
 		},
@@ -1092,6 +1131,65 @@ func TestProcessor_IncludeExclude(t *testing.T) {
 				// Should not modify the span name or add the http.route attribute
 				assertSpanNameAndAttribute(t, processedSpan, "GET", "http.route", "")
 			}
+		})
+	}
+}
+
+// TestProcessor_ExtensionMode verifies opt-in semantics when workloadRulesProvider is set.
+// The three cases mirror the contract of GetWorkloadUrlTemplatizationRules:
+//
+//	participating=false         → workload not opted in; span is left completely untouched.
+//	participating=true, no rules → opted in; default heuristics fire (numbers/UUIDs templatized).
+//	participating=true, with rules → explicit rules applied; unmatched paths fall back to heuristics.
+func TestProcessor_ExtensionMode(t *testing.T) {
+	spanAttrs := map[string]any{
+		"http.request.method": "GET",
+		"url.path":            "/user/1234",
+	}
+
+	tt := []struct {
+		name              string
+		provider          *mockWorkloadRulesProvider
+		expectedSpanName  string
+		expectedAttrKey   string
+		expectedAttrValue string
+	}{
+		{
+			name:              "not opted in - span untouched",
+			provider:          &mockWorkloadRulesProvider{rules: nil, participating: false},
+			expectedSpanName:  "GET",
+			expectedAttrKey:   "http.route",
+			expectedAttrValue: "", // http.route must NOT be set
+		},
+		{
+			name:              "opted in no rules - heuristics apply",
+			provider:          &mockWorkloadRulesProvider{rules: nil, participating: true},
+			expectedSpanName:  "GET /user/{id}",
+			expectedAttrKey:   "http.route",
+			expectedAttrValue: "/user/{id}",
+		},
+		{
+			name:              "opted in with explicit rule - rule applied",
+			provider:          &mockWorkloadRulesProvider{rules: []string{"/user/{userId}"}, participating: true},
+			expectedSpanName:  "GET /user/{userId}",
+			expectedAttrKey:   "http.route",
+			expectedAttrValue: "/user/{userId}",
+		},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			traces := generateTraceData("test-service", "GET", ptrace.SpanKindServer, spanAttrs)
+			processor, err := newUrlTemplateProcessor(processortest.NewNopSettings(processortest.NopType), &Config{})
+			require.NoError(t, err)
+			processor.workloadRulesProvider = tc.provider
+
+			ctx := context.Background()
+			processedTraces, err := processor.processTraces(ctx, traces)
+			require.NoError(t, err)
+
+			processedSpan := processedTraces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+			assertSpanNameAndAttribute(t, processedSpan, tc.expectedSpanName, tc.expectedAttrKey, tc.expectedAttrValue)
 		})
 	}
 }
