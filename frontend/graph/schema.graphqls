@@ -69,7 +69,14 @@ enum ActionType {
   LatencySampler
   ServiceNameSampler
   SpanAttributeSampler
+  URLTemplatization
   UnknownType
+}
+
+enum WorkloadKind {
+  Deployment
+  StatefulSet
+  DaemonSet
 }
 
 enum InstrumentationRuleType {
@@ -471,6 +478,24 @@ input ActionFieldsInput {
   endpointsFilters: [HttpRouteFilterInput!]
   servicesNameFilters: [ServiceNameFilterInput!]
   attributeFilters: [SpanAttributeFilterInput!]
+  urlTemplatizationRulesGroups: [UrlTemplatizationRulesGroupInput!]
+}
+
+input TemplatizationScopeFilterInput {
+  kind: WorkloadKind
+  name: String
+}
+
+input UrlTemplatizationRulesGroupInput {
+  filterK8sNamespace:    String
+  workloadFilters:       [TemplatizationScopeFilterInput!]
+  templatizationRules:   [URLTemplatizationRuleInput!]!
+  notes:                 String
+}
+
+input URLTemplatizationRuleInput {
+  template: String!
+  notes:    String
 }
 
 input K8sLabelAttributeInput {
@@ -567,6 +592,24 @@ type ActionFields {
   endpointsFilters: [HttpRouteFilter!]
   servicesNameFilters: [ServiceNameFilter!]
   attributeFilters: [SpanAttributeFilter!]
+  urlTemplatizationRulesGroups: [UrlTemplatizationRulesGroup!]
+}
+
+type TemplatizationScopeFilter {
+  kind: WorkloadKind
+  name: String
+}
+
+type UrlTemplatizationRulesGroup {
+  filterK8sNamespace:    String
+  workloadFilters:       [TemplatizationScopeFilter!]
+  templatizationRules:   [URLTemplatizationRule!]
+  notes:                 String
+}
+
+type URLTemplatizationRule {
+  template: String!
+  notes:    String
 }
 
 type K8sLabelAttribute {

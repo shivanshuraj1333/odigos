@@ -227,7 +227,7 @@ push-images-rhel:
 	$(MAKE) push-images RHEL=true TAG=$(TAG) ORG=$(ORG)
 
 load-to-kind-%:
-	kind load docker-image $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG)
+	kind load docker-image $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) --name $(CLUSTER_NAME)
 
 .PHONY: load-to-kind
 load-to-kind:

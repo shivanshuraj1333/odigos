@@ -240,7 +240,6 @@ func attemptTemplateWithRule(pathSegments []string, ruleSegments TemplatizationR
 // as {id} / {date} etc
 // empty string as return value means that the segment is not a templated id
 func getSegmentTemplatizationString(segment string, customIds []internalCustomIdConfig) string {
-
 	// check if the segment matches any of the custom ids regexp
 	for _, customRegexp := range customIds {
 		if customRegexp.Regexp.MatchString(segment) {

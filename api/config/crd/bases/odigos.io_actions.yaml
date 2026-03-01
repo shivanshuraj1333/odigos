@@ -654,24 +654,6 @@ spec:
                           type: string
                         filterK8sWorkloadName:
                           type: string
-                        filterProgrammingLanguage:
-                          enum:
-                          - java
-                          - python
-                          - go
-                          - dotnet
-                          - javascript
-                          - php
-                          - ruby
-                          - rust
-                          - cplusplus
-                          - mysql
-                          - nginx
-                          - redis
-                          - postgres
-                          - unknown
-                          - ignored
-                          type: string
                         notes:
                           description: |-
                             user can add notes about this group for future maintenance purposes. not used by the system.

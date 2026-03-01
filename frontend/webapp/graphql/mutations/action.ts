@@ -59,6 +59,18 @@ export const CREATE_ACTION = gql`
             }
           }
         }
+        urlTemplatizationRulesGroups {
+          filterK8sNamespace
+          workloadFilters {
+            kind
+            name
+          }
+          notes
+          templatizationRules {
+            template
+            notes
+          }
+        }
       }
       conditions {
         status
@@ -128,6 +140,18 @@ export const UPDATE_ACTION = gql`
               operation
               expectedValue
             }
+          }
+        }
+        urlTemplatizationRulesGroups {
+          filterK8sNamespace
+          workloadFilters {
+            kind
+            name
+          }
+          notes
+          templatizationRules {
+            template
+            notes
           }
         }
       }

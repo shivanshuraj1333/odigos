@@ -2,7 +2,6 @@ package actions
 
 import (
 	"github.com/odigos-io/odigos/api/k8sconsts"
-	"github.com/odigos-io/odigos/common"
 )
 
 const ActionNameURLTemplatization = "URLTemplatization"
@@ -26,15 +25,28 @@ type URLTemplatizationRule struct {
 
 // +kubebuilder:object:generate=true
 // +kubebuilder:deepcopy-gen=true
+// WorkloadFilter targets a specific workload by kind and/or name.
+// Both fields are optional: empty string matches any value (same convention as SourcesScope).
+type WorkloadFilter struct {
+	Kind k8sconsts.WorkloadKind `json:"kind,omitempty"`
+	Name string                 `json:"name,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+// +kubebuilder:deepcopy-gen=true
 // UrlTemplatizationRulesGroup is a group of rules that share the same target spans.
 // For examples, all rules for java spans, all rules for deployment foo in namespace default, etc.
 // Filters, if set, are ANDed together, e.g. for the templatization rules to be applied, all set filters must be true.
 // If no filters are set, the rules will be applied to all spans.
 type UrlTemplatizationRulesGroup struct {
-	FilterProgrammingLanguage *common.ProgrammingLanguage `json:"filterProgrammingLanguage,omitempty"`
-	FilterK8sNamespace        string                      `json:"filterK8sNamespace,omitempty"`
-	FilterK8sWorkloadKind     *k8sconsts.WorkloadKind     `json:"filterK8sWorkloadKind,omitempty"`
-	FilterK8sWorkloadName     string                      `json:"filterK8sWorkloadName,omitempty"`
+	// FilterK8sNamespace scopes the group to a specific namespace. Optional: if empty, matches all namespaces.
+	FilterK8sNamespace string `json:"filterK8sNamespace,omitempty"`
+
+	// WorkloadFilters is a list of workload (kind, name) pairs this group targets.
+	// Each entry is ORed: the group matches if the workload matches any entry.
+	// Within an entry, set fields are ANDed (both kind and name must match if both are set).
+	// If the list is empty, the group matches all workloads (subject to FilterK8sNamespace).
+	WorkloadFilters []WorkloadFilter `json:"workloadFilters,omitempty"`
 
 	// the rules that will be applied to the spans matching the above filters.
 	TemplatizationRules []URLTemplatizationRule `json:"templatizationRules,omitempty"`
@@ -66,7 +78,8 @@ func (URLTemplatizationConfig) OrderHint() int {
 }
 
 func (URLTemplatizationConfig) CollectorRoles() []k8sconsts.CollectorRole {
+	// Node collector only; rules are derived from InstrumentationConfig via the workload config extension.
 	return []k8sconsts.CollectorRole{
-		k8sconsts.CollectorsRoleClusterGateway,
+		k8sconsts.CollectorsRoleNodeCollector,
 	}
 }

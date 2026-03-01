@@ -15,7 +15,11 @@ import (
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	odigosv1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	v1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
+	// check if we can get rid of this import
+	actionsapi "github.com/odigos-io/odigos/api/odigos/v1alpha1/actions"
 	"github.com/odigos-io/odigos/common"
+	// check if we can get rid of this import
+	"github.com/odigos-io/odigos/common/consts"
 	"github.com/odigos-io/odigos/k8sutils/pkg/utils"
 )
 
@@ -27,6 +31,95 @@ type ActionConfig interface {
 	ProcessorType() string
 	OrderHint() int
 	CollectorRoles() []k8sconsts.CollectorRole
+}
+
+const (
+	urlTemplatizationProcessorName = "odigos-url-templatization"
+	urlTemplatizationFieldOwner    = "url-templatization"
+
+	// urlTemplatizationNamespaceSyncKey is a synthetic reconcile key used when the
+	// url-templatization Processor CR exists but no URLTemplatization Actions are found.
+	// Enqueuing this ensures the reconciler's not-found path runs
+	// syncUrlTemplatizationProcessorForNamespace to delete the leftover Processor CR.
+	urlTemplatizationNamespaceSyncKey = "odigos-url-templatization-ns-sync"
+)
+
+// listActionsWithUrlTemplatization returns Actions in the namespace that have spec.urlTemplatization set and are not disabled.
+func listActionsWithUrlTemplatization(ctx context.Context, k8sclient client.Client, namespace string) ([]odigosv1.Action, error) {
+	var list odigosv1.ActionList
+	if err := k8sclient.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+		return nil, err
+	}
+	var out []odigosv1.Action
+	for i := range list.Items {
+		a := &list.Items[i]
+		if a.Spec.Disabled {
+			continue
+		}
+		if a.Spec.URLTemplatization != nil {
+			out = append(out, list.Items[i])
+		}
+	}
+	return out, nil
+}
+
+// buildUrlTemplatizationProcessor builds the single shared Processor CR for URL templatization in the namespace.
+// Rules are derived from InstrumentationConfig via the workload config extension in the node collector; no rules in the CR.
+// No OwnerReferences are set: the CR lifecycle is managed entirely by syncUrlTemplatizationProcessorForNamespace.
+// Setting multiple Action owners would cause Kubernetes GC to delete the CR when any single owner is deleted,
+// even if other Actions still require it.
+func buildUrlTemplatizationProcessor(namespace string) (*odigosv1.Processor, error) {
+	cfg := actionsapi.URLTemplatizationConfig{}
+	processorConfig := map[string]interface{}{
+		"workload_config_extension": consts.OdigosWorkloadConfigExtensionName,
+	}
+	configJson, err := json.Marshal(processorConfig)
+	if err != nil {
+		return nil, err
+	}
+	collectorRoles := []odigosv1.CollectorsGroupRole{}
+	for _, role := range cfg.CollectorRoles() {
+		collectorRoles = append(collectorRoles, odigosv1.CollectorsGroupRole(role))
+	}
+	return &odigosv1.Processor{
+		TypeMeta: metav1.TypeMeta{APIVersion: "odigos.io/v1alpha1", Kind: "Processor"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      urlTemplatizationProcessorName,
+			Namespace: namespace,
+		},
+		Spec: odigosv1.ProcessorSpec{
+			Type:            cfg.ProcessorType(),
+			ProcessorName:   "URL Templatization",
+			Disabled:        false,
+			Notes:           "",
+			Signals:         []common.ObservabilitySignal{common.TracesObservabilitySignal},
+			CollectorRoles:  collectorRoles,
+			OrderHint:       cfg.OrderHint(),
+			ProcessorConfig: runtime.RawExtension{Raw: configJson},
+		},
+	}, nil
+}
+
+// syncUrlTemplatizationProcessorForNamespace ensures the URL templatization Processor CR exists when any Action in the namespace has urlTemplatization, and is deleted otherwise.
+func syncUrlTemplatizationProcessorForNamespace(ctx context.Context, r *ActionReconciler, namespace string) error {
+	actionsWith, err := listActionsWithUrlTemplatization(ctx, r.Client, namespace)
+	if err != nil {
+		return err
+	}
+	if len(actionsWith) == 0 {
+		proc := &odigosv1.Processor{}
+		proc.Namespace = namespace
+		proc.Name = urlTemplatizationProcessorName
+		if err := r.Client.Delete(ctx, proc); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		return nil
+	}
+	processor, err := buildUrlTemplatizationProcessor(namespace)
+	if err != nil {
+		return err
+	}
+	return r.Patch(ctx, processor, client.Apply, client.FieldOwner(urlTemplatizationFieldOwner), client.ForceOwnership)
 }
 
 // giving an action, return it's specific processor details
@@ -280,16 +373,24 @@ func (r *ActionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	action := &odigosv1.Action{}
 	err := r.Get(ctx, req.NamespacedName, action)
 	if err != nil {
+		// Two cases reach here:
+		// 1. A real Action was deleted — sync to remove the shared Processor CR if no others remain.
+		// 2. Processor watcher found no live Actions (urlTemplatizationNamespaceSyncKey) —
+		//    the Processor outlived all its Actions; sync deletes it.
+		if syncErr := syncUrlTemplatizationProcessorForNamespace(ctx, r, req.Namespace); syncErr != nil {
+			logger.Error(syncErr, "Failed to sync URL templatization processor for namespace after action delete")
+		}
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// If the action is a URL templatization action, we should not need to transform it to a processor CR.
+	// URL templatization: one shared Processor CR per namespace; rules come from extension in node collector.
 	if action.Spec.URLTemplatization != nil {
-		err = r.reportProcessorNotRequired(ctx, action)
-		if err != nil {
-			return ctrl.Result{}, client.IgnoreNotFound(err)
+		if err := syncUrlTemplatizationProcessorForNamespace(ctx, r, action.Namespace); err != nil {
+			logger.Error(err, "Failed to sync URL templatization processor")
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, nil
+		err = r.reportReconciledToProcessor(ctx, action)
+		return utils.K8SUpdateErrorHandler(err)
 	}
 
 	processor, err := convertActionToProcessor(ctx, r.Client, action)
