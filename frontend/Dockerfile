@@ -1,7 +1,8 @@
 FROM --platform=$BUILDPLATFORM node:20.9.0 AS deps
 WORKDIR /app
 COPY frontend/webapp/package.json frontend/webapp/yarn.lock ./
-RUN yarn install --frozen-lockfile
+COPY frontend/webapp/odigos-ui-kit-local.tgz ./
+RUN yarn install --frozen-lockfile --ignore-engines
 
 FROM --platform=$BUILDPLATFORM node:20.9.0 AS builder
 WORKDIR /webapp

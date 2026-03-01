@@ -60,6 +60,18 @@ export const GET_ACTIONS = gql`
               }
             }
           }
+          urlTemplatizationRulesGroups {
+            filterK8sNamespace
+            workloadFilters {
+              kind
+              name
+            }
+            notes
+            templatizationRules {
+              template
+              notes
+            }
+          }
         }
         conditions {
           status

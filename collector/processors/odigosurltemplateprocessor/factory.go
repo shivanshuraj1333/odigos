@@ -49,6 +49,10 @@ func (w *extensionStartWrapper) Start(ctx context.Context, host component.Host) 
 		w.inner.warnExtensionWrongType(w.extID)
 		return nil
 	}
+	// Block until the InstrumentationConfig cache is populated. The OTel Collector does not
+	// open the receiver port until all Start() calls complete, so waiting here ensures the
+	// first batch of spans sees a fully-populated cache (no warmup miss window).
+	wc.WaitForCacheSync(ctx)
 	w.inner.workloadRulesProvider = wc
 	return nil
 }

@@ -468,29 +468,35 @@ func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw
 }
 
 // templatizationRulesGroupMatchesContainer checks if a rules group matches the workload based on all set filters.
-// Returns true if all explicitly-set filters match (AND logic), or if no filters are set (global rule).
+// Namespace is ANDed with workload filters. WorkloadFilters are ORed: any matching entry is sufficient.
+// If WorkloadFilters is empty, all workloads in the namespace match.
 func templatizationRulesGroupMatchesContainer(rulesGroup actions.UrlTemplatizationRulesGroup, pw k8sconsts.PodWorkload) bool {
-	// Filter by k8s namespace
 	if rulesGroup.FilterK8sNamespace != "" {
 		if rulesGroup.FilterK8sNamespace != pw.Namespace {
 			return false
 		}
 	}
 
-	// Filter by k8s workload kind
-	if rulesGroup.FilterK8sWorkloadKind != nil {
-		if *rulesGroup.FilterK8sWorkloadKind != pw.Kind {
-			return false
+	if len(rulesGroup.WorkloadFilters) == 0 {
+		return true
+	}
+	for _, wf := range rulesGroup.WorkloadFilters {
+		if workloadFilterMatches(wf, pw) {
+			return true
 		}
 	}
+	return false
+}
 
-	// Filter by k8s workload name
-	if rulesGroup.FilterK8sWorkloadName != "" {
-		if rulesGroup.FilterK8sWorkloadName != pw.Name {
-			return false
-		}
+// workloadFilterMatches returns true if the workload matches the given filter.
+// Both Kind and Name are optional; unset fields act as wildcards.
+func workloadFilterMatches(wf actions.WorkloadFilter, pw k8sconsts.PodWorkload) bool {
+	if wf.Kind != nil && *wf.Kind != pw.Kind {
+		return false
 	}
-
+	if wf.Name != "" && wf.Name != pw.Name {
+		return false
+	}
 	return true
 }
 
