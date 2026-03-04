@@ -16,10 +16,10 @@ const (
 )
 
 const (
-	healthCheckExtensionName            = "health_check"
-	odigosEbpfReceiverName              = "odigosebpf"
-	pprofExtensionName                  = "pprof"
-	batchProcessorName                  = "batch"
+	healthCheckExtensionName     = "health_check"
+	odigosEbpfReceiverName       = "odigosebpf"
+	pprofExtensionName           = "pprof"
+	batchProcessorName           = "batch"
 	memoryLimiterProcessorName          = "memory_limiter"
 	balancerName                        = "round_robin"
 	nodeNameProcessorName               = "resource/node-name"

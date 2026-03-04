@@ -358,8 +358,8 @@ spec:
                             to be applied to the traces.
                           properties:
                             templatizationRules:
-                              description: Rule is the template rule to be applied
-                                to URLs
+                              description: TemplatizationRules are the template rules
+                                to apply to URLs
                               items:
                                 type: string
                               type: array
@@ -973,6 +973,12 @@ spec:
                   description: ContainerCollectorConfig is a configuration for a specific
                     container in a workload.
                   properties:
+                    agentAppliesUrlTemplatization:
+                      description: |-
+                        AgentAppliesUrlTemplatization is true when the Odigos agent in the container applies URL templatization
+                        (e.g. we inject ODIGOS_AGENT_URL_TEMPLATIZATION). When true, the gateway processor should skip this
+                        container's spans to avoid redundant work and to avoid relying on "skip if http.route is set".
+                      type: boolean
                     containerName:
                       description: The name of the container to which this configuration
                         applies.
@@ -1161,8 +1167,8 @@ spec:
                     urlTemplatization:
                       properties:
                         templatizationRules:
-                          description: Rule is the template rule to be applied to
-                            URLs
+                          description: TemplatizationRules are the template rules
+                            to apply to URLs
                           items:
                             type: string
                           type: array

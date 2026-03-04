@@ -10,6 +10,9 @@ image:
   tag: ''
 imagePullSecrets: []
 
+# Set to true to enable debug logging for all Odigos components (autoscaler, instrumentor, scheduler, odiglet, gateway collector).
+debugLogging: true
+
 # @schema
 # description: |-
 #   By default, images are pulled from odigos registry at `registry.odigos.io`

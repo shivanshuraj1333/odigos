@@ -242,6 +242,10 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 										},
 									},
 								},
+								{
+									Name:  "OTEL_LOG_LEVEL",
+									Value: "debug",
+								},
 							}, extraEnvVars...),
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: boolPtr(false),

@@ -43,8 +43,13 @@ type MetricsConfig struct {
 	Readers []GenericMap `json:"readers,omitempty"`
 }
 
+type LogsConfig struct {
+	Level string `json:"level,omitempty"`
+}
+
 type Telemetry struct {
 	Metrics  MetricsConfig      `json:"metrics,omitempty"`
+	Logs     LogsConfig         `json:"logs,omitempty"`
 	Resource map[string]*string `json:"resource,omitempty"`
 }
 
@@ -169,11 +174,17 @@ func mergeTelemetry(telemetry1 Telemetry, telemetry2 Telemetry) (Telemetry, erro
 		return Telemetry{}, err
 	}
 
+	logsLevel := telemetry1.Logs.Level
+	if logsLevel == "" {
+		logsLevel = telemetry2.Logs.Level
+	}
+
 	mergedTelemetry := Telemetry{
 		Metrics: MetricsConfig{
 			Level:   level,
 			Readers: mergeTelemetryReaders(telemetry1.Metrics.Readers, telemetry2.Metrics.Readers),
 		},
+		Logs:     LogsConfig{Level: logsLevel},
 		Resource: mergeTelemetryResource(telemetry1.Resource, telemetry2.Resource),
 	}
 	return mergedTelemetry, nil

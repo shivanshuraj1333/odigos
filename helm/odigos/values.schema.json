@@ -255,6 +255,13 @@
       "required": [],
       "title": "clusterName"
     },
+    "debugLogging": {
+      "default": false,
+      "description": "Set to true to enable debug logging for all Odigos components (autoscaler, instrumentor, scheduler, odiglet, gateway collector).",
+      "required": [],
+      "title": "debugLogging",
+      "type": "boolean"
+    },
     "collectorGateway": {
       "additionalProperties": false,
       "description": "HYBRID CONFIGURATION APPROACH:\nBy default, all values below are automatically set based on the ResourceSizePreset above.\nUncomment and modify any value to override the automatic sizing for that specific parameter.\n\nIMPORTANT CONSTRAINTS:\n1. minReplicas must be less or equal to maxReplicas\n2. If you set limitMemoryMiB without requestMemoryMiB, request will equal limit\n3. If you set requestMemoryMiB without limitMemoryMiB, limit will equal request\n4. Same logic applies to CPU settings",

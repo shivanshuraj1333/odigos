@@ -703,7 +703,60 @@ spec:
                             - template
                             type: object
                           type: array
+                        workloadFilters:
+                          description: |-
+                            WorkloadFilters is a list of workload (kind, name) pairs this group targets.
+                            Each entry is ORed: the group matches if the workload matches any entry.
+                            Within an entry, set fields are ANDed (both kind and name must match if both are set).
+                            If the list is empty, the group matches all workloads (subject to FilterK8sNamespace).
+                          items:
+                            description: |-
+                              define conditions to match specific sources (containers) managed by odigos.
+                              a source container matches, if ALL non empty fields match (AND semantics)
+
+                              common patterns:
+                                - Specific kubernetes workload by name (WorkloadNamespace + WorkloadKind + WorkloadName):
+                                  all containers (usually there is only one with agent injection)
+                                - Specific container in a kubernetes workload (WorkloadNamespace + WorkloadKind + WorkloadName + ContainerName):
+                                  only this container
+                                - All services in a kubernetes namespace (WorkloadNamespace):
+                                  all containers in all sources in the namespace
+                                - All services implemented in a specific programming language (WorkloadLanguage):
+                                  all container which are running odigos agent for this language
+                            properties:
+                              containerName:
+                                type: string
+                              workloadKind:
+                                description: |-
+                                  1. the pascal case representation of the workload kind
+                                  it is used in k8s api objects as the `Kind` field.
+                                type: string
+                              workloadName:
+                                type: string
+                              workloadLanguage:
+                                enum:
+                                - java
+                                - python
+                                - go
+                                - dotnet
+                                - javascript
+                                - php
+                                - ruby
+                                - rust
+                                - cplusplus
+                                - mysql
+                                - nginx
+                                - redis
+                                - postgres
+                                - unknown
+                                - ignored
+                                type: string
+                              workloadNamespace:
+                                type: string
+                            type: object
+                          type: array
                       type: object
+                    minItems: 1
                     type: array
                 required:
                 - templatizationRulesGroups

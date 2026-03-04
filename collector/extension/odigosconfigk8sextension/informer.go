@@ -126,6 +126,9 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfig(obj interface{}) {
 		}
 		cacheKey := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, c.ContainerName)
 		o.cache.Set(cacheKey, &c)
+
+		cb := o.getUrlTemplatizationCallback()
+		cb.OnSet(cacheKey, &c)
 	}
 
 	o.logger.Debug("updated workload sampling cache", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
@@ -141,6 +144,9 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfigDelete(obj interface{}
 	}
 	key, ok := workloadKeyFromObject(u)
 	if ok {
+		keyPrefix := k8sSourceKey(key.Namespace, key.Kind, key.Name, "")
+		cb := o.getUrlTemplatizationCallback()
+		cb.OnDeleteKey(keyPrefix)
 		o.cache.DeleteWorkload(key)
 		o.logger.Debug("removed workload from sampling cache", zap.String("namespace", key.Namespace), zap.String("kind", key.Kind), zap.String("name", key.Name))
 	}
