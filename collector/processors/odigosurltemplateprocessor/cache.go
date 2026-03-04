@@ -1,6 +1,8 @@
 package odigosurltemplateprocessor
 
-import "sync"
+import (
+	"sync"
+)
 
 // processorURLTemplateParsedRulesCache caches parsed rules per workload key (namespace/kind/name/container).
 // Updated via extension callback on cache add/update/delete; hot path only does a read.
@@ -26,6 +28,8 @@ func (c *processorURLTemplateParsedRulesCache) set(key string, e parsedWorkloadE
 	c.data[key] = e
 }
 
+// delete removes the entry for key. If key ends with "/", treats it as a workload prefix
+// and removes all entries whose key has that prefix (so extension can notify once per workload delete).
 func (c *processorURLTemplateParsedRulesCache) delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
