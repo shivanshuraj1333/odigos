@@ -1,0 +1,23 @@
+apiVersion: odigos.io/v1alpha1
+kind: InstrumentationConfig
+metadata:
+  name: deployment-currency
+  namespace: default
+spec:
+  (workloadCollectorConfig[?containerName == 'currency']):
+    - containerName: currency
+      urlTemplatization:
+        templatizationRules:
+          - "/rate/{currency-pair}"
+---
+apiVersion: odigos.io/v1alpha1
+kind: InstrumentationConfig
+metadata:
+  name: deployment-geolocation
+  namespace: default
+spec:
+  (workloadCollectorConfig[?containerName == 'geolocation']):
+    - containerName: geolocation
+      urlTemplatization:
+        templatizationRules:
+          - "/location/{currency}"

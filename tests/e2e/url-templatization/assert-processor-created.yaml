@@ -1,0 +1,16 @@
+apiVersion: odigos.io/v1alpha1
+kind: Processor
+metadata:
+  name: odigos-url-templatization
+  namespace: default
+spec:
+  type: odigosurltemplate
+  processorName: URL Templatization
+  disabled: false
+  signals:
+    - TRACES
+  collectorRoles:
+    - CLUSTER_GATEWAY
+  orderHint: 1
+  processorConfig:
+    workload_config_extension: odigos_config_k8s

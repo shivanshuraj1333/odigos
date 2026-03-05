@@ -1,0 +1,9 @@
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-test
+  namespace: default
+status:
+  conditions:
+    - type: TransformedToProcessor
+      status: "True"

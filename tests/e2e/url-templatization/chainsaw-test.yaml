@@ -1,0 +1,188 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: url-templatization
+spec:
+  description: |
+    This e2e test verifies the URLTemplatization Action feature end-to-end.
+    It validates that:
+    - A URLTemplatization Action reconciles into a shared Processor CR on the CLUSTER_GATEWAY
+    - InstrumentationConfig resources are populated with per-container URL templatization rules
+    - PHP (currency) and Ruby (geolocation) server spans get a templatized http.route attribute
+    - Java (frontend) spans with a pre-existing SDK-set http.route are not overwritten
+    - Deleting the Action removes the shared Processor CR
+  skipDelete: true
+  steps:
+    - name: '[1 - Setup] Prepare destination'
+      try:
+        - apply:
+            file: ../../common/apply/simple-trace-db-deployment.yaml
+
+    - name: '[1 - Setup] Install Simple Demo Apps'
+      try:
+        - apply:
+            file: ../../common/apply/install-simple-demo.yaml
+
+    - name: '[1 - Setup] Install Odigos'
+      try:
+        - script:
+            timeout: 4m
+            content: |
+              if [ "$MODE" = "cross-cloud-tests" ]; then
+                ../../../cli/odigos install --ns odigos-test --set image.tag="$COMMIT_HASH" --set imagePrefix=public.ecr.aws/y2v0v6s7
+              else
+                ../../../cli/odigos install --ns odigos-test --set image.tag=e2e-test
+              fi
+              kubectl label namespace odigos-test odigos.io/system-object="true"
+
+              ../../common/verify_odigos_installation.sh odigos-test
+        - assert:
+            timeout: 3m
+            file: ../../common/assert/odigos-installed.yaml
+
+    - name: '[1 - Setup] Verify Node Odiglet label has been added'
+      try:
+        - assert:
+            file: ../../common/assert/node-odiglet-label.yaml
+
+    - name: '[1 - Setup] Assert Trace DB is up'
+      try:
+        - assert:
+            timeout: 1m
+            file: ../../common/assert/simple-trace-db-running.yaml
+
+    - name: '[1 - Setup] Assert Simple Demo Apps Installed'
+      try:
+        - assert:
+            timeout: 3m
+            file: ../../common/assert/simple-demo-installed.yaml
+
+    - name: '[1 - Setup] Add Destination'
+      try:
+        - apply:
+            file: ../../common/apply/add-simple-trace-db-destination.yaml
+
+    - name: '[1 - Setup] Instrument Deployments using Sources with otelServiceName field set'
+      try:
+        - apply:
+            file: sources.yaml
+
+    - name: '[1 - Setup] Assert Runtime Detected'
+      try:
+        - assert:
+            timeout: 2m
+            file: ../../common/assert/simple-demo-runtime-detected.yaml
+
+    - name: '[1 - Setup] Odigos pipeline ready'
+      try:
+        - assert:
+            timeout: 1m
+            file: ../../common/assert/pipeline-ready.yaml
+
+    - name: '[1 - Setup] Simple-demo instrumented after destination added'
+      try:
+        - assert:
+            file: ../../common/assert/simple-demo-instrumented.yaml
+        - assert:
+            timeout: 4m
+            file: assert-workloads-rolled-out.yaml
+        - script:
+            timeout: 70s
+            content: ../../common/wait_for_rollout.sh
+
+    - name: '[2 - Baseline Traffic] Generate Traffic'
+      try:
+        - apply:
+            file: ../../common/apply/generate-traffic-job.yaml
+        - script:
+            timeout: 1m
+            content: |
+              kubectl wait --for=condition=complete job/buybot-job --timeout=60s
+        - delete:
+            file: ../../common/apply/generate-traffic-job.yaml
+
+    - name: '[2 - Baseline Traffic] Wait For Traces'
+      try:
+        - script:
+            timeout: 1m
+            content: |
+              while true; do
+                ../../common/simple_trace_db_query_runner.sh ../../common/queries/wait-for-trace-reported.yaml
+                if [ $? -eq 0 ]; then
+                  break
+                fi
+                sleep 1
+              done
+      catch:
+        - podLogs:
+            name: odiglet
+            namespace: odigos-test
+
+    - name: '[2 - Baseline Traffic] Assert no templatized routes exist before Action is applied'
+      try:
+        - script:
+            content: |
+              ../../common/simple_trace_db_query_runner.sh queries/before-templatization.yaml
+
+    - name: '[3 - Create Action] Apply URLTemplatization Action'
+      try:
+        - apply:
+            file: 01-action.yaml
+
+    - name: '[3 - Create Action] Assert Action reconciled to Processor'
+      try:
+        - assert:
+            timeout: 1m
+            file: assert-action-reconciled.yaml
+
+    - name: '[3 - Create Action] Assert Processor CR created on CLUSTER_GATEWAY'
+      try:
+        - assert:
+            timeout: 1m
+            file: assert-processor-created.yaml
+
+    - name: '[3 - Create Action] Assert InstrumentationConfig has URL templatization rules populated'
+      try:
+        - assert:
+            timeout: 2m
+            file: assert-instrumentation-config.yaml
+
+    - name: '[4 - After-Action Traffic] Generate Traffic'
+      try:
+        - apply:
+            file: ../../common/apply/generate-traffic-job.yaml
+        - script:
+            timeout: 1m
+            content: |
+              kubectl wait --for=condition=complete job/buybot-job --timeout=60s
+        - delete:
+            file: ../../common/apply/generate-traffic-job.yaml
+
+    - name: '[4 - After-Action Traffic] Assert templatized http.route on PHP and Ruby spans'
+      try:
+        - script:
+            timeout: 3m
+            content: |
+              while true; do
+                ../../common/simple_trace_db_query_runner.sh queries/after-templatization.yaml
+                if [ $? -eq 0 ]; then
+                  break
+                fi
+                sleep 5
+              done
+      catch:
+        - podLogs:
+            name: odiglet
+            namespace: odigos-test
+
+    - name: '[5 - Cleanup] Delete URLTemplatization Action'
+      try:
+        - delete:
+            file: 01-action.yaml
+
+    - name: '[5 - Cleanup] Assert shared Processor CR is garbage-collected after Action deletion'
+      try:
+        - script:
+            timeout: 1m
+            content: |
+              kubectl wait --for=delete processor/odigos-url-templatization -n default --timeout=60s

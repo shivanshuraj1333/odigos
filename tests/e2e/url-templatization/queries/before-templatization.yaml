@@ -1,0 +1,11 @@
+apiVersion: e2e.tests.odigos.io/v1
+kind: TraceTest
+description: Before Action, no span should have a templatized http.route set by the processor
+query: |
+  length([?(
+    span.serviceName == 'currency-reported' &&
+    span.kind == 'server' &&
+    span.spanAttributes."http.route" == '/rate/{currency-pair}'
+  )]) > `0`
+expected:
+  count: 0

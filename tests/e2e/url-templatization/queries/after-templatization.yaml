@@ -1,0 +1,27 @@
+apiVersion: e2e.tests.odigos.io/v1
+kind: TraceTest
+description: |
+  After Action:
+  - currency (PHP) server spans have templatized http.route set by the processor
+  - geolocation (Ruby) server spans have templatized http.route set by the processor
+  - frontend (Java) server spans with pre-existing http.route from SDK are unchanged
+query: |
+  length([?(
+    span.serviceName == 'currency-reported' &&
+    span.kind == 'server' &&
+    span.spanAttributes."http.route" == '/rate/{currency-pair}'
+  )]) > `0`
+  &&
+  length([?(
+    span.serviceName == 'geolocation-reported' &&
+    span.kind == 'server' &&
+    span.spanAttributes."http.route" == '/location/{currency}'
+  )]) > `0`
+  &&
+  length([?(
+    span.serviceName == 'frontend-reported' &&
+    span.kind == 'server' &&
+    span.spanAttributes."http.route" == '/buy'
+  )]) > `0`
+expected:
+  minimum: 1
