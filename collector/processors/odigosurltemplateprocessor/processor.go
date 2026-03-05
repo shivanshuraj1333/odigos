@@ -98,7 +98,6 @@ func (p *urlTemplateProcessor) OnSet(key string, cfg *commonapi.ContainerCollect
 // OnDeleteKey implements the extension's UrlTemplatizationCacheCallback; called when the extension cache removes an entry.
 func (p *urlTemplateProcessor) OnDeleteKey(key string) {
 	p.parsedRulesCache.delete(key)
-	p.logger.Info("url templatization cache OnDeleteKey", zap.String("key", key))
 }
 
 // parseRuleStrings parses a slice of rule strings into a map of segment-count → rules.

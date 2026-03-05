@@ -1,6 +1,7 @@
 package odigosurltemplateprocessor
 
 import (
+	"strings"
 	"sync"
 )
 
@@ -33,5 +34,23 @@ func (c *processorURLTemplateParsedRulesCache) set(key string, e parsedWorkloadE
 func (c *processorURLTemplateParsedRulesCache) delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if strings.HasSuffix(key, "/") {
+		for k := range c.data {
+			if strings.HasPrefix(k, key) {
+				delete(c.data, k)
+			}
+		}
+		return
+	}
 	delete(c.data, key)
+}
+
+func (c *processorURLTemplateParsedRulesCache) keys() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	keys := make([]string, 0, len(c.data))
+	for k := range c.data {
+		keys = append(keys, k)
+	}
+	return keys
 }

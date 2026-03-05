@@ -108,17 +108,25 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfig(obj interface{}) {
 		return
 	}
 
+	// On add/update: clear existing entries for this workload first so removed containers (or empty workloadCollectorConfig) are dropped from both caches.
+	// Do this before reading workloadCollectorConfig so that an IC with empty workloadCollectorConfig still clears stale keys.
+	keyPrefix := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, "")
+	if cb := o.getUrlTemplatizationCallback(); cb != nil {
+		cb.OnDeleteKey(keyPrefix)
+	}
+	o.cache.DeleteWorkload(workloadKey)
+
 	workloadCollectorConfigSlice, ok, _ := unstructured.NestedSlice(specMap, "workloadCollectorConfig")
 	if !ok || len(workloadCollectorConfigSlice) == 0 {
-		o.logger.Debug("failed to get workload collector config from instrumentation config", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
+		o.logger.Debug("no workload collector config in instrumentation config", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
 		return
 	}
 
 	for _, item := range workloadCollectorConfigSlice {
 		itemMap, ok := item.(map[string]interface{})
 		if !ok {
-			o.logger.Info("failed to get container collector config from workload collector config", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
-			return
+			o.logger.Info("skipping invalid workload collector config entry (not a map)", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
+			continue
 		}
 		var c commonapi.ContainerCollectorConfig
 		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(itemMap, &c); err != nil {
