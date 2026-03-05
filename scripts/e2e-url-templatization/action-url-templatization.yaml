@@ -1,0 +1,23 @@
+# Action CR for E2E URL templatization test (CORE-609).
+# Targets: Deployment/go-app and Deployment/caller in namespace odigos-action-demo.
+# Template: /items/{id}
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-e2e
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+          - workloadKind: Deployment
+            workloadName: caller
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"

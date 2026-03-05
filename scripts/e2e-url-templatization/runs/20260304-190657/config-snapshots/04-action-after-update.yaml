@@ -1,0 +1,29 @@
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"odigos.io/v1alpha1","kind":"Action","metadata":{"annotations":{},"name":"url-templatization-e2e","namespace":"odigos-system"},"spec":{"signals":["TRACES"],"urlTemplatization":{"templatizationRulesGroups":[{"filterK8sNamespace":"odigos-action-demo","templatizationRules":[{"template":"/items/{id}"}],"workloadFilters":[{"workloadKind":"Deployment","workloadName":"go-app","workloadNamespace":"odigos-action-demo"},{"workloadKind":"Deployment","workloadName":"callersvc","workloadNamespace":"odigos-action-demo"}]}]}}}
+  creationTimestamp: "2026-03-04T13:37:41Z"
+  generation: 2
+  labels:
+    odigos.io/url-templatization: "true"
+  name: url-templatization-e2e
+  namespace: odigos-system
+  resourceVersion: "1092791"
+  uid: 9a88f461-136a-484a-a67d-ed4a9aef0326
+spec:
+  signals:
+  - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+    - filterK8sNamespace: odigos-action-demo
+      templatizationRules:
+      - template: /items/{id}
+      workloadFilters:
+      - workloadKind: Deployment
+        workloadName: go-app
+        workloadNamespace: odigos-action-demo
+      - workloadKind: Deployment
+        workloadName: callersvc
+        workloadNamespace: odigos-action-demo

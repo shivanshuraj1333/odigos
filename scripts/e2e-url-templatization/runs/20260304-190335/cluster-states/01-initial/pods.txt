@@ -1,0 +1,4 @@
+NAME                      READY   STATUS    RESTARTS       AGE     IP             NODE                       NOMINATED NODE   READINESS GATES
+caller-58f684df8f-g4r2c   1/1     Running   12 (25m ago)   6h31m   10.244.1.114   local-dev-cluster-worker   <none>           <none>
+go-app-64d697bbc8-4jhkf   1/1     Running   1 (27m ago)    6h31m   10.244.1.115   local-dev-cluster-worker   <none>           <none>
+traffic-gen               1/1     Running   11 (29m ago)   3d10h   10.244.1.2     local-dev-cluster-worker   <none>           <none>

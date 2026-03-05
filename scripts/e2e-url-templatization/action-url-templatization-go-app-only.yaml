@@ -1,0 +1,19 @@
+# URL templatization Action: go-app only (step 1 of spans flow).
+# Template: /items/{id}
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-e2e
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"

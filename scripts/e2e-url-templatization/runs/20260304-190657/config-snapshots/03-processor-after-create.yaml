@@ -1,0 +1,19 @@
+apiVersion: odigos.io/v1alpha1
+kind: Processor
+metadata:
+  creationTimestamp: "2026-03-04T13:37:41Z"
+  generation: 1
+  name: odigos-url-templatization
+  namespace: odigos-system
+  resourceVersion: "1092664"
+  uid: 641cf258-a709-4a8d-b467-c91c8b779aa8
+spec:
+  collectorRoles:
+  - CLUSTER_GATEWAY
+  orderHint: 1
+  processorConfig:
+    workload_config_extension: odigos_config_k8s
+  processorName: URL Templatization
+  signals:
+  - TRACES
+  type: odigosurltemplate

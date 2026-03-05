@@ -1,0 +1,214 @@
+# Sample Action CRs for URL templatization (CORE-609).
+# These illustrate: same rule for multiple deployments, different rules per deployment,
+# namespace/language filters, and mixed patterns.
+# Use one of these as a template; copy the spec you need into a single Action CR.
+---
+# ---------------------------------------------------------------------------
+# 1. SAME RULE FOR MULTIPLE DEPLOYMENTS
+#    One group, one template (/items/{id}), applied to go-app and caller.
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-same-rule-multi-deploy
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+          - workloadKind: Deployment
+            workloadName: caller
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"
+---
+# ---------------------------------------------------------------------------
+# 2. DIFFERENT RULES FOR DIFFERENT DEPLOYMENTS
+#    Two groups: go-app gets /items/{id}, caller gets /api/users/{userId}.
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-different-rules-per-deploy
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: caller
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/api/users/{userId}"
+          - template: "/api/orders/{orderId}"
+---
+# ---------------------------------------------------------------------------
+# 3. SAME RULE FOR ALL WORKLOADS IN A NAMESPACE
+#    One group, no workloadFilters (empty list = all workloads in the namespace).
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-namespace-wide
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters: []   # all workloads in odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"
+---
+# ---------------------------------------------------------------------------
+# 4. DIFFERENT RULES BY PROGRAMMING LANGUAGE
+#    Java services get one set of rules, Go services get another.
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-by-language
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        filterProgrammingLanguage: java
+        workloadFilters: []
+        templatizationRules:
+          - template: "/api/v1/users/{id}"
+          - template: "/api/v1/orders/{orderId}"
+      - filterK8sNamespace: odigos-action-demo
+        filterProgrammingLanguage: go
+        workloadFilters: []
+        templatizationRules:
+          - template: "/items/{id}"
+---
+# ---------------------------------------------------------------------------
+# 5. MIXED: SAME RULE FOR SEVERAL DEPLOYMENTS + EXTRA RULES FOR ONE
+#    go-app and caller share /items/{id}; caller additionally gets /api/users/{id}.
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-mixed-shared-and-specific
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+          - workloadKind: Deployment
+            workloadName: caller
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: caller
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/api/users/{userId}"
+---
+# ---------------------------------------------------------------------------
+# 6. MULTIPLE RULES PER DEPLOYMENT (SAME GROUP)
+#    One deployment, multiple URL patterns to templatize.
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-multi-rules-one-deploy
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"
+          - template: "/users/{userId}/posts/{postId}"
+          - template: "/api/v2/orders/{orderId}"
+---
+# ---------------------------------------------------------------------------
+# 7. TARGET SPECIFIC CONTAINER IN A DEPLOYMENT
+#    Only the "server" container in deployment "api-gateway" gets the rule.
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-specific-container
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: api-gateway
+            workloadNamespace: odigos-action-demo
+            containerName: server
+        templatizationRules:
+          - template: "/gateway/proxy/{path}"
+---
+# ---------------------------------------------------------------------------
+# 8. RULES WITH OPTIONAL NOTES AND EXAMPLES (for maintenance)
+# ---------------------------------------------------------------------------
+apiVersion: odigos.io/v1alpha1
+kind: Action
+metadata:
+  name: url-templatization-with-notes
+  namespace: odigos-system
+spec:
+  signals:
+    - TRACES
+  urlTemplatization:
+    templatizationRulesGroups:
+      - filterK8sNamespace: odigos-action-demo
+        notes: "Product catalog and user APIs"
+        workloadFilters:
+          - workloadKind: Deployment
+            workloadName: go-app
+            workloadNamespace: odigos-action-demo
+          - workloadKind: Deployment
+            workloadName: caller
+            workloadNamespace: odigos-action-demo
+        templatizationRules:
+          - template: "/items/{id}"
+            notes: "Catalog item detail"
+            examples:
+              - "/items/123"
+              - "/items/456"
+          - template: "/api/users/{userId}"
+            notes: "User profile endpoint"

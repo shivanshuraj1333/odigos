@@ -1,0 +1,13 @@
+=== Summary ===
+Error/warn line counts per file:
+  odiglet-odiglet-5mjcp.log: 8
+  odiglet-odiglet-shrcz.log: 0
+  odigos-autoscaler.log: 36
+  odigos-instrumentor.log: 2
+  odigos-scheduler.log: 0
+  odigos-ui.log: 0
+
+Run directory: /Users/shivanshu/work/issues/CORE-609/odigos/scripts/e2e-url-templatization/runs/20260304-190657
+Cluster states: /Users/shivanshu/work/issues/CORE-609/odigos/scripts/e2e-url-templatization/runs/20260304-190657/cluster-states/
+Config snapshots: /Users/shivanshu/work/issues/CORE-609/odigos/scripts/e2e-url-templatization/runs/20260304-190657/config-snapshots/
+Logs: /Users/shivanshu/work/issues/CORE-609/odigos/scripts/e2e-url-templatization/runs/20260304-190657/logs/

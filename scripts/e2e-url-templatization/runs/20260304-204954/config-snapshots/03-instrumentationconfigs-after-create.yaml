@@ -1,0 +1,159 @@
+apiVersion: v1
+items:
+- apiVersion: odigos.io/v1alpha1
+  kind: InstrumentationConfig
+  metadata:
+    creationTimestamp: "2026-03-04T07:03:06Z"
+    generation: 19
+    labels:
+      odigos.io/data-stream-default: "true"
+    name: deployment-caller
+    namespace: odigos-action-demo
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Deployment
+      name: caller
+      uid: 9273b447-7f32-4f69-b788-f7b4e837dba1
+    resourceVersion: "1107891"
+    uid: c4860138-616f-48cc-8e68-d381824c5dd3
+  spec:
+    agentInjectionEnabled: true
+    agentsMetaHash: 051b2350bc7f4a6d
+    agentsMetaHashChangedTime: "2026-03-04T07:03:11Z"
+    containerOverridesHash: e0260c1b2edf2ef4c46c5da0a7f90e82
+    containers:
+    - agentEnabled: true
+      containerName: caller
+      envInjectionMethod: loader
+      metrics: {}
+      otelDistroName: java-community
+      traces:
+        urlTemplatization:
+          templatizationRules:
+          - /items/{id}
+    containersOverrides:
+    - containerName: caller
+    sdkConfigs:
+    - language: java
+      payloadCollection: {}
+    serviceName: caller
+    workloadCollectorConfig:
+    - containerName: caller
+      samplingCollectorConfig: {}
+      urlTemplatization:
+        templatizationRules:
+        - /items/{id}
+  status:
+    conditions:
+    - lastTransitionTime: "2026-03-04T07:03:06Z"
+      message: workload marked for automatic instrumentation by workload source CR
+        'source-tcfnb' in namespace 'odigos-action-demo'
+      reason: WorkloadSource
+      status: "True"
+      type: MarkedForInstrumentation
+    - lastTransitionTime: "2026-03-04T07:03:06Z"
+      message: runtime detection completed successfully
+      reason: DetectedSuccessfully
+      status: "True"
+      type: RuntimeDetection
+    - lastTransitionTime: "2026-03-04T07:03:11Z"
+      message: 'agent enabled in 1 containers: [caller]'
+      reason: EnabledSuccessfully
+      status: "True"
+      type: AgentEnabled
+    - lastTransitionTime: "2026-03-04T07:03:06Z"
+      message: workload rollout finished successfully
+      reason: RolloutFinished
+      status: "True"
+      type: WorkloadRollout
+    instrumentationTime: "2026-03-04T07:03:11Z"
+    podsManifestInjectionStatus:
+      hasInjectedUpToDatePods: true
+    runtimeDetailsByContainer:
+    - containerName: caller
+      language: java
+      runtimeUpdateState: Succeeded
+      runtimeVersion: 17.0.18+8
+      secureExecutionMode: false
+    workloadRolloutHash: 051b2350bc7f4a6d
+- apiVersion: odigos.io/v1alpha1
+  kind: InstrumentationConfig
+  metadata:
+    creationTimestamp: "2026-03-04T07:03:06Z"
+    generation: 19
+    labels:
+      odigos.io/data-stream-default: "true"
+    name: deployment-go-app
+    namespace: odigos-action-demo
+    ownerReferences:
+    - apiVersion: apps/v1
+      blockOwnerDeletion: true
+      controller: true
+      kind: Deployment
+      name: go-app
+      uid: 9866f667-b9d9-44b8-b487-5c9647dc2f7d
+    resourceVersion: "1107889"
+    uid: 3210e0dd-2eec-477f-b3a5-9c2abdf4d5fa
+  spec:
+    agentInjectionEnabled: true
+    agentsMetaHash: 444b83f8a8955f8a
+    agentsMetaHashChangedTime: "2026-03-04T07:03:11Z"
+    containerOverridesHash: 88e54b99c83a3cf5a2f85a75acb4265f
+    containers:
+    - agentEnabled: true
+      containerName: go-app
+      metrics: {}
+      otelDistroName: golang-community
+      traces:
+        urlTemplatization:
+          templatizationRules:
+          - /items/{id}
+    containersOverrides:
+    - containerName: go-app
+    sdkConfigs:
+    - language: go
+      payloadCollection: {}
+    serviceName: go-app
+    workloadCollectorConfig:
+    - containerName: go-app
+      samplingCollectorConfig: {}
+      urlTemplatization:
+        templatizationRules:
+        - /items/{id}
+  status:
+    conditions:
+    - lastTransitionTime: "2026-03-04T07:03:06Z"
+      message: workload marked for automatic instrumentation by workload source CR
+        'source-99t8h' in namespace 'odigos-action-demo'
+      reason: WorkloadSource
+      status: "True"
+      type: MarkedForInstrumentation
+    - lastTransitionTime: "2026-03-04T07:03:06Z"
+      message: runtime detection completed successfully
+      reason: DetectedSuccessfully
+      status: "True"
+      type: RuntimeDetection
+    - lastTransitionTime: "2026-03-04T07:03:11Z"
+      message: 'agent enabled in 1 containers: [go-app]'
+      reason: EnabledSuccessfully
+      status: "True"
+      type: AgentEnabled
+    - lastTransitionTime: "2026-03-04T07:03:06Z"
+      message: workload rollout finished successfully
+      reason: RolloutFinished
+      status: "True"
+      type: WorkloadRollout
+    instrumentationTime: "2026-03-04T07:03:11Z"
+    podsManifestInjectionStatus:
+      hasInjectedUpToDatePods: true
+    runtimeDetailsByContainer:
+    - containerName: go-app
+      language: go
+      runtimeVersion: 1.22.12
+      secureExecutionMode: false
+    workloadRolloutHash: 444b83f8a8955f8a
+kind: List
+metadata:
+  resourceVersion: ""
