@@ -74,3 +74,16 @@ func (c *cache) DeleteWorkload(workloadKey workloadKey) {
 		}
 	}
 }
+
+// keysWithPrefix returns all cache keys that have the given prefix. Used for URLDEBUG logging.
+func (c *cache) keysWithPrefix(prefix string) []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]string, 0)
+	for k := range c.data {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, k)
+		}
+	}
+	return out
+}

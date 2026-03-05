@@ -87,17 +87,30 @@ func newUrlTemplateProcessor(set processor.Settings, config *Config) (*urlTempla
 
 // OnSet implements the extension's UrlTemplatizationCacheCallback; called when the extension cache adds/updates an entry.
 func (p *urlTemplateProcessor) OnSet(key string, cfg *commonapi.ContainerCollectorConfig) {
+	hasRules := cfg.UrlTemplatization != nil && len(cfg.UrlTemplatization.TemplatizationRules) > 0
+	procKeysBefore := p.parsedRulesCache.keys()
 	var parsedRules map[int][]TemplatizationRule
-	if cfg.UrlTemplatization != nil && len(cfg.UrlTemplatization.TemplatizationRules) > 0 {
+	if hasRules {
 		parsedRules = p.parseRuleStrings(cfg.UrlTemplatization.TemplatizationRules)
 	}
 	p.parsedRulesCache.set(key, parsedWorkloadEntry{parsedRules: parsedRules})
-
+	procKeysAfter := p.parsedRulesCache.keys()
+	p.logger.Info("URLDEBUG processor OnSet",
+		zap.String("key", key),
+		zap.Bool("hasRules", hasRules),
+		zap.Strings("processorCacheKeysBefore", procKeysBefore),
+		zap.Strings("processorCacheKeysAfter", procKeysAfter))
 }
 
 // OnDeleteKey implements the extension's UrlTemplatizationCacheCallback; called when the extension cache removes an entry.
 func (p *urlTemplateProcessor) OnDeleteKey(key string) {
+	procKeysBefore := p.parsedRulesCache.keys()
 	p.parsedRulesCache.delete(key)
+	procKeysAfter := p.parsedRulesCache.keys()
+	p.logger.Info("URLDEBUG processor OnDeleteKey",
+		zap.String("key", key),
+		zap.Strings("processorCacheKeysBefore", procKeysBefore),
+		zap.Strings("processorCacheKeysAfter", procKeysAfter))
 }
 
 // parseRuleStrings parses a slice of rule strings into a map of segment-count → rules.

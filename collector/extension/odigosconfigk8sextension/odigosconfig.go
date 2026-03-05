@@ -2,6 +2,7 @@ package odigosconfigk8sextension
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"go.opentelemetry.io/collector/component"
@@ -14,18 +15,7 @@ import (
 	"github.com/odigos-io/odigos/common/collector"
 )
 
-// UrlTemplatizationCacheCallback is notified when the extension's workload cache changes
-// so the processor can keep its processorURLTemplateParsedRulesCache in sync (parse rules once per entry).
-type UrlTemplatizationCacheCallback interface {
-	OnSet(key string, cfg *commonapi.ContainerCollectorConfig)
-	OnDeleteKey(key string)
-}
-
-// UrlTemplatizationCacheNotifier is implemented by the extension so the processor can
-// register a callback for cache updates (add/update/delete) and avoid re-parsing rules per batch.
-type UrlTemplatizationCacheNotifier interface {
-	RegisterUrlTemplatizationCacheCallback(cb UrlTemplatizationCacheCallback)
-}
+// Use shared interfaces from common/collector so the processor's type assertion succeeds.
 
 // OdigosWorkloadConfig is an extension that runs a dynamic informer for InstrumentationConfigs
 // and maintains a cache of workload sampling config keyed by WorkloadKey (namespace, kind, name).
@@ -35,7 +25,7 @@ type OdigosWorkloadConfig struct {
 	cancel          context.CancelFunc
 	informerFactory dynamicinformer.DynamicSharedInformerFactory // set when in-cluster; nil otherwise
 
-	urlTemplatizationCB UrlTemplatizationCacheCallback
+	urlTemplatizationCB collector.UrlTemplatizationCacheCallback
 	urlTemplatizationMu sync.RWMutex
 }
 
@@ -53,8 +43,15 @@ func NewOdigosConfig(settings component.TelemetrySettings) (*OdigosWorkloadConfi
 // Start starts the dynamic informer for InstrumentationConfigs. The informer
 // fills the cache with workload sampling configs keyed by WorkloadKey.
 func (o *OdigosWorkloadConfig) Start(ctx context.Context, _ component.Host) error {
+	o.logger.Info("URLDEBUG extension: Start() begin")
 	ctx, o.cancel = context.WithCancel(ctx)
-	return o.startInformer(ctx)
+	err := o.startInformer(ctx)
+	if err != nil {
+		o.logger.Info("URLDEBUG extension: Start() startInformer failed", zap.Error(err))
+		return err
+	}
+	o.logger.Info("URLDEBUG extension: Start() done, informer running (callback not yet set until processor registers)")
+	return nil
 }
 
 // Shutdown stops the informer and clears the cache.
@@ -100,18 +97,21 @@ func (o *OdigosWorkloadConfig) GetWorkloadCacheKey(attrs pcommon.Map) (string, e
 // parsed rules cache in sync so rules are parsed once per workload entry, not per batch.
 // Existing cache entries are replayed to the callback (backfill) so the processor
 // starts with the same state as the extension when it registers after the informer has synced.
-func (o *OdigosWorkloadConfig) RegisterUrlTemplatizationCacheCallback(cb UrlTemplatizationCacheCallback) {
+func (o *OdigosWorkloadConfig) RegisterUrlTemplatizationCacheCallback(cb collector.UrlTemplatizationCacheCallback) {
 	o.urlTemplatizationMu.Lock()
 	o.urlTemplatizationCB = cb
 	o.urlTemplatizationMu.Unlock()
-	o.logger.Debug("RegisterUrlTemplatizationCacheCallback: callback registered")
+	o.logger.Info("URLDEBUG extension: RegisterUrlTemplatizationCacheCallback called, callback registered", zap.String("callbackType", fmt.Sprintf("%T", cb)))
 	// Backfill: processor may start after informer has already synced; replay current cache state.
+	backfillCount := 0
 	o.cache.Range(func(key string, cfg *commonapi.ContainerCollectorConfig) {
 		cb.OnSet(key, cfg)
+		backfillCount++
 	})
+	o.logger.Info("URLDEBUG extension: backfill replayed to callback", zap.Int("backfillCount", backfillCount))
 }
 
-func (o *OdigosWorkloadConfig) getUrlTemplatizationCallback() UrlTemplatizationCacheCallback {
+func (o *OdigosWorkloadConfig) getUrlTemplatizationCallback() collector.UrlTemplatizationCacheCallback {
 	o.urlTemplatizationMu.RLock()
 	defer o.urlTemplatizationMu.RUnlock()
 	return o.urlTemplatizationCB

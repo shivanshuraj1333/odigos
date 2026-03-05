@@ -2,6 +2,7 @@ package odigosurltemplateprocessor
 
 import (
 	"context"
+	"fmt"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
@@ -12,7 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/odigos-io/odigos/collector/processor/odigosurltemplateprocessor/internal/metadata"
-	commonapi "github.com/odigos-io/odigos/common/api"
+	"github.com/odigos-io/odigos/common/collector"
 )
 
 //go:generate mdatagen metadata.yaml
@@ -31,20 +32,7 @@ type workloadRulesProvider interface {
 	GetWorkloadUrlTemplatizationRules(attrs pcommon.Map) (rules []string)
 }
 
-// UrlTemplatizationCacheNotifier is implemented by the extension so the processor can register
-// a callback for cache updates and keep processorURLTemplateParsedRulesCache in sync.
-// Duplicated here (same contract as extension's UrlTemplatizationCacheNotifier) so the processor
-// does not import the extension package; the extension's *OdigosWorkloadConfig satisfies this interface.
-type UrlTemplatizationCacheNotifier interface {
-	RegisterUrlTemplatizationCacheCallback(cb UrlTemplatizationCacheCallback)
-}
-
-// UrlTemplatizationCacheCallback is implemented by the processor; extension invokes it on cache add/update/delete.
-// Same method set as extension's UrlTemplatizationCacheCallback so the processor can be passed as the callback.
-type UrlTemplatizationCacheCallback interface {
-	OnSet(key string, cfg *commonapi.ContainerCollectorConfig)
-	OnDeleteKey(key string)
-}
+// Use shared interfaces from common/collector so the type assertion ext.(UrlTemplatizationCacheNotifier) succeeds.
 
 // NewFactory creates a new ProcessorFactory with default configuration
 func NewFactory() processor.Factory {
@@ -100,50 +88,82 @@ type extensionStartWrapper struct {
 
 func (w *extensionStartWrapper) Start(ctx context.Context, host component.Host) error {
 	extTypeStr := w.cfg.WorkloadConfigExtensionID
-	w.logger.Debug("extensionStartWrapper Start: resolving workload config extension", zap.String("workload_config_extension", extTypeStr))
+	w.logger.Info("URLDEBUG processor: resolving workload config extension", zap.String("workload_config_extension", extTypeStr))
 	extType, err := component.NewType(extTypeStr)
 	if err != nil {
 		w.logger.Error("invalid workload config extension type", zap.String("type", extTypeStr), zap.Error(err))
 	} else {
-		for id, ext := range host.GetExtensions() {
-			if id.Type() == extType {
-				w.logger.Debug("extensionStartWrapper: found extension by type", zap.String("extension_id", id.String()))
-				if provider, ok := ext.(workloadRulesProvider); ok {
-					w.proc.provider = provider
-					w.logger.Debug("extensionStartWrapper: set as workloadRulesProvider")
-
-					// Register callback so extension notifies us on cache add/update/delete;
-					if notifier, ok := ext.(UrlTemplatizationCacheNotifier); ok {
-						notifier.RegisterUrlTemplatizationCacheCallback(w.proc)
-						w.logger.Debug("extensionStartWrapper: registered url templatization cache callback")
-					}
-					// Wait for the extension cache to sync before accepting spans.
-					// WaitForCacheSync is asserted via a secondary interface to keep
-					// this package decoupled from the extension package.
-					type cacheSyncer interface {
-						WaitForCacheSync(context.Context) bool
-					}
-					if syncer, ok := ext.(cacheSyncer); ok {
-						if !syncer.WaitForCacheSync(ctx) {
-							// C3: log warning but do not block startup
-							w.logger.Warn("workload config extension cache sync did not complete; some spans may be missed on startup")
-						} else {
-							w.logger.Debug("extensionStartWrapper: extension cache sync completed")
-						}
-					}
-				} else {
-					w.logger.Error("workload config extension does not implement workloadRulesProvider",
-						zap.String("type", extTypeStr))
+		extensions := host.GetExtensions()
+		w.logger.Info("URLDEBUG processor: host has extensions", zap.Int("count", len(extensions)))
+		directID := component.NewID(extType)
+		w.logger.Info("URLDEBUG processor: direct lookup ID", zap.String("id", directID.String()))
+		var foundExt component.Component
+		// Try direct lookup first (config key is often the type string as ID)
+		if ext, ok := extensions[directID]; ok {
+			w.logger.Info("URLDEBUG processor: direct lookup hit", zap.String("id", directID.String()))
+			foundExt = ext
+			w.tryRegisterWithExtension(ext, directID.String())
+		} else {
+			w.logger.Info("URLDEBUG processor: direct lookup miss, iterating extensions by type", zap.String("wantType", extTypeStr))
+			for id, ext := range extensions {
+				typeMatch := id.Type() == extType
+				w.logger.Info("URLDEBUG processor: extension entry",
+					zap.String("id", id.String()),
+					zap.String("idType", id.Type().String()),
+					zap.Bool("typeMatch", typeMatch),
+					zap.String("extGoType", fmt.Sprintf("%T", ext)))
+				if typeMatch {
+					w.logger.Info("URLDEBUG processor: found extension by type (iteration)", zap.String("extension_id", id.String()))
+					foundExt = ext
+					w.tryRegisterWithExtension(ext, id.String())
+					break
 				}
-				break
+			}
+		}
+		if foundExt != nil {
+			type cacheSyncer interface {
+				WaitForCacheSync(context.Context) bool
+			}
+			if syncer, ok := foundExt.(cacheSyncer); ok {
+				if !syncer.WaitForCacheSync(ctx) {
+					w.logger.Warn("workload config extension cache sync did not complete; some spans may be missed on startup")
+				}
 			}
 		}
 		if w.proc.provider == nil {
-			w.logger.Warn("workload config extension not found; processor will apply heuristics to all spans",
+			w.logger.Warn("URLDEBUG processor: workload config extension not found; processor will apply heuristics to all spans",
 				zap.String("type", extTypeStr))
 		}
 	}
-	return w.inner.Start(ctx, host)
+	w.logger.Info("URLDEBUG processor: Start() calling inner.Start(host)")
+	errInner := w.inner.Start(ctx, host)
+	if errInner != nil {
+		w.logger.Info("URLDEBUG processor: Start() inner.Start error", zap.Error(errInner))
+	}
+	return errInner
+}
+
+func (w *extensionStartWrapper) tryRegisterWithExtension(ext component.Component, extensionID string) {
+	w.logger.Info("URLDEBUG processor: tryRegisterWithExtension", zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
+	providerOk := false
+	if _, ok := ext.(workloadRulesProvider); ok {
+		providerOk = true
+		w.proc.provider = ext.(workloadRulesProvider)
+		w.logger.Info("URLDEBUG processor: set workloadRulesProvider", zap.String("extension_id", extensionID))
+	} else {
+		w.logger.Warn("URLDEBUG processor: extension does not implement workloadRulesProvider", zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
+	}
+	notifierOk := false
+		if notifier, ok := ext.(collector.UrlTemplatizationCacheNotifier); ok {
+		notifierOk = true
+		w.logger.Info("URLDEBUG processor: calling RegisterUrlTemplatizationCacheCallback", zap.String("extension_id", extensionID))
+		notifier.RegisterUrlTemplatizationCacheCallback(w.proc)
+		w.logger.Info("URLDEBUG processor: registered url templatization cache callback with extension", zap.String("extension_id", extensionID))
+	} else {
+			w.logger.Warn("URLDEBUG processor: extension does not implement collector.UrlTemplatizationCacheNotifier; processor cache will not receive updates",
+			zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
+	}
+	w.logger.Info("URLDEBUG processor: tryRegisterWithExtension done", zap.String("extension_id", extensionID), zap.Bool("providerSet", providerOk), zap.Bool("callbackRegistered", notifierOk))
 }
 
 func (w *extensionStartWrapper) Shutdown(ctx context.Context) error {
