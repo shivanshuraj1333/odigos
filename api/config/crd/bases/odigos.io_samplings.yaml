@@ -130,6 +130,8 @@ spec:
                               1. the pascal case representation of the workload kind
                               it is used in k8s api objects as the `Kind` field.
                             type: string
+                          workloadName:
+                            type: string
                           workloadLanguage:
                             enum:
                             - java
@@ -147,8 +149,6 @@ spec:
                             - postgres
                             - unknown
                             - ignored
-                            type: string
-                          workloadName:
                             type: string
                           workloadNamespace:
                             type: string
@@ -257,6 +257,8 @@ spec:
                             description: |-
                               1. the pascal case representation of the workload kind
                               it is used in k8s api objects as the `Kind` field.
+                            type: string
+                          workloadName:
                             type: string
                           workloadLanguage:
                             enum:
@@ -381,6 +383,8 @@ spec:
                               1. the pascal case representation of the workload kind
                               it is used in k8s api objects as the `Kind` field.
                             type: string
+                          workloadName:
+                            type: string
                           workloadLanguage:
                             enum:
                             - java
@@ -398,8 +402,6 @@ spec:
                             - postgres
                             - unknown
                             - ignored
-                            type: string
-                          workloadName:
                             type: string
                           workloadNamespace:
                             type: string

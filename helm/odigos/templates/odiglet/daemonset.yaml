@@ -199,7 +199,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: OTEL_LOG_LEVEL
-              value: info
+              value: {{ ternary "debug" "info" (.Values.debugLogging | default false) }}
           {{- if include "odigos.secretExists" . }}
             - name: OTEL_GO_OFFSETS_FILE
               value: /offsets/go_offset_results.json
