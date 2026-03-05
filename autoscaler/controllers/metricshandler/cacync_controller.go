@@ -44,28 +44,26 @@ func (r *CAUpdaterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	apiSvc := &apiregv1.APIService{}
 	if err := r.Client.Get(ctx, client.ObjectKey{
-		Name: "v1beta1.custom.metrics.k8s.io",
+		Name: k8sconsts.CustomMetricsAPIServiceName,
 	}, apiSvc); err != nil {
 		logger.Error(err, "Failed to get APIService")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	needsUpdate := false
-	if string(apiSvc.Spec.CABundle) != string(ca) {
-		apiSvc.Spec.CABundle = ca
-		needsUpdate = true
+	if !IsOwnedByOdigos(apiSvc) {
+		logger.Info("APIService is not managed by Odigos, skipping CA sync",
+			"apiService", apiSvc.Name,
+			"existingService", apiSvc.Spec.Service,
+		)
+		return ctrl.Result{}, nil
 	}
 
-	if apiSvc.Spec.InsecureSkipTLSVerify {
-		apiSvc.Spec.InsecureSkipTLSVerify = false
-		needsUpdate = true
-	}
-
-	if !needsUpdate {
+	if string(apiSvc.Spec.CABundle) == string(ca) {
 		logger.V(1).Info("CA bundle already up-to-date")
 		return ctrl.Result{}, nil
 	}
 
+	apiSvc.Spec.CABundle = ca
 	if err := r.Client.Update(ctx, apiSvc); err != nil {
 		logger.Error(err, "Failed to update APIService CABundle")
 		return ctrl.Result{}, err
