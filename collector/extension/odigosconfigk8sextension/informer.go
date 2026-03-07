@@ -109,8 +109,7 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfig(obj interface{}) {
 	}
 
 	keyPrefix := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, "")
-	workloadKeyStr := workloadKey.Namespace + "/" + workloadKey.Kind + "/" + workloadKey.Name
-	o.logger.Debug("instrumentation config add/update", zap.String("workload", workloadKeyStr), zap.String("key_prefix", keyPrefix))
+	o.logger.Debug("instrumentation config add/update", zap.String("workload", keyPrefix))
 
 	// On add/update: clear existing entries for this workload first so removed containers (or empty workloadCollectorConfig) are dropped from both caches.
 	// Do this before reading workloadCollectorConfig so that an IC with empty workloadCollectorConfig still clears stale keys.
@@ -167,8 +166,7 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfigDelete(obj interface{}
 		return
 	}
 	keyPrefix := k8sSourceKey(key.Namespace, key.Kind, key.Name, "")
-	workloadKeyStr := key.Namespace + "/" + key.Kind + "/" + key.Name
-	o.logger.Debug("instrumentation config delete", zap.String("workload", workloadKeyStr), zap.String("key_prefix", keyPrefix))
+	o.logger.Debug("instrumentation config delete", zap.String("workload", keyPrefix))
 
 	cb := o.getConfigCacheCallback()
 	if cb != nil {
