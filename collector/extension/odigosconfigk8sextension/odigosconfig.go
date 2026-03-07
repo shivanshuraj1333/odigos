@@ -2,6 +2,7 @@ package odigosconfigk8sextension
 
 import (
 	"context"
+	"sync"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -20,6 +21,9 @@ type OdigosWorkloadConfig struct {
 	logger          *zap.Logger
 	cancel          context.CancelFunc
 	informerFactory dynamicinformer.DynamicSharedInformerFactory // set when in-cluster; nil otherwise
+
+	configCacheCB collector.ConfigCacheCallback
+	configCacheMu sync.RWMutex
 }
 
 // OdigosConfigExtension is the interface that must be implemented by an extension that wants to provide Odigos configuration.
@@ -37,7 +41,11 @@ func NewOdigosConfig(settings component.TelemetrySettings) (*OdigosWorkloadConfi
 // fills the cache with workload sampling configs keyed by WorkloadKey.
 func (o *OdigosWorkloadConfig) Start(ctx context.Context, _ component.Host) error {
 	ctx, o.cancel = context.WithCancel(ctx)
-	return o.startInformer(ctx)
+	err := o.startInformer(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Shutdown stops the informer and clears the cache.
@@ -54,4 +62,38 @@ func (o *OdigosWorkloadConfig) GetFromResource(res pcommon.Resource) (*commonapi
 		return nil, false
 	}
 	return o.cache.Get(key)
+}
+
+// GetWorkloadCacheKey returns the cache key for the container identified by resource attributes.
+// The processor uses this to key its own parsed-rules cache without duplicating key logic.
+// Key format: "namespace/kind/name/containerName".
+func (o *OdigosWorkloadConfig) GetWorkloadCacheKey(attrs pcommon.Map) (string, error) {
+	return workloadKeyFromResourceAttributes(attrs)
+}
+
+// RegisterConfigCacheCallback registers a callback that is invoked when the
+// extension cache is updated (add/update/delete). The processor uses it to keep its
+// parsed rules cache in sync so rules are parsed once per workload entry, not per batch.
+// Existing cache entries are replayed to the callback (backfill) so the processor
+// starts with the same state as the extension when it registers after the informer has synced.
+func (o *OdigosWorkloadConfig) RegisterConfigCacheCallback(cb collector.ConfigCacheCallback) {
+	o.configCacheMu.Lock()
+	o.configCacheCB = cb
+	o.configCacheMu.Unlock()
+	o.logger.Debug("config cache callback registered")
+	// Backfill: processor may start after informer has already synced; replay current cache state.
+	backfillCount := 0
+	o.cache.Range(func(key string, cfg *commonapi.ContainerCollectorConfig) {
+		cb.OnSet(key, cfg)
+		backfillCount++
+	})
+	if backfillCount > 0 {
+		o.logger.Debug("config cache callback backfill replayed", zap.Int("entries", backfillCount))
+	}
+}
+
+func (o *OdigosWorkloadConfig) getConfigCacheCallback() collector.ConfigCacheCallback {
+	o.configCacheMu.RLock()
+	defer o.configCacheMu.RUnlock()
+	return o.configCacheCB
 }

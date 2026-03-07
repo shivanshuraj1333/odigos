@@ -480,17 +480,16 @@ input URLTemplatizationRuleInput {
   notes: String
 }
 
-input TemplatizationWorkloadFilterInput {
-  kind: K8sResourceKind
+input SourcesScopeInput {
   name: String
+  kind: String
+  namespace: String
+  containerName: String
+  language: String
 }
 
 input UrlTemplatizationRulesGroupInput {
-  filterK8sNamespace: String
-  filterK8sWorkloadKind: K8sResourceKind
-  filterK8sWorkloadName: String
-  filterProgrammingLanguage: String
-  workloadFilters: [TemplatizationWorkloadFilterInput!]
+  sourcesScope: [SourcesScopeInput!]
   templatizationRules: [URLTemplatizationRuleInput!]!
   notes: String
 }
@@ -597,17 +596,16 @@ type URLTemplatizationRule {
   notes: String
 }
 
-type TemplatizationWorkloadFilter {
-  kind: K8sResourceKind
+type SourcesScope {
   name: String
+  kind: String
+  namespace: String
+  containerName: String
+  language: String
 }
 
 type UrlTemplatizationRulesGroup {
-  filterK8sNamespace: String
-  filterK8sWorkloadKind: K8sResourceKind
-  filterK8sWorkloadName: String
-  filterProgrammingLanguage: String
-  workloadFilters: [TemplatizationWorkloadFilter!]
+  sourcesScope: [SourcesScope!]
   templatizationRules: [URLTemplatizationRule!]!
   notes: String
 }
