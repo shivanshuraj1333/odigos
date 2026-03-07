@@ -58,6 +58,19 @@ func (c *cache) Delete(key string) {
 	delete(c.data, key)
 }
 
+// KeysWithPrefix returns all keys that start with the given prefix.
+func (c *cache) KeysWithPrefix(prefix string) []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var keys []string
+	for k := range c.data {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
 // DeleteWorkload removes the entry for the given workload key.
 func (c *cache) DeleteWorkload(workloadKey workloadKey) {
 	c.mu.Lock()

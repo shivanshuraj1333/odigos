@@ -102,55 +102,57 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfig(obj interface{}) {
 		return
 	}
 
-	specMap, ok, _ := unstructured.NestedMap(u.Object, "spec")
-	if !ok || len(specMap) == 0 {
-		o.logger.Info("failed to get instrumentation config spec", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
-		return
-	}
-
 	keyPrefix := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, "")
 	o.logger.Debug("instrumentation config add/update", zap.String("workload", keyPrefix))
 
-	// On add/update: clear existing entries for this workload first so removed containers (or empty workloadCollectorConfig) are dropped from both caches.
-	// Do this before reading workloadCollectorConfig so that an IC with empty workloadCollectorConfig still clears stale keys.
 	cb := o.getConfigCacheCallback()
-	if cb != nil {
-		cb.OnDeleteWorkloadPrefix(keyPrefix)
-		o.logger.Debug("url templatization callback OnDeleteWorkloadPrefix called", zap.String("key_prefix", keyPrefix))
-	} else {
-		o.logger.Debug("url templatization callback not set, skipping OnDeleteWorkloadPrefix", zap.String("key_prefix", keyPrefix))
-	}
-	o.cache.DeleteWorkload(workloadKey)
 
-	workloadCollectorConfigSlice, ok, _ := unstructured.NestedSlice(specMap, "workloadCollectorConfig")
-	if !ok || len(workloadCollectorConfigSlice) == 0 {
-		o.logger.Debug("failed to get workload collector config from instrumentation config", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
-		return
-	}
+	// Snapshot old keys before any mutation so we can delete only the containers that were removed.
+	// This avoids a delete-then-insert window where the processor cache is momentarily empty.
+	oldKeys := o.cache.KeysWithPrefix(keyPrefix)
+	newKeys := make(map[string]bool)
 
-	for _, item := range workloadCollectorConfigSlice {
-		itemMap, ok := item.(map[string]interface{})
-		if !ok {
-			o.logger.Info("failed to get container collector config from workload collector config", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
-			return
-		}
-		var c commonapi.ContainerCollectorConfig
-		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(itemMap, &c); err != nil {
-			continue
-		}
-		if c.ContainerName == "" {
-			continue
-		}
-		cacheKey := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, c.ContainerName)
-		o.cache.Set(cacheKey, &c)
-		if cb != nil {
-			cb.OnSet(cacheKey, &c)
-			hasRules := c.UrlTemplatization != nil && len(c.UrlTemplatization.TemplatizationRules) > 0
-			o.logger.Debug("url templatization callback OnSet called", zap.String("cache_key", cacheKey), zap.Bool("has_rules", hasRules))
+	specMap, ok, _ := unstructured.NestedMap(u.Object, "spec")
+	if ok && len(specMap) > 0 {
+		workloadCollectorConfigSlice, ok, _ := unstructured.NestedSlice(specMap, "workloadCollectorConfig")
+		if ok && len(workloadCollectorConfigSlice) > 0 {
+			for _, item := range workloadCollectorConfigSlice {
+				itemMap, ok := item.(map[string]interface{})
+				if !ok {
+					o.logger.Info("failed to parse container collector config item", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
+					continue
+				}
+				var c commonapi.ContainerCollectorConfig
+				if err := runtime.DefaultUnstructuredConverter.FromUnstructured(itemMap, &c); err != nil {
+					continue
+				}
+				if c.ContainerName == "" {
+					continue
+				}
+				cacheKey := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, c.ContainerName)
+				newKeys[cacheKey] = true
+				o.cache.Set(cacheKey, &c)
+				if cb != nil {
+					cb.OnSet(cacheKey, &c)
+					o.logger.Debug("config cache callback OnSet called", zap.String("cache_key", cacheKey))
+				}
+			}
 		}
 	}
 
-	o.logger.Debug("updated workload sampling cache", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
+	// Delete containers that are no longer present in the updated config.
+	// Use per-key deletes (not a workload-prefix delete) to avoid an empty-cache window.
+	for _, oldKey := range oldKeys {
+		if !newKeys[oldKey] {
+			o.cache.Delete(oldKey)
+			if cb != nil {
+				cb.OnDeleteKey(oldKey)
+				o.logger.Debug("config cache callback OnDeleteKey called", zap.String("key", oldKey))
+			}
+		}
+	}
+
+	o.logger.Debug("updated workload config cache", zap.String("namespace", workloadKey.Namespace), zap.String("kind", workloadKey.Kind), zap.String("name", workloadKey.Name))
 }
 
 func (o *OdigosWorkloadConfig) handleInstrumentationConfigDelete(obj interface{}) {
@@ -171,9 +173,7 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfigDelete(obj interface{}
 	cb := o.getConfigCacheCallback()
 	if cb != nil {
 		cb.OnDeleteWorkloadPrefix(keyPrefix)
-		o.logger.Debug("url templatization callback OnDeleteWorkloadPrefix called", zap.String("key_prefix", keyPrefix))
-	} else {
-		o.logger.Debug("url templatization callback not set, skipping OnDeleteWorkloadPrefix", zap.String("key_prefix", keyPrefix))
+		o.logger.Debug("config cache callback OnDeleteWorkloadPrefix called", zap.String("key_prefix", keyPrefix))
 	}
 	o.cache.DeleteWorkload(key)
 }

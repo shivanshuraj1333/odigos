@@ -80,7 +80,7 @@ func (o *OdigosWorkloadConfig) RegisterConfigCacheCallback(cb collector.ConfigCa
 	o.configCacheMu.Lock()
 	o.configCacheCB = cb
 	o.configCacheMu.Unlock()
-	o.logger.Debug("url templatization callback registered")
+	o.logger.Debug("config cache callback registered")
 	// Backfill: processor may start after informer has already synced; replay current cache state.
 	backfillCount := 0
 	o.cache.Range(func(key string, cfg *commonapi.ContainerCollectorConfig) {
@@ -88,7 +88,7 @@ func (o *OdigosWorkloadConfig) RegisterConfigCacheCallback(cb collector.ConfigCa
 		backfillCount++
 	})
 	if backfillCount > 0 {
-		o.logger.Debug("url templatization callback backfill replayed", zap.Int("entries", backfillCount))
+		o.logger.Debug("config cache callback backfill replayed", zap.Int("entries", backfillCount))
 	}
 }
 
