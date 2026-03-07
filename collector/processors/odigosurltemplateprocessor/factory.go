@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/odigos-io/odigos/collector/processor/odigosurltemplateprocessor/internal/metadata"
+	commonapi "github.com/odigos-io/odigos/common/api"
 	"github.com/odigos-io/odigos/common/collector"
 )
 
@@ -21,15 +22,15 @@ import (
 var consumerCapabilities = consumer.Capabilities{MutatesData: true}
 
 // workloadRulesProvider is a local interface that the processor uses to obtain
-// per-workload URL templatization rules from the workload config extension.
-// It is satisfied by *odigosworkloadconfigextension.OdigosWorkloadConfig without
+// per-workload collector config from the workload config extension.
+// It is satisfied by *odigosconfigk8sextension.OdigosWorkloadConfig without
 // importing that package directly.
-// When agentApplies is true, the agent in the container already applies URL templatization;
-// the processor should skip this resource to avoid redundant work and to avoid relying on "skip if http.route is set".
-// GetWorkloadCacheKey returns the cache key for the container so the processor can look up processorURLTemplateParsedRulesCache.
+// GetFromResource returns the full ContainerCollectorConfig so the processor can
+// extract domain-specific fields (e.g. UrlTemplatization) itself.
+// GetWorkloadCacheKey returns a stable cache key for the processor's own parsed-rules cache.
 type workloadRulesProvider interface {
 	GetWorkloadCacheKey(attrs pcommon.Map) (string, error)
-	GetWorkloadUrlTemplatizationRules(attrs pcommon.Map) (rules []string)
+	GetFromResource(res pcommon.Resource) (*commonapi.ContainerCollectorConfig, bool)
 }
 
 // Use shared interfaces from common/collector so the type assertion ext.(ConfigCacheNotifier) succeeds.

@@ -64,24 +64,9 @@ func (o *OdigosWorkloadConfig) GetFromResource(res pcommon.Resource) (*commonapi
 	return o.cache.Get(key)
 }
 
-// GetWorkloadUrlTemplatizationRules returns the URL templatization rules for the container
-func (o *OdigosWorkloadConfig) GetWorkloadUrlTemplatizationRules(attrs pcommon.Map) (rules []string) {
-	key, err := workloadKeyFromResourceAttributes(attrs)
-	if err != nil {
-		o.logger.Debug("GetWorkloadUrlTemplatizationRules: workload key from attrs failed", zap.Error(err))
-		return nil
-	}
-	cfg, found := o.cache.Get(key)
-	if !found || cfg.UrlTemplatization == nil {
-		return nil
-	}
-	rules = cfg.UrlTemplatization.TemplatizationRules
-	return rules
-}
-
 // GetWorkloadCacheKey returns the cache key for the container identified by resource attributes.
-// The processor uses this to look up entries in its processorURLTemplateParsedRulesCache
-// without duplicating key logic. Key format: "namespace/kind/name/containerName".
+// The processor uses this to key its own parsed-rules cache without duplicating key logic.
+// Key format: "namespace/kind/name/containerName".
 func (o *OdigosWorkloadConfig) GetWorkloadCacheKey(attrs pcommon.Map) (string, error) {
 	return workloadKeyFromResourceAttributes(attrs)
 }

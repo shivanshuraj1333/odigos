@@ -133,11 +133,11 @@ func (p *urlTemplateProcessor) processTraces(ctx context.Context, td ptrace.Trac
 			}
 			entry, ok := p.parsedRulesCache.get(key)
 			if !ok {
-				// Cache miss: fetch from extension, parse once, store, then use.
-				rules := p.provider.GetWorkloadUrlTemplatizationRules(attrs)
+				// Cache miss: fetch full config from extension, extract rules, parse once, store.
+				cfg, found := p.provider.GetFromResource(resourceSpans.Resource())
 				var parsedRules map[int][]TemplatizationRule
-				if len(rules) > 0 {
-					parsedRules = p.parseRuleStrings(rules)
+				if found && cfg.UrlTemplatization != nil && len(cfg.UrlTemplatization.TemplatizationRules) > 0 {
+					parsedRules = p.parseRuleStrings(cfg.UrlTemplatization.TemplatizationRules)
 					entry = parsedWorkloadEntry{parsedRules: parsedRules}
 					p.parsedRulesCache.set(key, entry)
 				}
