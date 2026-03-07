@@ -123,11 +123,11 @@ spec:
                             - All services implemented in a specific programming language (WorkloadLanguage):
                               all container which are running odigos agent for this language
                         properties:
-                          containerName:
+                          ContainerName:
                             type: string
-                          workloadKind:
+                          Kind:
                             type: string
-                          workloadLanguage:
+                          Language:
                             enum:
                             - java
                             - python
@@ -145,9 +145,9 @@ spec:
                             - unknown
                             - ignored
                             type: string
-                          workloadName:
+                          Name:
                             type: string
-                          workloadNamespace:
+                          Namespace:
                             type: string
                         type: object
                       type: array
@@ -248,11 +248,11 @@ spec:
                             - All services implemented in a specific programming language (WorkloadLanguage):
                               all container which are running odigos agent for this language
                         properties:
-                          containerName:
+                          ContainerName:
                             type: string
-                          workloadKind:
+                          Kind:
                             type: string
-                          workloadLanguage:
+                          Language:
                             enum:
                             - java
                             - python
@@ -270,9 +270,9 @@ spec:
                             - unknown
                             - ignored
                             type: string
-                          workloadName:
+                          Name:
                             type: string
-                          workloadNamespace:
+                          Namespace:
                             type: string
                         type: object
                       type: array
@@ -368,11 +368,11 @@ spec:
                             - All services implemented in a specific programming language (WorkloadLanguage):
                               all container which are running odigos agent for this language
                         properties:
-                          containerName:
+                          ContainerName:
                             type: string
-                          workloadKind:
+                          Kind:
                             type: string
-                          workloadLanguage:
+                          Language:
                             enum:
                             - java
                             - python
@@ -390,9 +390,9 @@ spec:
                             - unknown
                             - ignored
                             type: string
-                          workloadName:
+                          Name:
                             type: string
-                          workloadNamespace:
+                          Namespace:
                             type: string
                         type: object
                       type: array

@@ -1276,6 +1276,22 @@ type SourceContainer struct {
 	OtelDistroName         *string `json:"otelDistroName,omitempty"`
 }
 
+type SourcesScope struct {
+	Name          *string `json:"name,omitempty"`
+	Kind          *string `json:"kind,omitempty"`
+	Namespace     *string `json:"namespace,omitempty"`
+	ContainerName *string `json:"containerName,omitempty"`
+	Language      *string `json:"language,omitempty"`
+}
+
+type SourcesScopeInput struct {
+	Name          *string `json:"name,omitempty"`
+	Kind          *string `json:"kind,omitempty"`
+	Namespace     *string `json:"namespace,omitempty"`
+	ContainerName *string `json:"containerName,omitempty"`
+	Language      *string `json:"language,omitempty"`
+}
+
 type SpanAttributeFilter struct {
 	ServiceName           string                     `json:"serviceName"`
 	AttributeKey          string                     `json:"attributeKey"`
@@ -1317,16 +1333,6 @@ type TailSamplingConfigInput struct {
 	TraceAggregationWaitDuration *string `json:"traceAggregationWaitDuration,omitempty"`
 }
 
-type TemplatizationWorkloadFilter struct {
-	Kind *K8sResourceKind `json:"kind,omitempty"`
-	Name *string          `json:"name,omitempty"`
-}
-
-type TemplatizationWorkloadFilterInput struct {
-	Kind *K8sResourceKind `json:"kind,omitempty"`
-	Name *string          `json:"name,omitempty"`
-}
-
 type TestConnectionResponse struct {
 	Succeeded       bool    `json:"succeeded"`
 	StatusCode      int     `json:"statusCode"`
@@ -1346,23 +1352,15 @@ type URLTemplatizationRuleInput struct {
 }
 
 type URLTemplatizationRulesGroup struct {
-	FilterK8sNamespace        *string                         `json:"filterK8sNamespace,omitempty"`
-	FilterK8sWorkloadKind     *K8sResourceKind                `json:"filterK8sWorkloadKind,omitempty"`
-	FilterK8sWorkloadName     *string                         `json:"filterK8sWorkloadName,omitempty"`
-	FilterProgrammingLanguage *string                         `json:"filterProgrammingLanguage,omitempty"`
-	WorkloadFilters           []*TemplatizationWorkloadFilter `json:"workloadFilters,omitempty"`
-	TemplatizationRules       []*URLTemplatizationRule        `json:"templatizationRules"`
-	Notes                     *string                         `json:"notes,omitempty"`
+	SourcesScope        []*SourcesScope          `json:"sourcesScope,omitempty"`
+	TemplatizationRules []*URLTemplatizationRule `json:"templatizationRules"`
+	Notes               *string                  `json:"notes,omitempty"`
 }
 
 type URLTemplatizationRulesGroupInput struct {
-	FilterK8sNamespace        *string                              `json:"filterK8sNamespace,omitempty"`
-	FilterK8sWorkloadKind     *K8sResourceKind                     `json:"filterK8sWorkloadKind,omitempty"`
-	FilterK8sWorkloadName     *string                              `json:"filterK8sWorkloadName,omitempty"`
-	FilterProgrammingLanguage *string                              `json:"filterProgrammingLanguage,omitempty"`
-	WorkloadFilters           []*TemplatizationWorkloadFilterInput `json:"workloadFilters,omitempty"`
-	TemplatizationRules       []*URLTemplatizationRuleInput        `json:"templatizationRules"`
-	Notes                     *string                              `json:"notes,omitempty"`
+	SourcesScope        []*SourcesScopeInput          `json:"sourcesScope,omitempty"`
+	TemplatizationRules []*URLTemplatizationRuleInput `json:"templatizationRules"`
+	Notes               *string                       `json:"notes,omitempty"`
 }
 
 type UserInstrumentationEnvsConfig struct {

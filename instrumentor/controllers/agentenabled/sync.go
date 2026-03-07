@@ -226,9 +226,8 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 		// from automatic runtime detection or overrides.
 		containerOverride := ic.GetOverridesForContainer(containerName)
 
-		// filterUrlTemplateRulesForContainer depends on both the workload (pw) and the container language
-		// (for FilterProgrammingLanguage support). Compute once per container and share between the two
-		// calculate functions below.
+		// filterUrlTemplateRulesForContainer depends on both the workload (pw) and the container language.
+		// Compute once per container and share between the two calculate functions below.
 		containerLanguage := common.UnknownProgrammingLanguage
 		if containerRuntimeDetails != nil {
 			containerLanguage = containerRuntimeDetails.Language
@@ -447,14 +446,13 @@ func getEnvInjectionDecision(
 }
 
 // filterUrlTemplateRulesForContainer filters template rules to only include those relevant to the
-// workload and container language.
-// FilterK8sNamespace is an AND gate (empty = all namespaces).
-// WorkloadFilters list is an OR gate (empty = all workloads; each entry ANDs kind + name).
-// FilterProgrammingLanguage is an AND gate (nil = all languages).
-// If no filters are set in a group, it's considered global and applies to all spans.
-// This function is called once per container (not per workload) because FilterProgrammingLanguage
-// may differ across containers. The result is shared between calculateContainerInstrumentationConfig
-// and calculateContainerCollectorConfig for the same container.
+// workload and container language via SourcesScope matching.
+// If a group's SourcesScope is empty it matches all containers (global rules).
+// If non-empty, a container matches if any scope entry matches (OR semantics; each entry ANDs
+// non-empty fields: Name, Kind, Namespace, ContainerName, Language).
+// This function is called once per container because Language may differ across containers.
+// The result is shared between calculateContainerInstrumentationConfig and
+// calculateContainerCollectorConfig for the same container.
 func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw k8sconsts.PodWorkload, language common.ProgrammingLanguage) *commonapi.UrlTemplatizationConfig {
 	if agentLevelActions == nil {
 		return nil
@@ -490,46 +488,13 @@ func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw
 	}
 }
 
-// templatizationRulesGroupMatchesContainer checks if a rules group matches the workload and container.
-// Namespace is ANDed (empty = all namespaces).
-// WorkloadFilters and legacy scalar fields (FilterK8sWorkloadKind, FilterK8sWorkloadName) are ORed:
-// any matching entry is sufficient; empty list with no legacy fields = all workloads.
-// FilterProgrammingLanguage is ANDed (nil = all languages).
+// templatizationRulesGroupMatchesContainer checks if a rules group matches the given
+// workload/container/language via SourcesScope.
+// Empty SourcesScope means "match all" (global rule).
+// Non-empty: any entry that matches wins (OR); within an entry all non-empty fields must match (AND).
 func templatizationRulesGroupMatchesContainer(rulesGroup actions.UrlTemplatizationRulesGroup, language common.ProgrammingLanguage, pw k8sconsts.PodWorkload) bool {
-	// Filter by programming language
-	if rulesGroup.FilterProgrammingLanguage != nil {
-		if *rulesGroup.FilterProgrammingLanguage != language {
-			return false
-		}
-	}
-
-	// Filter by k8s namespace
-	if rulesGroup.FilterK8sNamespace != "" {
-		if rulesGroup.FilterK8sNamespace != pw.Namespace {
-			return false
-		}
-	}
-
-	// ToDo: remove legay filters from struct
-	// OR gate: legacy scalar fields + new WorkloadFilters list.
-	hasLegacyFilter := rulesGroup.FilterK8sWorkloadKind != nil || rulesGroup.FilterK8sWorkloadName != ""
-	hasNewFilters := len(rulesGroup.WorkloadFilters) > 0
-	if !hasLegacyFilter && !hasNewFilters {
-		return true // no workload filter → match all workloads
-	}
-
-	// Legacy scalar fields as an implicit OR entry (kind AND name within the entry).
-	if hasLegacyFilter {
-		kindOK := rulesGroup.FilterK8sWorkloadKind == nil || *rulesGroup.FilterK8sWorkloadKind == pw.Kind
-		nameOK := rulesGroup.FilterK8sWorkloadName == "" || rulesGroup.FilterK8sWorkloadName == pw.Name
-		if kindOK && nameOK {
-			return true
-		}
-	}
-
-	// New WorkloadFilters entries (each ANDs kind+name+namespace, all ORed). SourcesScope uses json "kind"/"name".
 	ref := commonapi.WorkloadRef{Name: pw.Name, Namespace: pw.Namespace, Kind: string(pw.Kind)}
-	return commonapi.AnySourceScopeMatchesWorkload(rulesGroup.WorkloadFilters, ref)
+	return commonapi.AnySourceScopeMatchesContainer(rulesGroup.SourcesScope, ref, "", language)
 }
 
 func calculateContainerCollectorConfig(containerName string,
