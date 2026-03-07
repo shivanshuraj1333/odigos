@@ -85,7 +85,7 @@ func newUrlTemplateProcessor(set processor.Settings, config *Config) (*urlTempla
 	}, nil
 }
 
-// OnSet implements the extension's UrlTemplatizationCacheCallback; called when the extension cache adds/updates an entry.
+// OnSet implements the extension's ConfigCacheCallback; called when the extension cache adds/updates an entry.
 func (p *urlTemplateProcessor) OnSet(key string, cfg *commonapi.ContainerCollectorConfig) {
 	hasRules := cfg.UrlTemplatization != nil && len(cfg.UrlTemplatization.TemplatizationRules) > 0
 	var parsedRules map[int][]TemplatizationRule
@@ -96,7 +96,7 @@ func (p *urlTemplateProcessor) OnSet(key string, cfg *commonapi.ContainerCollect
 	p.logger.Debug("url templatization cache OnSet", zap.String("key", key), zap.Bool("has_rules", hasRules))
 }
 
-// OnDeleteKey implements the extension's UrlTemplatizationCacheCallback; called when the extension cache removes an entry.
+// OnDeleteKey implements the extension's ConfigCacheCallback; called when the extension cache removes an entry.
 func (p *urlTemplateProcessor) OnDeleteKey(key string) {
 	p.parsedRulesCache.delete(key)
 	p.logger.Debug("url templatization cache OnDeleteKey", zap.String("key", key))

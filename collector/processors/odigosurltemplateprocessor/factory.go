@@ -32,7 +32,7 @@ type workloadRulesProvider interface {
 	GetWorkloadUrlTemplatizationRules(attrs pcommon.Map) (rules []string)
 }
 
-// Use shared interfaces from common/collector so the type assertion ext.(UrlTemplatizationCacheNotifier) succeeds.
+// Use shared interfaces from common/collector so the type assertion ext.(ConfigCacheNotifier) succeeds.
 
 // NewFactory creates a new ProcessorFactory with default configuration
 func NewFactory() processor.Factory {
@@ -132,10 +132,10 @@ func (w *extensionStartWrapper) tryRegisterWithExtension(ext component.Component
 	} else {
 		w.logger.Warn("extension does not implement workloadRulesProvider", zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
 	}
-	if notifier, ok := ext.(collector.UrlTemplatizationCacheNotifier); ok {
-		notifier.RegisterUrlTemplatizationCacheCallback(w.proc)
+	if notifier, ok := ext.(collector.ConfigCacheNotifier); ok {
+		notifier.RegisterConfigCacheCallback(w.proc)
 	} else {
-		w.logger.Warn("extension does not implement UrlTemplatizationCacheNotifier; processor cache will not receive updates",
+		w.logger.Warn("extension does not implement ConfigCacheNotifier; processor cache will not receive updates",
 			zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
 	}
 }

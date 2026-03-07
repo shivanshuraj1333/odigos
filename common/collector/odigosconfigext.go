@@ -14,16 +14,17 @@ type OdigosConfigExtension interface {
 	GetFromResource(res pcommon.Resource) (*commonapi.ContainerCollectorConfig, bool)
 }
 
-// UrlTemplatizationCacheCallback is notified when the extension's workload cache changes.
-// Defined here so both the extension and the URL template processor use the same interface type
-// (required for the processor's type assertion ext.(UrlTemplatizationCacheNotifier) to succeed).
-type UrlTemplatizationCacheCallback interface {
+// ConfigCacheCallback is notified when the extension's workload config cache changes.
+// Defined here so both the extension and any processor that consumes config updates use the same
+// interface type (required for the processor's type assertion ext.(ConfigCacheNotifier) to succeed).
+// Any processor that needs to react to per-workload config changes implements this interface.
+type ConfigCacheCallback interface {
 	OnSet(key string, cfg *commonapi.ContainerCollectorConfig)
 	OnDeleteKey(key string)
 }
 
-// UrlTemplatizationCacheNotifier is implemented by the extension so the processor can register a callback.
-// Defined here so both use the same interface type.
-type UrlTemplatizationCacheNotifier interface {
-	RegisterUrlTemplatizationCacheCallback(cb UrlTemplatizationCacheCallback)
+// ConfigCacheNotifier is implemented by the extension so processors can register for config cache
+// updates. Defined here so both sides share the same interface type.
+type ConfigCacheNotifier interface {
+	RegisterConfigCacheCallback(cb ConfigCacheCallback)
 }

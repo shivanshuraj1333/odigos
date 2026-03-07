@@ -114,7 +114,7 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfig(obj interface{}) {
 
 	// On add/update: clear existing entries for this workload first so removed containers (or empty workloadCollectorConfig) are dropped from both caches.
 	// Do this before reading workloadCollectorConfig so that an IC with empty workloadCollectorConfig still clears stale keys.
-	cb := o.getUrlTemplatizationCallback()
+	cb := o.getConfigCacheCallback()
 	if cb != nil {
 		cb.OnDeleteKey(keyPrefix)
 		o.logger.Debug("url templatization callback OnDeleteKey called", zap.String("key_prefix", keyPrefix))
@@ -170,7 +170,7 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfigDelete(obj interface{}
 	workloadKeyStr := key.Namespace + "/" + key.Kind + "/" + key.Name
 	o.logger.Debug("instrumentation config delete", zap.String("workload", workloadKeyStr), zap.String("key_prefix", keyPrefix))
 
-	cb := o.getUrlTemplatizationCallback()
+	cb := o.getConfigCacheCallback()
 	if cb != nil {
 		cb.OnDeleteKey(keyPrefix)
 		o.logger.Debug("url templatization callback OnDeleteKey called", zap.String("key_prefix", keyPrefix))

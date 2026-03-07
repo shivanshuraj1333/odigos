@@ -22,8 +22,8 @@ type OdigosWorkloadConfig struct {
 	cancel          context.CancelFunc
 	informerFactory dynamicinformer.DynamicSharedInformerFactory // set when in-cluster; nil otherwise
 
-	urlTemplatizationCB collector.UrlTemplatizationCacheCallback
-	urlTemplatizationMu sync.RWMutex
+	configCacheCB collector.ConfigCacheCallback
+	configCacheMu sync.RWMutex
 }
 
 // OdigosConfigExtension is the interface that must be implemented by an extension that wants to provide Odigos configuration.
@@ -86,15 +86,15 @@ func (o *OdigosWorkloadConfig) GetWorkloadCacheKey(attrs pcommon.Map) (string, e
 	return workloadKeyFromResourceAttributes(attrs)
 }
 
-// RegisterUrlTemplatizationCacheCallback registers a callback that is invoked when the
+// RegisterConfigCacheCallback registers a callback that is invoked when the
 // extension cache is updated (add/update/delete). The processor uses it to keep its
 // parsed rules cache in sync so rules are parsed once per workload entry, not per batch.
 // Existing cache entries are replayed to the callback (backfill) so the processor
 // starts with the same state as the extension when it registers after the informer has synced.
-func (o *OdigosWorkloadConfig) RegisterUrlTemplatizationCacheCallback(cb collector.UrlTemplatizationCacheCallback) {
-	o.urlTemplatizationMu.Lock()
-	o.urlTemplatizationCB = cb
-	o.urlTemplatizationMu.Unlock()
+func (o *OdigosWorkloadConfig) RegisterConfigCacheCallback(cb collector.ConfigCacheCallback) {
+	o.configCacheMu.Lock()
+	o.configCacheCB = cb
+	o.configCacheMu.Unlock()
 	o.logger.Debug("url templatization callback registered")
 	// Backfill: processor may start after informer has already synced; replay current cache state.
 	backfillCount := 0
@@ -107,8 +107,8 @@ func (o *OdigosWorkloadConfig) RegisterUrlTemplatizationCacheCallback(cb collect
 	}
 }
 
-func (o *OdigosWorkloadConfig) getUrlTemplatizationCallback() collector.UrlTemplatizationCacheCallback {
-	o.urlTemplatizationMu.RLock()
-	defer o.urlTemplatizationMu.RUnlock()
-	return o.urlTemplatizationCB
+func (o *OdigosWorkloadConfig) getConfigCacheCallback() collector.ConfigCacheCallback {
+	o.configCacheMu.RLock()
+	defer o.configCacheMu.RUnlock()
+	return o.configCacheCB
 }
