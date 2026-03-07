@@ -4,14 +4,6 @@ import (
 	"github.com/odigos-io/odigos/common"
 )
 
-// WorkloadRef identifies a Kubernetes workload (namespace, kind, name).
-// Used by SourcesScope and scope matching; kept in common to avoid common depending on api/k8sconsts.
-type WorkloadRef struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Kind      string `json:"kind"` // e.g. "Deployment", "StatefulSet"
-}
-
 // define conditions to match specific sources (containers) managed by odigos.
 // a source container matches, if ALL non empty fields match (AND semantics)
 //

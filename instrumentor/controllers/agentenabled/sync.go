@@ -23,6 +23,7 @@ import (
 	"github.com/odigos-io/odigos/instrumentor/controllers/agentenabled/rollout"
 	"github.com/odigos-io/odigos/instrumentor/controllers/agentenabled/sampling"
 	"github.com/odigos-io/odigos/instrumentor/controllers/agentenabled/signalconfig"
+	"github.com/odigos-io/odigos/k8sutils/pkg/scope"
 	"github.com/odigos-io/odigos/k8sutils/pkg/utils"
 	k8sutils "github.com/odigos-io/odigos/k8sutils/pkg/utils"
 	"github.com/odigos-io/odigos/k8sutils/pkg/workload"
@@ -232,7 +233,7 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 		if containerRuntimeDetails != nil {
 			containerLanguage = containerRuntimeDetails.Language
 		}
-		workloadUrlTemplatization := filterUrlTemplateRulesForContainer(agentLevelActions, pw, containerLanguage)
+		workloadUrlTemplatization := filterUrlTemplateRulesForContainer(agentLevelActions, pw, containerName, containerLanguage)
 		if workloadUrlTemplatization != nil && len(workloadUrlTemplatization.TemplatizationRules) > 0 {
 			logger.Info("URL templatization rules applied for workload container", "namespace", pw.Namespace, "workloadKind", pw.Kind, "workloadName", pw.Name, "container", containerName, "rulesCount", len(workloadUrlTemplatization.TemplatizationRules))
 		}
@@ -453,7 +454,7 @@ func getEnvInjectionDecision(
 // This function is called once per container because Language may differ across containers.
 // The result is shared between calculateContainerInstrumentationConfig and
 // calculateContainerCollectorConfig for the same container.
-func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw k8sconsts.PodWorkload, language common.ProgrammingLanguage) *commonapi.UrlTemplatizationConfig {
+func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw k8sconsts.PodWorkload, containerName string, language common.ProgrammingLanguage) *commonapi.UrlTemplatizationConfig {
 	if agentLevelActions == nil {
 		return nil
 	}
@@ -468,7 +469,7 @@ func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw
 		}
 
 		for _, rulesGroup := range action.Spec.URLTemplatization.TemplatizationRulesGroups {
-			if templatizationRulesGroupMatchesContainer(rulesGroup, language, pw) {
+			if templatizationRulesGroupMatchesContainer(rulesGroup, language, pw, containerName) {
 				participating = true
 				for _, rule := range rulesGroup.TemplatizationRules {
 					rules = append(rules, rule.Template)
@@ -492,9 +493,8 @@ func filterUrlTemplateRulesForContainer(agentLevelActions *[]odigosv1.Action, pw
 // workload/container/language via SourcesScope.
 // Empty SourcesScope means "match all" (global rule).
 // Non-empty: any entry that matches wins (OR); within an entry all non-empty fields must match (AND).
-func templatizationRulesGroupMatchesContainer(rulesGroup actions.UrlTemplatizationRulesGroup, language common.ProgrammingLanguage, pw k8sconsts.PodWorkload) bool {
-	ref := commonapi.WorkloadRef{Name: pw.Name, Namespace: pw.Namespace, Kind: string(pw.Kind)}
-	return commonapi.AnySourceScopeMatchesContainer(rulesGroup.SourcesScope, ref, "", language)
+func templatizationRulesGroupMatchesContainer(rulesGroup actions.UrlTemplatizationRulesGroup, language common.ProgrammingLanguage, pw k8sconsts.PodWorkload, containerName string) bool {
+	return scope.AnySourceScopeMatchesContainer(rulesGroup.SourcesScope, pw, containerName, language)
 }
 
 func calculateContainerCollectorConfig(containerName string,
