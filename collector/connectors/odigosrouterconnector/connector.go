@@ -8,11 +8,15 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/xconsumer"
+	"go.opentelemetry.io/collector/connector/xconnector"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/pprofile"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	collectorpipeline "go.opentelemetry.io/collector/pipeline"
+	"go.opentelemetry.io/collector/pipeline/xpipeline"
 	semconv1_26 "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.uber.org/zap"
 
@@ -38,11 +42,18 @@ type logsConfig struct {
 	logger      *zap.Logger
 }
 
+type profilesConfig struct {
+	consumers   xconnector.ProfilesRouterAndConsumer
+	defaultCons xconsumer.Profiles
+	logger      *zap.Logger
+}
+
 // routerConnector is the main struct for all signal types.
 type routerConnector struct {
 	tracesConfig  tracesConfig
 	metricsConfig metricsConfig
 	logsConfig    logsConfig
+	profilesConfig profilesConfig
 	routingTable  *SignalRoutingMap
 }
 
@@ -142,6 +153,35 @@ func createLogsConnector(
 	return &routerConnector{
 		routingTable: &routeMap,
 		logsConfig:   logsConfig{consumers: tr, defaultCons: defaultLogsConsumer, logger: set.Logger},
+	}, nil
+}
+
+func createProfilesConnector(
+	ctx context.Context,
+	set connector.Settings,
+	cfg component.Config,
+	next xconsumer.Profiles,
+) (xconnector.Profiles, error) {
+	tr, ok := next.(xconnector.ProfilesRouterAndConsumer)
+	if !ok {
+		return nil, errors.New("expected consumer to be a connector router")
+	}
+
+	config := cfg.(*Config)
+
+	defaultProfilesConsumer, err := tr.Consumer(
+		collectorpipeline.NewIDWithName(xpipeline.SignalProfiles, consts.DefaultDataStream),
+	)
+	if err != nil {
+		set.Logger.Warn("failed to get default profiles consumer")
+		defaultProfilesConsumer = nil
+	}
+
+	routeMap := BuildSignalRoutingMap(config.DataStreams)
+
+	return &routerConnector{
+		routingTable:    &routeMap,
+		profilesConfig:  profilesConfig{consumers: tr, defaultCons: defaultProfilesConsumer, logger: set.Logger},
 	}, nil
 }
 
@@ -346,6 +386,59 @@ func (r *routerConnector) ConsumeLogs(ctx context.Context, ld plog.Logs) error {
 			if err := cfg.defaultCons.ConsumeLogs(ctx, defaultLogs); err != nil {
 				cfg.logger.Debug("failed to send logs to the default pipeline", zap.Error(err))
 			}
+		}
+	}
+
+	return errs
+}
+
+func (r *routerConnector) ConsumeProfiles(ctx context.Context, pd pprofile.Profiles) error {
+	cfg := r.profilesConfig
+	profilesByConsumer := make(map[xconsumer.Profiles]pprofile.Profiles)
+	defaultProfiles := pprofile.NewProfiles()
+	var errs error
+
+	rProfiles := pd.ResourceProfiles()
+	for i := 0; i < rProfiles.Len(); i++ {
+		rp := rProfiles.At(i)
+		pipelines, key := determineRoutingPipelines(rp.Resource().Attributes(), *r.routingTable, common.ProfilesObservabilitySignal)
+
+		if len(pipelines) == 0 {
+			cfg.logger.Debug("no pipelines matched for", zap.Any("key", key))
+			rp.CopyTo(defaultProfiles.ResourceProfiles().AppendEmpty())
+			continue
+		}
+
+		for _, pipeline := range pipelines {
+			consumer, err := cfg.consumers.Consumer(
+				collectorpipeline.NewIDWithName(xpipeline.SignalProfiles, pipeline),
+			)
+			if err != nil {
+				errs = errors.Join(errs, fmt.Errorf("failed to get profiles consumer for pipeline %s: %w", pipeline, err))
+				continue
+			}
+
+			batch, ok := profilesByConsumer[consumer]
+			if !ok {
+				batch = pprofile.NewProfiles()
+			}
+			rp.CopyTo(batch.ResourceProfiles().AppendEmpty())
+			profilesByConsumer[consumer] = batch
+		}
+	}
+
+	for cons, batch := range profilesByConsumer {
+		if batch.ResourceProfiles().Len() == 0 {
+			continue
+		}
+		if err := cons.ConsumeProfiles(ctx, batch); err != nil {
+			errs = errors.Join(errs, err)
+		}
+	}
+
+	if defaultProfiles.ResourceProfiles().Len() > 0 && cfg.defaultCons != nil {
+		if err := cfg.defaultCons.ConsumeProfiles(ctx, defaultProfiles); err != nil {
+			cfg.logger.Debug("failed to send profiles to the default pipeline", zap.Error(err))
 		}
 	}
 

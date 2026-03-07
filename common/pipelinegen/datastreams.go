@@ -44,9 +44,10 @@ type Destination struct {
 // when building the telemetry configuration.
 // and also to be single source of truth for the root pipelines
 var telemetryRootPipelinesBySignal = map[common.ObservabilitySignal]string{
-	common.TracesObservabilitySignal:  strings.ToLower(string(common.TracesObservabilitySignal)) + "/in",
+	common.TracesObservabilitySignal:   strings.ToLower(string(common.TracesObservabilitySignal)) + "/in",
 	common.MetricsObservabilitySignal: strings.ToLower(string(common.MetricsObservabilitySignal)) + "/in",
 	common.LogsObservabilitySignal:    strings.ToLower(string(common.LogsObservabilitySignal)) + "/in",
+	common.ProfilesObservabilitySignal: strings.ToLower(string(common.ProfilesObservabilitySignal)) + "/in",
 }
 
 func GetTelemetryRootPipelineName(signal common.ObservabilitySignal) string {
@@ -57,5 +58,6 @@ func GetSignalsRootPipelineNames() []string {
 		GetTelemetryRootPipelineName(common.TracesObservabilitySignal),
 		GetTelemetryRootPipelineName(common.MetricsObservabilitySignal),
 		GetTelemetryRootPipelineName(common.LogsObservabilitySignal),
+		GetTelemetryRootPipelineName(common.ProfilesObservabilitySignal),
 	}
 }

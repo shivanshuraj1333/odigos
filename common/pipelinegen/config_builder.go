@@ -69,6 +69,7 @@ func CalculateGatewayConfig(
 	tracesEnabled := false
 	metricsEnabled := false
 	logsEnabled := false
+	profilesEnabled := false
 
 	// Configure processors
 	processorsResults := config.CrdProcessorToConfig(processors)
@@ -146,6 +147,37 @@ func CalculateGatewayConfig(
 
 		status.Destination[dest.GetID()] = nil // mark this destination as success
 	}
+
+	// Add profiles pipelines for each destination that has traces (profiles follow traces to same OTLP endpoint)
+	if tracesEnabled {
+		for _, dest := range dests {
+			connectors := destForwardConnectors[dest.GetID()]
+			for _, c := range connectors {
+				if !strings.HasPrefix(c, "forward/traces/") {
+					continue
+				}
+				// e.g. forward/traces/generic-xxx -> profiles/generic-xxx
+				tracesPipelineName := strings.TrimPrefix(c, "forward/")
+				profilesPipelineName := "profiles/" + strings.TrimPrefix(tracesPipelineName, "traces/")
+				connectorName := "forward/" + profilesPipelineName
+				destForwardConnectors[dest.GetID()] = append(destForwardConnectors[dest.GetID()], connectorName)
+				currentConfig.Connectors[connectorName] = config.GenericMap{}
+				tracesPipeline, exists := currentConfig.Service.Pipelines[tracesPipelineName]
+				if !exists {
+					continue
+				}
+				// Use same exporter as traces pipeline (OTLP supports profiles)
+				profilesPipeline := config.Pipeline{
+					Receivers:  []string{connectorName},
+					Processors: []string{consts.GenericBatchProcessorConfigKey},
+					Exporters:  tracesPipeline.Exporters,
+				}
+				currentConfig.Service.Pipelines[profilesPipelineName] = profilesPipeline
+				profilesEnabled = true
+			}
+		}
+	}
+
 	// track which signals are enabled
 	enabledSignals := []common.ObservabilitySignal{}
 
@@ -157,6 +189,9 @@ func CalculateGatewayConfig(
 	}
 	if logsEnabled {
 		enabledSignals = append(enabledSignals, common.LogsObservabilitySignal)
+	}
+	if profilesEnabled {
+		enabledSignals = append(enabledSignals, common.ProfilesObservabilitySignal)
 	}
 
 	//  Add pipelines that receive from routing connectors and forward to destinations
@@ -171,6 +206,7 @@ func CalculateGatewayConfig(
 		allTracesProcessors,
 		processorsResults.MetricsProcessors,
 		processorsResults.LogsProcessors,
+		allTracesProcessors, // profiles use same processors as traces
 		enabledSignals)
 
 	// Optional: Add collector self-observability
@@ -208,7 +244,7 @@ func CalculateGatewayConfig(
 }
 
 func insertRootPipelinesToConfig(currentConfig *config.Config, dataStreamsDetails []DataStreams,
-	tracesProcessors, metricsProcessors, logsProcessors []string, signals []common.ObservabilitySignal) {
+	tracesProcessors, metricsProcessors, logsProcessors, profilesProcessors []string, signals []common.ObservabilitySignal) {
 	if slices.Contains(signals, common.TracesObservabilitySignal) {
 		applyRootPipelineForSignal(
 			currentConfig,
@@ -232,6 +268,15 @@ func insertRootPipelinesToConfig(currentConfig *config.Config, dataStreamsDetail
 			currentConfig,
 			common.LogsObservabilitySignal,
 			logsProcessors,
+			dataStreamsDetails,
+		)
+	}
+
+	if slices.Contains(signals, common.ProfilesObservabilitySignal) {
+		applyRootPipelineForSignal(
+			currentConfig,
+			common.ProfilesObservabilitySignal,
+			profilesProcessors,
 			dataStreamsDetails,
 		)
 	}

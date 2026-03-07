@@ -17,7 +17,7 @@ func buildDataStreamPipelines(
 	pipelines := make(map[string]config.Pipeline)
 
 	for _, dataStream := range dataStreams {
-		for _, signal := range []string{"logs", "metrics", "traces"} {
+		for _, signal := range []string{"logs", "metrics", "traces", "profiles"} {
 			pipelineName := fmt.Sprintf("%s/%s", signal, dataStream.Name)
 
 			pipeline := config.Pipeline{

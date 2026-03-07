@@ -220,6 +220,11 @@ func calculateCollectorConfigDomains(
 		configDomains["logs"] = logsConfig
 	}
 
+	// profiles (eBPF profiler receiver; node collector only, exports to cluster collector) — only when opted in
+	if commonconf.ControllerConfig != nil && commonconf.ControllerConfig.EbpfProfilerEnabled {
+		configDomains["profiles"] = collectorconfig.ProfilesConfig(nodeCG, odigosNamespace)
+	}
+
 	mergedConfig, err := config.MergeConfigs(configDomains)
 	if err != nil {
 		return nil, "", errors.Join(err, errors.New("failed to merge collector config domains"))

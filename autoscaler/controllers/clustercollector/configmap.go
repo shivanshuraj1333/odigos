@@ -370,9 +370,14 @@ func calculateDataStreams(
 			}
 
 			if !destinationExists(dataStreamDetails.Destinations, dest.Name) {
+				signals := dest.GetSignals()
+				// Route profiles to same data streams as traces (profiles follow traces to gateway/destinations)
+				if slices.Contains(signals, odigoscommon.TracesObservabilitySignal) && !slices.Contains(signals, odigoscommon.ProfilesObservabilitySignal) {
+					signals = append(signals, odigoscommon.ProfilesObservabilitySignal)
+				}
 				dataStreamDetails.Destinations = append(dataStreamDetails.Destinations, pipelinegen.Destination{
 					DestinationName:   dest.Name,
-					ConfiguredSignals: dest.GetSignals(),
+					ConfiguredSignals: signals,
 				})
 			}
 		}

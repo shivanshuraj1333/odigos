@@ -288,6 +288,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            {{- if .Values.odiglet.ebpfProfilerEnabled }}
+            - name: OTELCOL_FEATURE_GATES
+              value: "service.profilesSupport=true"
+            {{- end }}
 {{- $nodeLimiter := include "collector.node.memoryLimiter" . | fromYaml }}
             - name: GOMEMLIMIT
               value: "{{ $nodeLimiter.goMiB }}MiB"
