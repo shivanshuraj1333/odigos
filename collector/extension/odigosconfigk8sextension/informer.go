@@ -115,10 +115,10 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfig(obj interface{}) {
 	// Do this before reading workloadCollectorConfig so that an IC with empty workloadCollectorConfig still clears stale keys.
 	cb := o.getConfigCacheCallback()
 	if cb != nil {
-		cb.OnDeleteKey(keyPrefix)
-		o.logger.Debug("url templatization callback OnDeleteKey called", zap.String("key_prefix", keyPrefix))
+		cb.OnDeleteWorkloadPrefix(keyPrefix)
+		o.logger.Debug("url templatization callback OnDeleteWorkloadPrefix called", zap.String("key_prefix", keyPrefix))
 	} else {
-		o.logger.Debug("url templatization callback not set, skipping OnDeleteKey", zap.String("key_prefix", keyPrefix))
+		o.logger.Debug("url templatization callback not set, skipping OnDeleteWorkloadPrefix", zap.String("key_prefix", keyPrefix))
 	}
 	o.cache.DeleteWorkload(workloadKey)
 
@@ -170,10 +170,10 @@ func (o *OdigosWorkloadConfig) handleInstrumentationConfigDelete(obj interface{}
 
 	cb := o.getConfigCacheCallback()
 	if cb != nil {
-		cb.OnDeleteKey(keyPrefix)
-		o.logger.Debug("url templatization callback OnDeleteKey called", zap.String("key_prefix", keyPrefix))
+		cb.OnDeleteWorkloadPrefix(keyPrefix)
+		o.logger.Debug("url templatization callback OnDeleteWorkloadPrefix called", zap.String("key_prefix", keyPrefix))
 	} else {
-		o.logger.Debug("url templatization callback not set, skipping OnDeleteKey", zap.String("key_prefix", keyPrefix))
+		o.logger.Debug("url templatization callback not set, skipping OnDeleteWorkloadPrefix", zap.String("key_prefix", keyPrefix))
 	}
 	o.cache.DeleteWorkload(key)
 }

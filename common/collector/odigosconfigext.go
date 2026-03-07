@@ -18,9 +18,18 @@ type OdigosConfigExtension interface {
 // Defined here so both the extension and any processor that consumes config updates use the same
 // interface type (required for the processor's type assertion ext.(ConfigCacheNotifier) to succeed).
 // Any processor that needs to react to per-workload config changes implements this interface.
+//
+// Key semantics:
+//   - OnSet is called with the full container-level key: "namespace/kind/name/containerName"
+//   - OnDeleteWorkloadPrefix is called with the workload-level prefix: "namespace/kind/name/"
+//     (trailing slash). The receiver must delete all cache entries whose key starts with this prefix.
 type ConfigCacheCallback interface {
+	// OnSet is called when a container-level config entry is added or updated.
+	// key is the full container key: "namespace/kind/name/containerName".
 	OnSet(key string, cfg *commonapi.ContainerCollectorConfig)
-	OnDeleteKey(key string)
+	// OnDeleteWorkloadPrefix is called when all containers for a workload are invalidated.
+	// keyPrefix is "namespace/kind/name/" — the receiver must evict all entries with this prefix.
+	OnDeleteWorkloadPrefix(keyPrefix string)
 }
 
 // ConfigCacheNotifier is implemented by the extension so processors can register for config cache
