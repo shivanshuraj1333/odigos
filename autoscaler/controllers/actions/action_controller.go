@@ -18,7 +18,6 @@ import (
 	v1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	"github.com/odigos-io/odigos/api/odigos/v1alpha1/actions"
 	"github.com/odigos-io/odigos/common"
-	commonconsts "github.com/odigos-io/odigos/common/consts"
 	"github.com/odigos-io/odigos/k8sutils/pkg/utils"
 )
 
@@ -251,7 +250,7 @@ func listActionsWithUrlTemplatization(ctx context.Context, k8sclient client.Clie
 // It has no OwnerReferences; its lifecycle is managed exclusively by syncUrlTemplatizationProcessorForNamespace.
 func buildUrlTemplatizationProcessor(namespace string) (*odigosv1.Processor, error) {
 	processorConfig := map[string]interface{}{
-		"workload_config_extension": commonconsts.OdigosConfigK8sExtensionType,
+		"workload_config_extension": k8sconsts.OdigosConfigK8sExtensionType,
 	}
 	configJSON, err := json.Marshal(processorConfig)
 	if err != nil {
@@ -270,7 +269,7 @@ func buildUrlTemplatizationProcessor(namespace string) (*odigosv1.Processor, err
 			Kind:       "Processor",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      commonconsts.URLTemplatizationProcessorName,
+			Name:      k8sconsts.URLTemplatizationProcessorName,
 			Namespace: namespace,
 		},
 		Spec: odigosv1.ProcessorSpec{
@@ -311,7 +310,7 @@ func ensureUrlTemplatizationLabel(ctx context.Context, r *ActionReconciler, acti
 // Idempotent: if the Processor already exists (e.g. from a concurrent reconcile), returns nil.
 func ensureUrlTemplatizationProcessorExists(ctx context.Context, r *ActionReconciler, namespace string) error {
 	existing := &odigosv1.Processor{}
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: commonconsts.URLTemplatizationProcessorName}, existing)
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: k8sconsts.URLTemplatizationProcessorName}, existing)
 	if err == nil {
 		return nil // already exists
 	}
@@ -343,7 +342,7 @@ func syncUrlTemplatizationProcessorForNamespace(ctx context.Context, r *ActionRe
 		// No relevant actions → delete the Processor CR if it exists.
 		proc := &odigosv1.Processor{}
 		proc.Namespace = namespace
-		proc.Name = commonconsts.URLTemplatizationProcessorName
+		proc.Name = k8sconsts.URLTemplatizationProcessorName
 		err := client.IgnoreNotFound(r.Client.Delete(ctx, proc))
 		if err == nil {
 			ctrl.LoggerFrom(ctx).Info("Deleted URL templatization Processor (no actions in namespace)", "namespace", namespace)
@@ -353,7 +352,7 @@ func syncUrlTemplatizationProcessorForNamespace(ctx context.Context, r *ActionRe
 
 	// At least one relevant action. Avoid Patch if the Processor already exists.
 	existing := &odigosv1.Processor{}
-	err = r.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: commonconsts.URLTemplatizationProcessorName}, existing)
+	err = r.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: k8sconsts.URLTemplatizationProcessorName}, existing)
 	if err == nil {
 		// Processor exists; nothing to do.
 		return nil

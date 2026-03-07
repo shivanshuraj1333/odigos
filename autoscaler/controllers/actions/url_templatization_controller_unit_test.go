@@ -19,10 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/odigos-io/odigos/api/k8sconsts"
 	odigosv1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	odigosactions "github.com/odigos-io/odigos/api/odigos/v1alpha1/actions"
 	"github.com/odigos-io/odigos/common"
-	commonconsts "github.com/odigos-io/odigos/common/consts"
 )
 
 func newActionsUnitTestClient(t *testing.T, objs ...client.Object) client.Client {
@@ -89,7 +89,7 @@ func TestMapUrlTemplatizationProcessorToActionRequests_MapsOnlyActiveURLTemplati
 	// Mapping always enqueues the synthetic namespace-level key so one reconcile runs per namespace.
 	cl := newActionsUnitTestClient(t)
 
-	reqs := mapUrlTemplatizationProcessorToActionRequests(context.Background(), cl, newProcessorEventObj(commonconsts.URLTemplatizationProcessorName, "default"))
+	reqs := mapUrlTemplatizationProcessorToActionRequests(context.Background(), cl, newProcessorEventObj(k8sconsts.URLTemplatizationProcessorName, "default"))
 
 	assert.Equal(t, []reconcile.Request{
 		{
@@ -104,7 +104,7 @@ func TestMapUrlTemplatizationProcessorToActionRequests_MapsOnlyActiveURLTemplati
 func TestMapUrlTemplatizationProcessorToActionRequests_NoActiveActionsEnqueuesSyntheticKey(t *testing.T) {
 	cl := newActionsUnitTestClient(t)
 
-	reqs := mapUrlTemplatizationProcessorToActionRequests(context.Background(), cl, newProcessorEventObj(commonconsts.URLTemplatizationProcessorName, "default"))
+	reqs := mapUrlTemplatizationProcessorToActionRequests(context.Background(), cl, newProcessorEventObj(k8sconsts.URLTemplatizationProcessorName, "default"))
 
 	require.Len(t, reqs, 1)
 	assert.Equal(t, types.NamespacedName{
@@ -116,7 +116,7 @@ func TestMapUrlTemplatizationProcessorToActionRequests_NoActiveActionsEnqueuesSy
 func TestMapUrlTemplatizationProcessorToActionRequests_ListErrorEnqueuesSyntheticKey(t *testing.T) {
 	cl := newActionsUnitTestClientWithListError(t, errors.New("list failed"))
 
-	reqs := mapUrlTemplatizationProcessorToActionRequests(context.Background(), cl, newProcessorEventObj(commonconsts.URLTemplatizationProcessorName, "default"))
+	reqs := mapUrlTemplatizationProcessorToActionRequests(context.Background(), cl, newProcessorEventObj(k8sconsts.URLTemplatizationProcessorName, "default"))
 
 	require.Len(t, reqs, 1)
 	assert.Equal(t, types.NamespacedName{
@@ -126,7 +126,7 @@ func TestMapUrlTemplatizationProcessorToActionRequests_ListErrorEnqueuesSyntheti
 }
 
 func TestActionReconciler_ReconcileSyntheticKey_DeletesOrphanedSharedProcessor(t *testing.T) {
-	processor := newProcessorEventObj(commonconsts.URLTemplatizationProcessorName, "default")
+	processor := newProcessorEventObj(k8sconsts.URLTemplatizationProcessorName, "default")
 	cl := newActionsUnitTestClient(t, processor)
 	r := &ActionReconciler{Client: cl}
 
@@ -140,7 +140,7 @@ func TestActionReconciler_ReconcileSyntheticKey_DeletesOrphanedSharedProcessor(t
 
 	getErr := cl.Get(context.Background(), types.NamespacedName{
 		Namespace: "default",
-		Name:      commonconsts.URLTemplatizationProcessorName,
+		Name:      k8sconsts.URLTemplatizationProcessorName,
 	}, &odigosv1.Processor{})
 	assert.True(t, apierrors.IsNotFound(getErr))
 }
@@ -166,14 +166,14 @@ func TestActionReconciler_ReconcileSyntheticKey_CreatesSharedProcessorForActiveA
 	processor := &odigosv1.Processor{}
 	require.NoError(t, cl.Get(context.Background(), types.NamespacedName{
 		Namespace: "default",
-		Name:      commonconsts.URLTemplatizationProcessorName,
+		Name:      k8sconsts.URLTemplatizationProcessorName,
 	}, processor))
 
-	assert.Equal(t, commonconsts.URLTemplatizationProcessorName, processor.Name)
+	assert.Equal(t, k8sconsts.URLTemplatizationProcessorName, processor.Name)
 	assert.Equal(t, "odigosurltemplate", processor.Spec.Type)
 	require.NotNil(t, processor.Spec.ProcessorConfig.Raw)
 
 	var cfg map[string]interface{}
 	require.NoError(t, json.Unmarshal(processor.Spec.ProcessorConfig.Raw, &cfg))
-	assert.Equal(t, commonconsts.OdigosConfigK8sExtensionType, cfg["workload_config_extension"])
+	assert.Equal(t, k8sconsts.OdigosConfigK8sExtensionType, cfg["workload_config_extension"])
 }

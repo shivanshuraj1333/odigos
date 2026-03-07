@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/odigos-io/odigos/api/actions/v1alpha1"
+	"github.com/odigos-io/odigos/api/k8sconsts"
 	odigosv1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
-	commonconsts "github.com/odigos-io/odigos/common/consts"
 )
 
 // mapUrlTemplatizationProcessorToActionRequests maps a URL-templatization Processor event to a single
@@ -21,7 +21,7 @@ import (
 // once, and creates or deletes the Processor. Enqueueing every related Action would cause N reconciles
 // and N redundant lists for the same outcome.
 func mapUrlTemplatizationProcessorToActionRequests(ctx context.Context, _ client.Client, obj client.Object) []reconcile.Request {
-	if obj.GetName() != commonconsts.URLTemplatizationProcessorName {
+	if obj.GetName() != k8sconsts.URLTemplatizationProcessorName {
 		return nil
 	}
 	return []reconcile.Request{{
@@ -49,7 +49,7 @@ func SetupWithManager(mgr ctrl.Manager) error {
 				predicate.And(
 					&predicate.GenerationChangedPredicate{},
 					predicate.NewPredicateFuncs(func(object client.Object) bool {
-						return object.GetName() == commonconsts.URLTemplatizationProcessorName
+						return object.GetName() == k8sconsts.URLTemplatizationProcessorName
 					}),
 				),
 			)).

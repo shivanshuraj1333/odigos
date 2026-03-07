@@ -157,7 +157,7 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 
 	processors := common.FilterAndSortProcessorsByOrderHint(allProcessors, odigosv1.CollectorsGroupRoleClusterGateway)
 
-	odigosConfigExtensionName := odigosconsts.OdigosConfigK8sExtensionType
+	odigosConfigExtensionName := k8sconsts.OdigosConfigK8sExtensionType
 	gatewayOptions := pipelinegen.GatewayConfigOptions{
 		ServiceGraphDisabled:      gateway.Spec.ServiceGraphDisabled,
 		ClusterMetricsEnabled:     gateway.Spec.ClusterMetricsEnabled,
