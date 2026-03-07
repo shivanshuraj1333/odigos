@@ -33,8 +33,6 @@ type workloadRulesProvider interface {
 	GetFromResource(res pcommon.Resource) (*commonapi.ContainerCollectorConfig, bool)
 }
 
-// Use shared interfaces from common/collector so the type assertion ext.(ConfigCacheNotifier) succeeds.
-
 // NewFactory creates a new ProcessorFactory with default configuration
 func NewFactory() processor.Factory {
 	return processor.NewFactory(
@@ -128,17 +126,14 @@ func (w *extensionStartWrapper) Start(ctx context.Context, host component.Host) 
 }
 
 func (w *extensionStartWrapper) tryRegisterWithExtension(ext component.Component, extensionID string) {
-	if _, ok := ext.(workloadRulesProvider); ok {
-		w.proc.provider = ext.(workloadRulesProvider)
-	} else {
-		w.logger.Warn("extension does not implement workloadRulesProvider", zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
-	}
-	if notifier, ok := ext.(collector.ConfigCacheNotifier); ok {
-		notifier.RegisterConfigCacheCallback(w.proc)
-	} else {
-		w.logger.Warn("extension does not implement ConfigCacheNotifier; processor cache will not receive updates",
+	oe, ok := ext.(collector.OdigosConfigExtension)
+	if !ok {
+		w.logger.Warn("extension does not implement OdigosConfigExtension; processor will apply heuristics to all spans",
 			zap.String("extension_id", extensionID), zap.String("extGoType", fmt.Sprintf("%T", ext)))
+		return
 	}
+	w.proc.provider = oe
+	oe.RegisterConfigCacheCallback(w.proc)
 }
 
 func (w *extensionStartWrapper) Shutdown(ctx context.Context) error {

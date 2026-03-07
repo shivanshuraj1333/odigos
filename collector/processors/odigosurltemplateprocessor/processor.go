@@ -96,7 +96,13 @@ func (p *urlTemplateProcessor) OnSet(key string, cfg *commonapi.ContainerCollect
 	p.logger.Debug("url templatization cache OnSet", zap.String("key", key), zap.Bool("has_rules", hasRules))
 }
 
-// OnDeleteWorkloadPrefix implements the extension's ConfigCacheCallback; called when the extension cache removes an entry.
+// OnDeleteKey implements the extension's ConfigCacheCallback; called when a specific container entry is removed.
+func (p *urlTemplateProcessor) OnDeleteKey(key string) {
+	p.parsedRulesCache.delete(key)
+	p.logger.Debug("url templatization cache OnDeleteKey", zap.String("key", key))
+}
+
+// OnDeleteWorkloadPrefix implements the extension's ConfigCacheCallback; called when the extension cache removes all containers for a workload.
 func (p *urlTemplateProcessor) OnDeleteWorkloadPrefix(key string) {
 	p.parsedRulesCache.delete(key)
 	p.logger.Debug("url templatization cache OnDeleteWorkloadPrefix", zap.String("key", key))
