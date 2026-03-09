@@ -4,6 +4,7 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
+# configmaps: operator manages component configmaps (e.g. odigos-data-collection, effective-config)
 - apiGroups:
   - ""
   resources:
