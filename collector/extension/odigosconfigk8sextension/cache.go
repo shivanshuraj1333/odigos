@@ -42,12 +42,21 @@ func (c *cache) Set(key string, cfg *commonapi.ContainerCollectorConfig) {
 	c.data[key] = cfg
 }
 
+// Range calls f for each key and config in the cache. Caller must not modify the cache from f.
+func (c *cache) Range(f func(key string, cfg *commonapi.ContainerCollectorConfig)) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for k, v := range c.data {
+		f(k, v)
+	}
+}
+
 // DeleteWorkload removes the entry for the given workload key.
 func (c *cache) DeleteWorkload(workloadKey workloadKey) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	keyPrefix := k8sSourceKey(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name, "")
+	keyPrefix := KeyPrefixForWorkload(workloadKey.Namespace, workloadKey.Kind, workloadKey.Name)
 
 	// cache key is in container level, this function delete on the workload level.
 	// iterate over the data and delete each entry where the key starts with the given key.
