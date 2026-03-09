@@ -32,6 +32,7 @@ func (h *slogHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return atom.Enabled(slogLevelToZap(level))
 }
 
+//nolint:gocritic // slog.Handler interface requires value receiver for record
 func (h *slogHandler) Handle(_ context.Context, record slog.Record) error {
 	kvs := make([]interface{}, 0, len(h.attrs)*2+record.NumAttrs()*2)
 	for _, a := range h.attrs {

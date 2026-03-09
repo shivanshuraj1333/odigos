@@ -68,34 +68,35 @@ type Pipeline struct {
 func MergeConfigs(configDomains map[string]Config) (Config, error) {
 	mergedConfig := Config{}
 	var err error
-	for _, config := range configDomains {
-		mergedConfig.Receivers, err = mergeGenericMaps(mergedConfig.Receivers, config.Receivers)
+	for name := range configDomains {
+		cfg := configDomains[name]
+		mergedConfig.Receivers, err = mergeGenericMaps(mergedConfig.Receivers, cfg.Receivers)
 		if err != nil {
 			return Config{}, err
 		}
-		mergedConfig.Exporters, err = mergeGenericMaps(mergedConfig.Exporters, config.Exporters)
+		mergedConfig.Exporters, err = mergeGenericMaps(mergedConfig.Exporters, cfg.Exporters)
 		if err != nil {
 			return Config{}, err
 		}
-		mergedConfig.Processors, err = mergeGenericMaps(mergedConfig.Processors, config.Processors)
+		mergedConfig.Processors, err = mergeGenericMaps(mergedConfig.Processors, cfg.Processors)
 		if err != nil {
 			return Config{}, err
 		}
-		mergedConfig.Extensions, err = mergeGenericMaps(mergedConfig.Extensions, config.Extensions)
+		mergedConfig.Extensions, err = mergeGenericMaps(mergedConfig.Extensions, cfg.Extensions)
 		if err != nil {
 			return Config{}, err
 		}
-		mergedConfig.Connectors, err = mergeGenericMaps(mergedConfig.Connectors, config.Connectors)
+		mergedConfig.Connectors, err = mergeGenericMaps(mergedConfig.Connectors, cfg.Connectors)
 		if err != nil {
 			return Config{}, err
 		}
 
-		mergedConfig.Service.Extensions = mergeExtensions(mergedConfig.Service.Extensions, config.Service.Extensions)
-		mergedConfig.Service.Pipelines, err = mergePipelines(mergedConfig.Service.Pipelines, config.Service.Pipelines)
+		mergedConfig.Service.Extensions = mergeExtensions(mergedConfig.Service.Extensions, cfg.Service.Extensions)
+		mergedConfig.Service.Pipelines, err = mergePipelines(mergedConfig.Service.Pipelines, cfg.Service.Pipelines)
 		if err != nil {
 			return Config{}, err
 		}
-		mergedConfig.Service.Telemetry, err = mergeTelemetry(mergedConfig.Service.Telemetry, config.Service.Telemetry)
+		mergedConfig.Service.Telemetry, err = mergeTelemetry(mergedConfig.Service.Telemetry, cfg.Service.Telemetry)
 		if err != nil {
 			return Config{}, err
 		}
