@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/odigos-io/odigos-device-plugin/pkg/dpm"
+	"github.com/odigos-io/odigos/api/k8sconsts"
+	"github.com/odigos-io/odigos/common"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/deviceplugin/pkg/instrumentation"
 )
@@ -22,6 +24,17 @@ func runDeviceManager() error {
 
 	go startLogLevelWatcher(ctx)
 
+	pprofDone := make(chan struct{})
+	go func() {
+		defer close(pprofDone)
+		err := common.StartPprofServer(ctx, commonlogger.ToLogr(), int(k8sconsts.DevicePluginDebugPort))
+		if err != nil {
+			logger.Error("Failed to start pprof server", "err", err)
+		} else {
+			logger.Info("Pprof server exited")
+		}
+	}()
+
 	lister, err := instrumentation.NewLister(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create device manager lister: %w", err)
@@ -30,5 +43,6 @@ func runDeviceManager() error {
 	manager := dpm.NewManager(lister, commonlogger.ToLogr())
 	manager.Run(ctx)
 
+	<-pprofDone
 	return nil
 }

@@ -21,6 +21,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/odigos-io/odigos/api/k8sconsts"
+	"github.com/odigos-io/odigos/common"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/destinations"
 	"github.com/odigos-io/odigos/frontend/graph"
@@ -274,6 +276,7 @@ func main() {
 	log := commonlogger.LoggerCompat().With("subsystem", "startup")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	go common.StartPprofServer(ctx, logger, int(k8sconsts.DefaultDebugPort))
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	defer func() {
