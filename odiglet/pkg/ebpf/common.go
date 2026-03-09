@@ -48,8 +48,10 @@ type InstrumentationManagerOptions struct {
 // NewManager creates a new instrumentation manager for eBPF which is configured to work with Kubernetes.
 // Instrumentation factories must be provided in order to create the instrumentation objects.
 // Detector options can be provided to configure the process detector, but if not provided, default options will be used.
+// logger is optional; when provided it is used by the instrumentation manager for logging.
 func NewManager(
 	client client.Client,
+	logger *commonlogger.OdigosLogger,
 	opts InstrumentationManagerOptions,
 	configUpdates <-chan instrumentation.ConfigUpdate[K8sConfigGroup],
 	instrumentationRequests <-chan instrumentation.Request[K8sProcessGroup, K8sConfigGroup, *K8sProcessDetails],
@@ -147,6 +149,7 @@ func NewManager(
 		TracesMap:               tracesMap,
 		MetricsMap:              metricsMap,
 		MetricsAttributesMap:    metricsAttributesMap,
+		Logger:                  logger,
 	}
 
 	// Add file open triggers from all distributions.

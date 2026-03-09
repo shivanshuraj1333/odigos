@@ -21,6 +21,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"k8s.io/klog/v2"
+
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	"github.com/odigos-io/odigos/common"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
@@ -37,8 +40,6 @@ import (
 	"github.com/odigos-io/odigos/frontend/services/sse"
 	"github.com/odigos-io/odigos/frontend/version"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -276,13 +277,14 @@ func main() {
 	log := commonlogger.LoggerCompat().With("subsystem", "startup")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go common.StartPprofServer(ctx, logger, int(k8sconsts.DefaultPprofEndpointPort))
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	defer func() {
 		signal.Stop(ch)
 		cancel()
 	}()
+
+	go common.StartPprofServer(ctx, logger, int(k8sconsts.DefaultPprofEndpointPort))
 
 	// Load destinations data
 	err := destinations.Load()

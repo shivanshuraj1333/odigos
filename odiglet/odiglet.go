@@ -70,10 +70,11 @@ func New(clientset *kubernetes.Clientset, instrumentationMgrOpts ebpf.Instrument
 	}
 	otel.SetMeterProvider(provider)
 
-	logger := commonlogger.LoggerCompat().With("subsystem", "ebpfmetrics")
-	collector := ebpfMetrics.NewEBPFMetricsCollector(env.Current.NodeName, logger)
+	ebpfLogger := commonlogger.LoggerCompat().With("subsystem", "ebpfmanager")
+	metricsLogger := commonlogger.LoggerCompat().With("subsystem", "ebpfmetrics")
+	collector := ebpfMetrics.NewEBPFMetricsCollector(env.Current.NodeName, metricsLogger)
 	if err := collector.RegisterMetrics(); err != nil {
-		logger.Error("failed to register metrics", "err", err)
+		metricsLogger.Error("failed to register metrics", "err", err)
 	}
 
 	appendEnvVarNames := distro.GetAppendEnvVarNames(instrumentationMgrOpts.DistributionGetter.GetAllDistros())
@@ -87,7 +88,7 @@ func New(clientset *kubernetes.Clientset, instrumentationMgrOpts ebpf.Instrument
 
 	configUpdates := make(chan commonInstrumentation.ConfigUpdate[ebpf.K8sConfigGroup], configUpdatesBufferSize)
 	instrumentationRequests := make(chan commonInstrumentation.Request[ebpf.K8sProcessGroup, ebpf.K8sConfigGroup, *ebpf.K8sProcessDetails], instrumentationRequestsBufferSize)
-	ebpfManager, err := ebpf.NewManager(mgr.GetClient(), instrumentationMgrOpts, configUpdates, instrumentationRequests, appendEnvVarNames)
+	ebpfManager, err := ebpf.NewManager(mgr.GetClient(), ebpfLogger, instrumentationMgrOpts, configUpdates, instrumentationRequests, appendEnvVarNames)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ebpf manager %w", err)
 	}

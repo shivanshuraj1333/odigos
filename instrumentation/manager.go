@@ -99,6 +99,9 @@ type ManagerOptions[processGroup ProcessGroup, configGroup ConfigGroup, processD
 	// MetricsAttributesMap is the optional eBPF Hash map for UUID -> packed resource attributes.
 	// Used alongside MetricsMap to store resource attributes separately from the metrics hash key.
 	MetricsAttributesMap *cilumebpf.Map
+
+	// Logger is optional. When set, the manager uses it; otherwise it uses commonlogger.LoggerCompat().With("subsystem", "ebpfmanager").
+	Logger *commonlogger.OdigosLogger
 }
 
 // Manager is used to orchestrate the ebpf instrumentations lifecycle.
@@ -169,6 +172,9 @@ func NewManager[processGroup ProcessGroup, configGroup ConfigGroup, processDetai
 	}
 
 	logger := commonlogger.LoggerCompat().With("subsystem", "ebpfmanager")
+	if options.Logger != nil {
+		logger = options.Logger
+	}
 	procEvents := make(chan detector.ProcessEvent)
 	detector, err := detector.NewDetector(procEvents, options.DetectorOptions...)
 	if err != nil {
