@@ -27,7 +27,7 @@ func runDeviceManager() error {
 	pprofDone := make(chan struct{})
 	go func() {
 		defer close(pprofDone)
-		err := common.StartPprofServer(ctx, commonlogger.ToLogr(), int(k8sconsts.DevicePluginDebugPort))
+		err := common.StartPprofServer(ctx, commonlogger.ToLogr(), int(k8sconsts.DevicePluginPprofEndpointPort))
 		if err != nil {
 			logger.Error("Failed to start pprof server", "err", err)
 		} else {

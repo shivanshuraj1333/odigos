@@ -82,19 +82,19 @@ type ProfilingPodConfig struct {
 // servicesProfilingMetadata maps service names to their pprof endpoint configurations
 var servicesProfilingMetadata = map[string]ProfilingPodConfig{
 	"odiglet": {
-		Port: k8sconsts.DefaultDebugPort,
+		Port: k8sconsts.DefaultPprofEndpointPort,
 		Selector: labels.Set{
 			"app.kubernetes.io/name": k8sconsts.OdigletAppLabelValue,
 		}.AsSelector(),
 	},
 	"data-collection": {
-		Port: k8sconsts.CollectorsDebugPort,
+		Port: k8sconsts.CollectorsPprofEndpointPort,
 		Selector: labels.Set{
 			k8sconsts.OdigosCollectorRoleLabel: string(k8sconsts.CollectorsRoleNodeCollector),
 		}.AsSelector(),
 	},
 	"gateway": {
-		Port: k8sconsts.CollectorsDebugPort,
+		Port: k8sconsts.CollectorsPprofEndpointPort,
 		Selector: labels.Set{
 			k8sconsts.OdigosCollectorRoleLabel: string(k8sconsts.CollectorsRoleClusterGateway),
 		}.AsSelector(),
