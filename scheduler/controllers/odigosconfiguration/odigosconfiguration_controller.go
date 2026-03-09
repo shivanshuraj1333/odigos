@@ -258,6 +258,9 @@ func mergeConfigs(baseConfig *common.OdigosConfiguration, addtionalConfig *commo
 		if src.UI != "" {
 			dst.UI = src.UI
 		}
+		if src.Collector != "" {
+			dst.Collector = src.Collector
+		}
 	}
 
 	// Future fields can be added here following the same pattern:
