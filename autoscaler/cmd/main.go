@@ -82,7 +82,9 @@ func main() {
 	ctrl.SetLogger(commonlogger.ToLogr())
 	logger := commonlogger.LoggerCompat().With("subsystem", "startup")
 
-	managerOptions := controllers.KubeManagerOptions{}
+	managerOptions := controllers.KubeManagerOptions{
+		Logger: commonlogger.ToLogr(),
+	}
 
 	flag.StringVar(&managerOptions.MetricsServerBindAddress, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&managerOptions.HealthProbeBindAddress, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
