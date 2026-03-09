@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/odigos-io/odigos/api/k8sconsts"
+	"github.com/odigos-io/odigos/common"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/distros/distro"
 	commonInstrumentation "github.com/odigos-io/odigos/instrumentation"
@@ -128,6 +129,18 @@ func (o *Odiglet) Run(ctx context.Context) {
 
 	// Channel to signal when eBPF manager has exited
 	ebpfDone := make(chan struct{})
+
+	// Start pprof server
+	g.Go(func() error {
+		err := common.StartPprofServer(groupCtx, commonlogger.ToLogr(), int(k8sconsts.DefaultPprofEndpointPort))
+		if err != nil {
+			logger.Error("Failed to start pprof server", "err", err)
+		} else {
+			logger.Info("Pprof server exited")
+		}
+		// if we fail to start the pprof server, don't return an error as it is not critical
+		return nil
+	})
 
 	g.Go(func() error {
 		defer close(ebpfDone)
