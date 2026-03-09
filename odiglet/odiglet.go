@@ -90,7 +90,7 @@ func New(clientset *kubernetes.Clientset, instrumentationMgrOpts ebpf.Instrument
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ebpf manager %w", err)
 	}
-	criWrapper := criwrapper.CriClient{}
+	criWrapper := criwrapper.CriClient{Logger: commonlogger.ToLogr()}
 
 	kubeManagerOptions := kube.KubeManagerOptions{
 		Mgr:                     mgr,

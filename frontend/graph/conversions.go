@@ -266,43 +266,30 @@ func setEffectiveConfigEnums(result *model.EffectiveConfig, config *common.Odigo
 }
 
 func setEffectiveConfigComponentLogLevels(result *model.EffectiveConfig, config *common.OdigosConfiguration) {
-	if config.ComponentLogLevels == nil {
-		return
-	}
-	c := config.ComponentLogLevels
+	// Always expose effective log levels; when unset, Resolve returns "info" for all components.
 	out := &model.ComponentLogLevelsConfig{}
-	if c.Default != "" {
-		lvl := model.OdigosLogLevel(c.Default)
-		out.Default = &lvl
+	resolve := func(component string) model.OdigosLogLevel {
+		if config.ComponentLogLevels == nil {
+			return model.OdigosLogLevel(common.LogLevelInfo)
+		}
+		return model.OdigosLogLevel(config.ComponentLogLevels.Resolve(component))
 	}
-	if c.Autoscaler != "" {
-		lvl := model.OdigosLogLevel(c.Autoscaler)
-		out.Autoscaler = &lvl
-	}
-	if c.Scheduler != "" {
-		lvl := model.OdigosLogLevel(c.Scheduler)
-		out.Scheduler = &lvl
-	}
-	if c.Instrumentor != "" {
-		lvl := model.OdigosLogLevel(c.Instrumentor)
-		out.Instrumentor = &lvl
-	}
-	if c.Odiglet != "" {
-		lvl := model.OdigosLogLevel(c.Odiglet)
-		out.Odiglet = &lvl
-	}
-	if c.Deviceplugin != "" {
-		lvl := model.OdigosLogLevel(c.Deviceplugin)
-		out.Deviceplugin = &lvl
-	}
-	if c.UI != "" {
-		lvl := model.OdigosLogLevel(c.UI)
-		out.UI = &lvl
-	}
-	if c.Collector != "" {
-		lvl := model.OdigosLogLevel(c.Collector)
-		out.Collector = &lvl
-	}
+	defaultLvl := resolve("default")
+	out.Default = &defaultLvl
+	autoscalerLvl := resolve("autoscaler")
+	out.Autoscaler = &autoscalerLvl
+	schedulerLvl := resolve("scheduler")
+	out.Scheduler = &schedulerLvl
+	instrumentorLvl := resolve("instrumentor")
+	out.Instrumentor = &instrumentorLvl
+	odigletLvl := resolve("odiglet")
+	out.Odiglet = &odigletLvl
+	devicepluginLvl := resolve("deviceplugin")
+	out.Deviceplugin = &devicepluginLvl
+	uiLvl := resolve("ui")
+	out.UI = &uiLvl
+	collectorLvl := resolve("collector")
+	out.Collector = &collectorLvl
 	result.ComponentLogLevels = out
 }
 

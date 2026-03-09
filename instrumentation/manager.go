@@ -330,6 +330,7 @@ func (m *manager[ProcessGroup, ConfigGroup, ProcessDetails]) Run(ctx context.Con
 		// Start the FD server
 		server := &unixfd.Server{
 			SocketPath: unixfd.DefaultSocketPath,
+			Logger:    commonlogger.ToLogr(),
 			TracesFDProvider: func() int {
 				return m.tracesMap.FD()
 			},

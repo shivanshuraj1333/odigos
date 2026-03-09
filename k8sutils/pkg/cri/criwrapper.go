@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	criapi "k8s.io/cri-api/pkg/apis/runtime/v1"
@@ -27,6 +28,7 @@ type CriClient struct {
 	conn          *grpc.ClientConn
 	imageClient   criapi.ImageServiceClient
 	runtimeClient criapi.RuntimeServiceClient
+	Logger        logr.Logger
 }
 
 // Default runtime endpoints
@@ -57,7 +59,7 @@ func detectRuntimeSocket() string {
 
 // Connect attempts to establish a connection to a CRI runtime.
 func (rc *CriClient) Connect(ctx context.Context) error {
-	logger := commonlogger.LoggerCompat().With("subsystem", "cri")
+	logger := commonlogger.WrapLogr(rc.Logger).WithName("cri")
 	var err error
 
 	endpoint := detectRuntimeSocket()
@@ -115,10 +117,10 @@ func (rc *CriClient) GetContainerEnvVarsList(ctx context.Context, envVarKeys []s
 // Close closes the gRPC connection.
 func (rc *CriClient) Close() {
 	if rc.conn != nil {
-		logger := commonlogger.LoggerCompat().With("subsystem", "cri")
+		logger := commonlogger.WrapLogr(rc.Logger).WithName("cri")
 		logger.Info("Closing gRPC connection")
 		if err := rc.conn.Close(); err != nil {
-			logger.Error("Failed to close gRPC connection", "err", err)
+			logger.Error(err, "Failed to close gRPC connection")
 		} else {
 			logger.Info("gRPC connection closed successfully")
 		}

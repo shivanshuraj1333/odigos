@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 
+	"github.com/go-logr/logr"
 	"golang.org/x/sys/unix"
 
 	commonlogger "github.com/odigos-io/odigos/common/logger"
@@ -16,6 +17,7 @@ import (
 // (which need access to those maps for reading telemetry data).
 type Server struct {
 	SocketPath         string
+	Logger             logr.Logger
 	TracesFDProvider   func() int   // Function that returns the traces eBPF map file descriptor
 	MetricsFDsProvider func() []int // Function that returns all metrics-related eBPF map file descriptors
 }
@@ -39,7 +41,7 @@ func (s *Server) Run(ctx context.Context) error {
 		_ = os.Remove(s.SocketPath)
 	}()
 
-	logger := commonlogger.LoggerCompat().With("subsystem", "unixfd")
+	logger := commonlogger.WrapLogr(s.Logger).WithName("unixfd")
 	logger.Info("unixfd server started", "socket", s.SocketPath)
 
 	// Close listener when context is canceled
@@ -55,7 +57,7 @@ func (s *Server) Run(ctx context.Context) error {
 				logger.Info("server shutting down")
 				return nil
 			}
-			logger.Error("accept failed", "err", err)
+			logger.Error(err, "accept failed")
 			continue
 		}
 
@@ -65,7 +67,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 // handleRequest processes a single client request
 func (s *Server) handleRequest(conn *net.UnixConn) {
-	logger := commonlogger.LoggerCompat().With("subsystem", "unixfd")
+	logger := commonlogger.WrapLogr(s.Logger).WithName("unixfd")
 	defer func() {
 		_ = conn.Close()
 	}()
@@ -74,7 +76,7 @@ func (s *Server) handleRequest(conn *net.UnixConn) {
 	buf := make([]byte, 16)
 	n, err := conn.Read(buf)
 	if err != nil {
-		logger.Error("failed to read request", "err", err)
+		logger.Error(err, "failed to read request")
 		return
 	}
 
@@ -84,38 +86,38 @@ func (s *Server) handleRequest(conn *net.UnixConn) {
 	case ReqGetFD, ReqGetTracesFD:
 		// Legacy "GET_FD" defaults to traces for backward compatibility
 		if s.TracesFDProvider == nil {
-			logger.Error("no traces FD provider", "err", fmt.Errorf("traces FD provider not configured"))
+			logger.Error(fmt.Errorf("traces FD provider not configured"), "no traces FD provider")
 			return
 		}
 		fd := s.TracesFDProvider()
 		if fd <= 0 {
-			logger.Error("FD provider returned invalid fd", "err", fmt.Errorf("invalid fd %d", fd), "request", request)
+			logger.Error(fmt.Errorf("invalid fd %d", fd), "FD provider returned invalid fd", "request", request)
 			return
 		}
 		if err := sendFDs(conn, fd); err != nil {
-			logger.Error("failed to send FD", "err", err)
+			logger.Error(err, "failed to send FD")
 			return
 		}
 		logger.Info("sent FD to client", "fd", fd, "request", request)
 
 	case ReqGetMetricsFD:
 		if s.MetricsFDsProvider == nil {
-			logger.Error("no metrics FDs provider", "err", fmt.Errorf("metrics FDs provider not configured"))
+			logger.Error(fmt.Errorf("metrics FDs provider not configured"), "no metrics FDs provider")
 			return
 		}
 		fds := s.MetricsFDsProvider()
 		if len(fds) == 0 {
-			logger.Error("metrics FDs provider returned empty slice", "err", fmt.Errorf("no metrics FDs available"))
+			logger.Error(fmt.Errorf("no metrics FDs available"), "metrics FDs provider returned empty slice")
 			return
 		}
 		for _, fd := range fds {
 			if fd <= 0 {
-				logger.Error("FD provider returned invalid fd", "err", fmt.Errorf("invalid fd %d", fd), "request", request)
+				logger.Error(fmt.Errorf("invalid fd %d", fd), "FD provider returned invalid fd", "request", request)
 				return
 			}
 		}
 		if err := sendFDs(conn, fds...); err != nil {
-			logger.Error("failed to send metrics FDs", "err", err)
+			logger.Error(err, "failed to send metrics FDs")
 			return
 		}
 		logger.Info("sent metrics FDs to client", "fds", fds, "request", request)

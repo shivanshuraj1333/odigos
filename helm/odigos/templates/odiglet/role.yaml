@@ -13,6 +13,7 @@ rules:
       - configmaps
     resourceNames:
       - odigos-data-collection
+      - effective-config
     verbs:
       - get
       - list
