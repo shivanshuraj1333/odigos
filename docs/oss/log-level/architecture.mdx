@@ -1,0 +1,98 @@
+---
+title: "Log Level Architecture"
+sidebarTitle: "Architecture"
+---
+
+This page describes how dynamic log level control works internally: how configuration flows from Helm or the UI down to the actual `zap.AtomicLevel` inside each running pod.
+
+---
+
+## Three-Layer Configuration
+
+Log levels are stored in three Kubernetes ConfigMaps, merged in order by the Scheduler.
+
+```
+┌─────────────────────────────┐  Priority 1 (lowest)
+│   odigos-configuration      │  Written by Helm at install/upgrade
+│   componentLogLevels:        │
+│     default: info            │
+│     autoscaler: debug        │  --set autoscaler.logLevel=debug
+└────────────┬────────────────┘
+             │
+             ▼  merge (non-destructive: absent fields don't clear lower layers)
+┌─────────────────────────────┐  Priority 2
+│   odigos-remote-config      │  Written by central backend (optional)
+└────────────┬────────────────┘
+             │
+             ▼  merge
+┌─────────────────────────────┐  Priority 3 (highest)
+│   odigos-local-ui-config    │  Written by GraphQL mutation from Odigos UI
+│   componentLogLevels:        │
+│     autoscaler: warn         │  overrides Helm
+└────────────┬────────────────┘
+             │
+             ▼  Scheduler reconciles (≤ 60s)
+┌─────────────────────────────┐
+│   effective-config           │  Single source of truth — read by all components
+│   componentLogLevels:        │
+│     default: info            │
+│     autoscaler: warn         │  UI wins
+└─────────────────────────────┘
+```
+
+**Non-destructive merge rule:** An absent field in a higher-priority layer does not clear the value from a lower-priority layer. Only explicitly set fields override.
+
+---
+
+## Propagation Path
+
+Once `effective-config` is updated, each component picks up the change independently.
+
+```
+effective-config ConfigMap updated
+        │
+        ├─► autoscaler    loglevel-effectiveconfig controller  → commonlogger.SetLevel()
+        ├─► scheduler     odigosconfiguration controller       → commonlogger.SetLevel()
+        ├─► odiglet       loglevel-effectiveconfig controller  → commonlogger.SetLevel()
+        ├─► instrumentor  effectiveconfig controller           → commonlogger.SetLevel()
+        ├─► deviceplugin  manual watch loop                    → commonlogger.SetLevel()
+        └─► ui            effectiveconfig_watcher goroutine    → commonlogger.SetLevel()
+```
+
+`commonlogger.SetLevel()` updates the shared `zap.AtomicLevel`. Because all loggers (`FromContext`, `LoggerCompat`, the logr bridge, the slog bridge) share the same atom, the level change is **instantaneous and process-wide** — no pod restart is needed.
+
+---
+
+## Level Resolution
+
+When any component reads its level from `effective-config`, it calls `ComponentLogLevels.Resolve(componentName)`:
+
+```
+component field set?  →  use it
+       ↓ no
+Default field set?    →  use it
+       ↓ no
+                         use "info"
+```
+
+---
+
+## Key Components
+
+| Component | Role |
+|---|---|
+| **Scheduler** | Reads all three source ConfigMaps, runs `mergeConfigs()`, writes `effective-config`. Also applies its own level immediately after merge. |
+| **`k8sutils/pkg/loglevel`** | Generic controller-runtime reconciler used by autoscaler and odiglet. Watches `effective-config` by name, calls `SetLevel`. |
+| **`frontend/kube/watchers/effectiveconfig_watcher`** | Background goroutine in the UI process. Uses a raw Kubernetes watch (not controller-runtime) with retry backoff. Calls `SetLevel("ui")`. |
+| **`common/logger`** | Single source of truth for the `zap.AtomicLevel`. All bridges (logr, slog) share the same atom. |
+
+---
+
+## ConfigMap Names
+
+| ConfigMap | Namespace | Managed by |
+|---|---|---|
+| `odigos-configuration` | `odigos-system` | Helm |
+| `odigos-remote-config` | `odigos-system` | Central backend (optional) |
+| `odigos-local-ui-config` | `odigos-system` | Odigos UI / GraphQL |
+| `effective-config` | `odigos-system` | Scheduler (read-only for all other components) |

@@ -23,7 +23,7 @@
     },
     "autoRollback": {
       "additionalProperties": false,
-      "description": "Auto rollback settings\nThe auto‐rollback feature provides a stability window to test instrumented apps.\nAfter an application is instrumented, a grace period begins during which we allow the app (and its dependencies) to stabilize and start working.\nOnce the grace period has passed and we are within the stability window, we can decide to uninstrument a crashing application.",
+      "description": "Auto rollback settings\nThe auto\u2010rollback feature provides a stability window to test instrumented apps.\nAfter an application is instrumented, a grace period begins during which we allow the app (and its dependencies) to stabilize and start working.\nOnce the grace period has passed and we are within the stability window, we can decide to uninstrument a crashing application.",
       "properties": {
         "disabled": {
           "default": false,
@@ -63,7 +63,14 @@
           "default": "info",
           "description": "Log level for autoscaler. Defaults to info.",
           "required": [],
-          "title": "logLevel"
+          "title": "logLevel",
+          "enum": [
+            "",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "nodeSelector": {
           "default": "",
@@ -322,13 +329,13 @@
         },
         "limitCPUm": {
           "default": "1000",
-          "description": "the CPU limit for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource limit\nof the form \"cpu: \u003cvalue\u003em\".\ndefault value is 1000m\nIf you set only limitCPUm, the requestCPUm will be set to the same value.",
+          "description": "the CPU limit for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource limit\nof the form \"cpu: <value>m\".\ndefault value is 1000m\nIf you set only limitCPUm, the requestCPUm will be set to the same value.",
           "required": [],
           "title": "limitCPUm"
         },
         "limitMemoryMiB": {
           "default": "625",
-          "description": "the memory limit for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource limit\nof the form \"memory: \u003cvalue\u003eMi\".\ndefault value is 625Mi\nIf you set only limitMemoryMiB, the requestMemoryMiB will be set to the same value.",
+          "description": "the memory limit for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource limit\nof the form \"memory: <value>Mi\".\ndefault value is 625Mi\nIf you set only limitMemoryMiB, the requestMemoryMiB will be set to the same value.",
           "required": [],
           "title": "limitMemoryMiB"
         },
@@ -364,13 +371,13 @@
         },
         "requestCPUm": {
           "default": "500",
-          "description": "the CPU request for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource request\nof the form \"cpu: \u003cvalue\u003em\".\ndefault value is 500m\nIf you set only requestCPUm, the limitCPUm will be set to the same value.",
+          "description": "the CPU request for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource request\nof the form \"cpu: <value>m\".\ndefault value is 500m\nIf you set only requestCPUm, the limitCPUm will be set to the same value.",
           "required": [],
           "title": "requestCPUm"
         },
         "requestMemoryMiB": {
           "default": "625",
-          "description": "the memory request for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource request\nof the form \"memory: \u003cvalue\u003eMi\".\ndefault value is 500Mi\nIf you set only requestMemoryMiB, the limitMemoryMiB will be set to the same value.",
+          "description": "the memory request for the cluster gateway collector deployment.\nit will be embedded in the deployment as a resource request\nof the form \"memory: <value>Mi\".\ndefault value is 500Mi\nIf you set only requestMemoryMiB, the limitMemoryMiB will be set to the same value.",
           "required": [],
           "title": "requestMemoryMiB"
         },
@@ -408,13 +415,13 @@
         },
         "limitCPUm": {
           "default": "500",
-          "description": "the CPU limit for the node collector daemonset.\nit will be embedded in the daemonset as a resource limit\nof the form \"cpu: \u003cvalue\u003em\".\ndefault value is 500m\nIf you set only limitCPUm, the requestCPUm will be set to the same value.",
+          "description": "the CPU limit for the node collector daemonset.\nit will be embedded in the daemonset as a resource limit\nof the form \"cpu: <value>m\".\ndefault value is 500m\nIf you set only limitCPUm, the requestCPUm will be set to the same value.",
           "required": [],
           "title": "limitCPUm"
         },
         "limitMemoryMiB": {
           "default": "500",
-          "description": "LimitMemoryMiB is the memory limit for the node collector daemonset.\nit will be embedded in the daemonset as a resource limit of the form \"memory: \u003cvalue\u003eMi\"\ndefault value is 500Mi\nIf you set only limitMemoryMiB, the requestMemoryMiB will be set to the same value.",
+          "description": "LimitMemoryMiB is the memory limit for the node collector daemonset.\nit will be embedded in the daemonset as a resource limit of the form \"memory: <value>Mi\"\ndefault value is 500Mi\nIf you set only limitMemoryMiB, the requestMemoryMiB will be set to the same value.",
           "required": [],
           "title": "limitMemoryMiB"
         },
@@ -490,13 +497,13 @@
         },
         "requestCPUm": {
           "default": "250",
-          "description": "the CPU request for the node collector daemonset.\nit will be embedded in the daemonset as a resource request\nof the form \"cpu: \u003cvalue\u003em\".\ndefault value is 250m\nIf you set only requestCPUm, the limitCPUm will be set to the same value.",
+          "description": "the CPU request for the node collector daemonset.\nit will be embedded in the daemonset as a resource request\nof the form \"cpu: <value>m\".\ndefault value is 250m\nIf you set only requestCPUm, the limitCPUm will be set to the same value.",
           "required": [],
           "title": "requestCPUm"
         },
         "requestMemoryMiB": {
           "default": "250",
-          "description": "RequestMemoryMiB is the memory request for the node collector daemonset.\nit will be embedded in the daemonset as a resource request of the form \"memory: \u003cvalue\u003eMi\"\ndefault value is 250Mi\nIf you set only requestMemoryMiB, the limitMemoryMiB will be set to the same value.",
+          "description": "RequestMemoryMiB is the memory request for the node collector daemonset.\nit will be embedded in the daemonset as a resource request of the form \"memory: <value>Mi\"\ndefault value is 250Mi\nIf you set only requestMemoryMiB, the limitMemoryMiB will be set to the same value.",
           "required": [],
           "title": "requestMemoryMiB"
         }
@@ -588,7 +595,7 @@
     },
     "imagePrefix": {
       "default": "",
-      "description": "By default, images are pulled from odigos registry at `registry.odigos.io`\nIf you use custom or internal registry to serve in your cluster, you can set the imagePrefix to your registry.\nFor example, if you set imagePrefix to `myregistry.io/odigos`, the images will be pulled from `myregistry.io/odigos/odigos-\u003ccomponent\u003e:\u003ctag\u003e`",
+      "description": "By default, images are pulled from odigos registry at `registry.odigos.io`\nIf you use custom or internal registry to serve in your cluster, you can set the imagePrefix to your registry.\nFor example, if you set imagePrefix to `myregistry.io/odigos`, the images will be pulled from `myregistry.io/odigos/odigos-<component>:<tag>`",
       "required": [],
       "title": "imagePrefix"
     },
@@ -680,7 +687,14 @@
           "default": "info",
           "description": "Log level for instrumentor. Defaults to info.",
           "required": [],
-          "title": "logLevel"
+          "title": "logLevel",
+          "enum": [
+            "",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "mountMethod": {
           "default": "",
@@ -794,7 +808,14 @@
       "default": "info",
       "description": "Default log level for components when component-level logLevel is not set.\nAccepted values: debug, info, warn, error. Default: info.\nSet via ODIGOS_LOG_LEVEL env; change requires pod restart or rollout.",
       "required": [],
-      "title": "logLevel"
+      "title": "logLevel",
+      "enum": [
+        "",
+        "debug",
+        "info",
+        "warn",
+        "error"
+      ]
     },
     "metricsSources": {
       "additionalProperties": false,
@@ -1182,7 +1203,7 @@
           "description": "Configuration for the data-collection container.",
           "properties": {
             "capabilities": {
-              "description": "capabilities to add to the data-collection container when running as un privileged - this will be ignored when running as privileged.\nSYS_ADMIN required when running in unprivileged mode if one of the following is true:\n 1. kernel version is older than 5.8 (In \u003e= 5.8 BPF and PERMON were added)\n 2. kernel.perf_event_paranoid sysctl is set to 2 or higher",
+              "description": "capabilities to add to the data-collection container when running as un privileged - this will be ignored when running as privileged.\nSYS_ADMIN required when running in unprivileged mode if one of the following is true:\n 1. kernel version is older than 5.8 (In >= 5.8 BPF and PERMON were added)\n 2. kernel.perf_event_paranoid sysctl is set to 2 or higher",
               "items": {
                 "anyOf": [
                   {
@@ -1375,7 +1396,14 @@
           "default": "info",
           "description": "Log level for odiglet. Defaults to info.",
           "required": [],
-          "title": "logLevel"
+          "title": "logLevel",
+          "enum": [
+            "",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "noHostNetwork": {
           "default": "false",
@@ -1419,7 +1447,7 @@
               "title": "appArmorProfile"
             },
             "capabilities": {
-              "description": "capabilities to add to the odiglet container when running as unPrivileged - this will be ignored when running as privileged.\nSYS_ADMIN required when running in unprivileged mode if one of the following is true:\n 1. kernel version is older than 5.8 (In \u003e= 5.8 BPF and PERMON were added)\n 2. kernel.perf_event_paranoid sysctl is set to 2 or higher\nIPC_LOCK required for mmap of perf buffers\nSYS_RESOURCE required only for kernels \u003c 5.11, used for setting rlimit for BPF maps",
+              "description": "capabilities to add to the odiglet container when running as unPrivileged - this will be ignored when running as privileged.\nSYS_ADMIN required when running in unprivileged mode if one of the following is true:\n 1. kernel version is older than 5.8 (In >= 5.8 BPF and PERMON were added)\n 2. kernel.perf_event_paranoid sysctl is set to 2 or higher\nIPC_LOCK required for mmap of perf buffers\nSYS_RESOURCE required only for kernels < 5.11, used for setting rlimit for BPF maps",
               "items": {
                 "anyOf": [
                   {
@@ -1746,7 +1774,14 @@
           "default": "info",
           "description": "Log level for scheduler. Defaults to info.",
           "required": [],
-          "title": "logLevel"
+          "title": "logLevel",
+          "enum": [
+            "",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "nodeSelector": {
           "default": "",
@@ -1865,7 +1900,7 @@
       "title": "telemetry"
     },
     "topologySpreadConstraints": {
-      "description": "Refer to the official Kubernetes documentation for structure and field details:\nhttps://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/\nExample: Odigos components should be evenly spread across zones.\nNo need to set labelSelector manually — the Odigos Helm chart will apply it automatically.\ntopologySpreadConstraints:\n  - maxSkew: 1\n    topologyKey: \"topology.kubernetes.io/zone\"\n    whenUnsatisfiable: \"ScheduleAnyway\"",
+      "description": "Refer to the official Kubernetes documentation for structure and field details:\nhttps://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/\nExample: Odigos components should be evenly spread across zones.\nNo need to set labelSelector manually \u2014 the Odigos Helm chart will apply it automatically.\ntopologySpreadConstraints:\n  - maxSkew: 1\n    topologyKey: \"topology.kubernetes.io/zone\"\n    whenUnsatisfiable: \"ScheduleAnyway\"",
       "items": {
         "required": []
       },
@@ -1897,7 +1932,14 @@
           "default": "info",
           "description": "Log level for UI. Defaults to info.",
           "required": [],
-          "title": "logLevel"
+          "title": "logLevel",
+          "enum": [
+            "",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "nodeSelector": {
           "default": "",

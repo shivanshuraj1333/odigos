@@ -1,0 +1,161 @@
+---
+title: "Logger Developer Guide"
+sidebarTitle: "Developer Guide"
+---
+
+The `common/logger` package is the single logging foundation for all Odigos components.
+It wraps **Zap** behind a shared `AtomicLevel`, so every component can change its verbosity at runtime without a restart.
+
+## Quick Start
+
+Call `Init` once at process startup, then use one of the three APIs depending on your context.
+
+```go
+import commonlogger "github.com/odigos-io/odigos/common/logger"
+
+func main() {
+    commonlogger.Init(os.Getenv("ODIGOS_LOG_LEVEL"), "my-component")
+    // ...
+    ctrl.SetLogger(commonlogger.ToLogr())  // wire into controller-runtime
+}
+```
+
+`Init` accepts `"debug"`, `"info"`, `"warn"`, `"error"`. Any unknown or empty string defaults to `info`.
+
+---
+
+## Three Logging APIs
+
+### 1. `FromContext` — for controller-runtime reconcilers (preferred)
+
+Use inside any `Reconcile` method. The logger is pulled from the context that controller-runtime populates, which is already backed by the shared `AtomicLevel`.
+
+```go
+func (r *MyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    logger := commonlogger.FromContext(ctx)
+
+    logger.Info("reconciling", "name", req.Name)
+    logger.Debug("detail", "namespace", req.Namespace)   // only emitted at debug level
+    logger.Error(err, "failed to update")
+
+    // Attach sub-logger for a block of work
+    sub := logger.WithValues("phase", "sync")
+    sub.Info("starting sync")
+}
+```
+
+### 2. `LoggerCompat` — for non-reconciler code (slog-style API)
+
+Use in services, watchers, or any code that does not have a context. Mirrors `slog`-style key-value pairs.
+
+```go
+log := commonlogger.LoggerCompat().With("subsystem", "collector-config")
+log.Info("building pipeline", "destinations", len(dests))
+log.Warn("retrying", "attempt", n)
+log.Debug("raw config", "yaml", yamlStr)
+log.Error("write failed", "err", err)
+```
+
+### 3. `WrapLogr` — for wrapping an existing logr.Logger
+
+Use when a library or manager hands you a `logr.Logger` and you want the `.Debug()` shorthand.
+
+```go
+logger := commonlogger.WrapLogr(mgr.GetLogger().WithName("my-subsystem"))
+logger.Debug("low-level detail")
+```
+
+---
+
+## Changing the Level at Runtime
+
+Call `SetLevel` whenever the effective-config changes. The change is applied atomically — all existing loggers see the new level immediately.
+
+```go
+commonlogger.SetLevel("debug")   // all Info/Debug/Error calls reflect this instantly
+commonlogger.SetLevel("")        // no-op, keeps current level
+level := commonlogger.CurrentLevel() // returns "debug" | "info" | "warn" | "error"
+```
+
+This is exactly what the `loglevel-effectiveconfig` reconciler does when it detects a change in the `effective-config` ConfigMap.
+
+---
+
+## Log Bridges
+
+The shared `AtomicLevel` controls **all three bridges simultaneously**. Calling `SetLevel("debug")` once enables debug output from zap, logr, and slog together.
+
+### logr bridge — controller-runtime
+
+Wire at startup so controller-runtime, klog, and all reconciler contexts use the shared atom.
+
+```go
+ctrl.SetLogger(commonlogger.ToLogr())
+```
+
+All `FromContext(ctx)` calls in reconcilers automatically use this logger.
+
+### slog bridge — external libraries
+
+Some libraries (e.g. runtime-detector) accept a `*slog.Logger`. Wrap them with `NewSlogHandler` so their output is routed through the shared zap logger.
+
+```go
+import "log/slog"
+
+slogLogger := slog.New(commonlogger.NewSlogHandler("runtime-detector"))
+detector.New(detectorOptions, detector.WithLogger(slogLogger))
+```
+
+The `subsystem` string is added as a structured field on every log line, making it easy to filter by subsystem in log aggregation tools.
+
+### Direct zap — low-level use only
+
+`commonlogger.Logger()` returns the raw `*zap.Logger`. Only use this when you need zap-specific features (e.g. `zap.Field` typed fields). Prefer `FromContext` or `LoggerCompat` in almost all cases.
+
+---
+
+## Adding a New Component
+
+If you are writing a new Odigos component that needs dynamic log level support:
+
+**1. Initialize at startup**
+
+```go
+commonlogger.Init(os.Getenv("ODIGOS_LOG_LEVEL"), "my-component")
+ctrl.SetLogger(commonlogger.ToLogr())
+```
+
+**2. Register the reconciler**
+
+The generic reconciler in `k8sutils/pkg/loglevel` watches `effective-config` and calls `SetLevel` for you.
+
+```go
+import "github.com/odigos-io/odigos/k8sutils/pkg/loglevel"
+
+if err := loglevel.SetupWithManager(mgr, "my-component"); err != nil {
+    return err
+}
+```
+
+**3. Add the component to the GraphQL enum and `ComponentLogLevels` struct** in `frontend/graph/configs.graphqls` and `common/odigos_config.go` respectively, and update `setComponentLogLevelField` in `frontend/services/log_level.go`.
+
+---
+
+## Log Format
+
+All output is structured JSON, one object per line. Every line always includes:
+
+| Field | Example | Source |
+|---|---|---|
+| `level` | `"info"` | log call |
+| `ts` | `"2026-03-11T10:41:33.872Z"` | `Init` |
+| `caller` | `"logger/logger.go:120"` | `zap.AddCaller()` |
+| `msg` | `"Reconciling"` | log call |
+| `component` | `"autoscaler"` | `Init(_, component)` |
+
+Additional fields are appended as structured key-value pairs.
+
+```json
+{"level":"info","ts":"2026-03-11T10:41:33.872Z","caller":"loglevel/reconciler.go:42",
+ "msg":"Applying log level","component":"autoscaler","level":"debug"}
+```

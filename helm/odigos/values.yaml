@@ -395,7 +395,7 @@ autoscaler:
   # @schema
   # description: Log level for autoscaler. Defaults to info.
   # @schema
-  logLevel: "info"
+  logLevel: ""
 
   # @schema
   # description: Override the global nodeSelector (values.nodeSelector) for this component
@@ -454,7 +454,7 @@ scheduler:
   # @schema
   # description: Log level for scheduler. Defaults to info.
   # @schema
-  logLevel: "info"
+  logLevel: ""
 
   # @schema
   # description: Override the global nodeSelector (values.nodeSelector) for this component
@@ -513,7 +513,7 @@ ui:
   # @schema
   # description: Log level for UI. Defaults to info.
   # @schema
-  logLevel: "info"
+  logLevel: ""
 
   # @schema
   # description: Override the global nodeSelector (values.nodeSelector) for this component
@@ -627,7 +627,7 @@ instrumentor:
   # @schema
   # description: Log level for instrumentor. Defaults to info.
   # @schema
-  logLevel: "info"
+  logLevel: ""
 
   # @schema
   # description: |-
@@ -739,7 +739,7 @@ odiglet:
   # @schema
   # description: Log level for odiglet. Defaults to info.
   # @schema
-  logLevel: "info"
+  logLevel: ""
 
   # @schema
   # description: Configuration for the odiglet container.

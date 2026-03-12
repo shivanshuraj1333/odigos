@@ -8,25 +8,25 @@ import (
 	"github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/consts"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
+	"github.com/odigos-io/odigos/frontend/kube"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
-func SetComponentLogLevel(ctx context.Context, c client.Client, component string, level common.OdigosLogLevel) error {
+func SetComponentLogLevel(ctx context.Context, _ client.Client, component string, level common.OdigosLogLevel) error {
 	ns := env.GetCurrentNamespace()
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		var cm v1.ConfigMap
-		if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: consts.OdigosLocalUiConfigName}, &cm); err != nil {
+		cm, err := kube.DefaultClient.CoreV1().ConfigMaps(ns).Get(ctx, consts.OdigosLocalUiConfigName, metav1.GetOptions{})
+		if err != nil {
 			if apierrors.IsNotFound(err) {
 				// Create odigos-local-ui-config if missing (e.g. first time setting log level from UI).
-				ownerCm := v1.ConfigMap{}
-				if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: consts.OdigosConfigurationName}, &ownerCm); err != nil {
+				ownerCm, err := kube.DefaultClient.CoreV1().ConfigMaps(ns).Get(ctx, consts.OdigosConfigurationName, metav1.GetOptions{})
+				if err != nil {
 					return fmt.Errorf("failed to get odigos-configuration for owner reference: %w", err)
 				}
 				cfg := common.OdigosConfiguration{ComponentLogLevels: &common.ComponentLogLevels{}}
@@ -35,7 +35,7 @@ func SetComponentLogLevel(ctx context.Context, c client.Client, component string
 				if marshalErr != nil {
 					return marshalErr
 				}
-				newCm := v1.ConfigMap{
+				newCm := &v1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      consts.OdigosLocalUiConfigName,
 						Namespace: ns,
@@ -46,7 +46,12 @@ func SetComponentLogLevel(ctx context.Context, c client.Client, component string
 					},
 					Data: map[string]string{consts.OdigosConfigurationFileName: string(data)},
 				}
-				return c.Create(ctx, &newCm)
+				_, createErr := kube.DefaultClient.CoreV1().ConfigMaps(ns).Create(ctx, newCm, metav1.CreateOptions{})
+				if apierrors.IsAlreadyExists(createErr) {
+					// Another goroutine created the configmap concurrently; retry the loop so we update it instead.
+					return apierrors.NewConflict(v1.Resource("configmaps"), consts.OdigosLocalUiConfigName, createErr)
+				}
+				return createErr
 			}
 			return err
 		}
@@ -68,7 +73,8 @@ func SetComponentLogLevel(ctx context.Context, c client.Client, component string
 			cm.Data = make(map[string]string)
 		}
 		cm.Data[consts.OdigosConfigurationFileName] = string(data)
-		return c.Update(ctx, &cm)
+		_, err = kube.DefaultClient.CoreV1().ConfigMaps(ns).Update(ctx, cm, metav1.UpdateOptions{})
+		return err
 	})
 	if err != nil {
 		return err

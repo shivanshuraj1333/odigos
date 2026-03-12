@@ -1,0 +1,194 @@
+---
+title: "Log Level Configuration"
+sidebarTitle: "User Guide"
+---
+
+Odigos supports dynamic per-component log level control. You can change verbosity without restarting any pod.
+Changes propagate within ~60 seconds.
+
+Accepted levels: `debug` · `info` · `warn` · `error`
+
+---
+
+## Configuration Methods
+
+There are three ways to set log levels, listed from lowest to highest priority. Higher-priority settings always win.
+
+| Priority | Method | Persists across restarts |
+|---|---|---|
+| 1 (lowest) | Helm values | Yes — stored in `odigos-configuration` |
+| 2 | Operator / remote config | Yes — stored in `odigos-remote-config` |
+| 3 (highest) | Odigos UI / GraphQL | Yes — stored in `odigos-local-ui-config` |
+
+---
+
+## 1. Helm — set defaults at install time
+
+### Global default (all components)
+
+```bash
+helm install odigos odigos/odigos \
+  --set logLevel=debug
+```
+
+### Per-component override
+
+```bash
+helm install odigos odigos/odigos \
+  --set logLevel=info \
+  --set autoscaler.logLevel=debug \
+  --set scheduler.logLevel=warn
+```
+
+Per-component values override the global `logLevel` for that component only.
+Omit a per-component value to inherit the global default.
+
+To update an existing installation:
+
+```bash
+helm upgrade odigos odigos/odigos \
+  --set logLevel=info \
+  --set odiglet.logLevel=debug
+```
+
+**Available per-component keys:** `autoscaler.logLevel`, `scheduler.logLevel`, `instrumentor.logLevel`, `odiglet.logLevel`, `ui.logLevel`
+
+---
+
+## 2. Odigos UI / GraphQL
+
+Use the GraphQL API to change any component's level at runtime. This is the highest-priority source and immediately overrides Helm defaults.
+
+### Endpoint
+
+```
+POST http://<odigos-ui-host>/graphql
+Content-Type: application/json
+```
+
+If using `kubectl port-forward`:
+```bash
+kubectl port-forward svc/ui -n odigos-system 3000:3000
+```
+
+### Set a single component's level
+
+```graphql
+mutation {
+  setComponentLogLevel(component: autoscaler, level: debug)
+}
+```
+
+```bash
+curl -X POST http://localhost:3000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation { setComponentLogLevel(component: autoscaler, level: debug) }"}'
+```
+
+Response:
+```json
+{"data":{"setComponentLogLevel":true}}
+```
+
+### Set the global default (all components without an explicit override)
+
+Use `default` as the component:
+
+```bash
+curl -X POST http://localhost:3000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation { setComponentLogLevel(component: default, level: debug) }"}'
+```
+
+### Set multiple components
+
+```bash
+for component in autoscaler scheduler instrumentor odiglet ui collector; do
+  curl -sX POST http://localhost:3000/graphql \
+    -H "Content-Type: application/json" \
+    -d "{\"query\":\"mutation { setComponentLogLevel(component: $component, level: debug) }\"}"
+done
+```
+
+### Read the current effective level for every component
+
+```graphql
+query {
+  effectiveConfig {
+    componentLogLevels {
+      default
+      autoscaler
+      scheduler
+      instrumentor
+      odiglet
+      ui
+      collector
+    }
+  }
+}
+```
+
+```bash
+curl -sX POST http://localhost:3000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ effectiveConfig { componentLogLevels { autoscaler scheduler instrumentor odiglet ui collector } } }"}' \
+  | python3 -m json.tool
+```
+
+Response:
+```json
+{
+  "data": {
+    "effectiveConfig": {
+      "componentLogLevels": {
+        "autoscaler": "debug",
+        "scheduler": "info",
+        "instrumentor": "info",
+        "odiglet": "info",
+        "ui": "info",
+        "collector": "info"
+      }
+    }
+  }
+}
+```
+
+### Available component values
+
+| Component | What it controls |
+|---|---|
+| `autoscaler` | Collector autoscaler, webhook manager |
+| `scheduler` | Config merge and effective-config reconciler |
+| `instrumentor` | Instrumentation webhook and rollout controller |
+| `odiglet` | Node-level eBPF instrumentation agent |
+| `ui` | Odigos UI frontend service |
+| `collector` | Gateway and node collector (OTel Collector) |
+| `deviceplugin` | Kubernetes device plugin |
+| `default` | Fallback for any component not explicitly set |
+
+---
+
+## Reset to Helm defaults
+
+Delete the UI config layer. The effective-config reverts to Helm/remote-config values within ~60 seconds.
+
+```bash
+kubectl delete configmap odigos-local-ui-config -n odigos-system
+```
+
+---
+
+## Verify a level change took effect
+
+Watch for the `"Applying log level"` log line in the target component:
+
+```bash
+kubectl logs -l app.kubernetes.io/name=odigos-autoscaler -n odigos-system \
+  | grep "Applying log level"
+```
+
+```json
+{"level":"info","msg":"Applying log level","component":"autoscaler","level":"debug"}
+```
+
+After the level is applied, debug lines appear immediately — no restart required.
