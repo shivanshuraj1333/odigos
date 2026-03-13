@@ -150,6 +150,12 @@ func calculateCollectorConfigDomains(
 	ownMetricsPort := k8sconsts.OdigosNodeCollectorOwnTelemetryPortDefault
 	configDomains["own_metrics_ui"] = collectorconfig.OwnMetricsConfigUi(ownMetricsPort)
 
+	// profiles (eBPF profiler receiver; node collector only, exports to cluster collector) — only when opted in.
+	// Added before the nodeCG == nil check so it runs even when no traditional sources are instrumented.
+	if commonconf.ControllerConfig != nil && commonconf.ControllerConfig.EbpfProfilerEnabled {
+		configDomains["profiles"] = collectorconfig.ProfilesConfig(nodeCG, odigosNamespace)
+	}
+
 	// all the rest of the config is only evaluated if the node collector group is not nil
 	// node collector group is nil before any sources are added in odigos or cluster collector is not yet ready.
 	// this logic should be revisited in the future, but kept as is for now (nov 2025)
@@ -221,6 +227,11 @@ func calculateCollectorConfigDomains(
 	if collectLogs {
 		logsConfig := collectorconfig.LogsConfig(logger.Logr(), nodeCG, odigosNamespace, processorsResults.LogsProcessors, sources)
 		configDomains["logs"] = logsConfig
+	}
+
+	// profiles (eBPF profiler receiver; node collector only, exports to cluster collector) — only when opted in
+	if commonconf.ControllerConfig != nil && commonconf.ControllerConfig.EbpfProfilerEnabled {
+		configDomains["profiles"] = collectorconfig.ProfilesConfig(nodeCG, odigosNamespace)
 	}
 
 	mergedConfig, err := config.MergeConfigs(configDomains)

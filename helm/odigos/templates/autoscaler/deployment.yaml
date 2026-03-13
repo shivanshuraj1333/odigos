@@ -70,6 +70,8 @@ spec:
                 name: odigos-deployment
           - name: ODIGOS_COLLECTOR_IMAGE
             value: '{{ template "utils.imageName" (dict "Values" .Values "Component" "collector" "Tag" $imageTag) }}'
+          - name: ODIGOS_EBPF_PROFILER_ENABLED
+            value: {{ .Values.odiglet.ebpfProfilerEnabled | default false | quote }}
           - name: GOMEMLIMIT
             value: {{ include "odigos.gomemlimitFromResources" (dict "Resources" .Values.autoscaler.resources) }}
         envFrom:

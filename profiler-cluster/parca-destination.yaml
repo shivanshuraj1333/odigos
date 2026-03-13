@@ -1,0 +1,15 @@
+# Parca as OTLP gRPC destination. Profiles are sent automatically (profiles follow traces).
+# Apply to the same namespace where Odigos is installed (e.g. odigos-system).
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: parca
+  namespace: odigos-system
+spec:
+  type: otlp
+  destinationName: Parca
+  signals:
+    - TRACES
+  data:
+    # OTel Collector in parca namespace receives OTLP and forwards to Parca server
+    OTLP_GRPC_ENDPOINT: parca-otlp.parca.svc.cluster.local:4317

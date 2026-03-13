@@ -9,4 +9,7 @@ type ControllerConfig struct {
 
 	// TODO: remove this once https://github.com/GoogleCloudPlatform/opentelemetry-operations-go/issues/1026 is handled
 	OnGKE bool
+
+	// EbpfProfilerEnabled enables the eBPF profiler in the node collector (profiles pipeline). Set via ODIGOS_EBPF_PROFILER_ENABLED or Helm odiglet.ebpfProfilerEnabled.
+	EbpfProfilerEnabled bool
 }

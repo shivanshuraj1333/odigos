@@ -1,0 +1,23 @@
+# Parca: server + UI. Agent enabled so Parca receives pprof (server does not accept OTLP yet).
+# Use with: helm install parca parca/parca -n parca -f helm/parca-values-server-only.yaml
+# Add Helm repo: helm repo add parca https://parca-dev.github.io/helm-charts && helm repo update
+
+agent:
+  enabled: true
+  config:
+    relabel_configs: []
+  # Send to same-namespace Parca server
+  remoteStoreAddress: parca-server.parca.svc.cluster.local:7070
+  remoteStoreInsecure: true
+
+server:
+  enabled: true
+  # In-memory storage for dev; increase or add object_storage for production
+  config:
+    object_storage:
+      bucket:
+        type: "FILESYSTEM"
+        config:
+          directory: "./tmp"
+  # Keep default scrape_configs (server won't scrape anything without Parca agent)
+  # Overriding with [] can break chart YAML; omit to use chart default.

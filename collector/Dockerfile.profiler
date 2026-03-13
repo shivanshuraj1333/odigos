@@ -1,0 +1,4 @@
+# Pre-built binary only (built with make genodigoscol + eBPF profiler)
+FROM gcr.io/distroless/base:latest
+COPY collector/odigosotelcol/odigosotelcol /odigosotelcol
+CMD ["/odigosotelcol"]

@@ -1,0 +1,12 @@
+clusterName: profiler
+image:
+  tag: "v1.19.0"
+imagePrefix: "registry.odigos.io"
+images:
+  collector: "odigos-collector:profiler"
+odiglet:
+  ebpfProfilerEnabled: true
+signals:
+  - traces
+  - metrics
+  - logs

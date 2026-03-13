@@ -1,0 +1,5 @@
+type: profiling
+status:
+  class: receiver
+  stability:
+    development: [profiles]

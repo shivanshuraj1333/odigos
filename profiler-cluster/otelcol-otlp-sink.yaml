@@ -1,0 +1,78 @@
+# OTel Collector that accepts OTLP (profiles + traces) on 4317 and exports to file.
+# This is an open-source "backend" that accepts OTLP profiling data (no UI; use file export).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: profiling
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otelcol-sink-config
+  namespace: profiling
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+    exporters:
+      file/traces:
+        path: /var/out/traces.json
+        rotation:
+          max_megabytes: 100
+          max_days: 1
+          max_backups: 3
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [file/traces]
+        # OTLP receiver accepts profiles; this image's file exporter lacks profile support, so profiles are received but not persisted
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otelcol-otlp-sink
+  namespace: profiling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otelcol-otlp-sink
+  template:
+    metadata:
+      labels:
+        app: otelcol-otlp-sink
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.112.0
+          args: ["--config=/etc/otelcol/config.yaml", "--feature-gates=+service.profilesSupport"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+            - name: out
+              mountPath: /var/out
+      volumes:
+        - name: config
+          configMap:
+            name: otelcol-sink-config
+        - name: out
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otlp-sink
+  namespace: profiling
+spec:
+  selector:
+    app: otelcol-otlp-sink
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+---
+# Odigos destination: OTLP gRPC endpoint = otlp-sink.profiling.svc.cluster.local:4317

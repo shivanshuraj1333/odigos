@@ -1,0 +1,73 @@
+# OTel Collector that receives OTLP (profiles + traces) on 4317 and forwards to Parca.
+# Parca server uses 7070 for UI and gRPC (WriteRaw). If Parca adds OTLP ingest, set endpoint to parca:7070.
+# For now this gives Odigos a working 4317 endpoint; profile conversion to Parca's API may require Parca OTLP support.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otelcol-parca-config
+  namespace: parca
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+    exporters:
+      otlp/parca:
+        endpoint: parca-server.parca.svc.cluster.local:7070
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [otlp/parca]
+        profiles:
+          receivers: [otlp]
+          exporters: [otlp/parca]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otelcol-parca
+  namespace: parca
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otelcol-parca
+  template:
+    metadata:
+      labels:
+        app: otelcol-parca
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.112.0
+          args: ["--config=/etc/otelcol/config.yaml", "--feature-gates=+service.profilesSupport"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: otelcol-parca-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: parca-otlp
+  namespace: parca
+spec:
+  selector:
+    app: otelcol-parca
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+---
+# Optional: single service name "parca" with two ports so destination parca.parca:4317 works.
+# Uncomment and use this instead of separate parca-otlp service if you want to keep destination as parca:4317.
+# Then either merge with Parca's existing Service or name this parca and scale down the original Parca server (not recommended).
+# For clarity we use parca-otlp so destination will be parca-otlp.parca.svc.cluster.local:4317

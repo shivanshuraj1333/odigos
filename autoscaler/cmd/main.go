@@ -182,10 +182,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	ebpfProfilerEnabled := os.Getenv("ODIGOS_EBPF_PROFILER_ENABLED") == "true"
+
 	commonconfig.ControllerConfig = &controllerconfig.ControllerConfig{
-		K8sVersion:     k8sVersion,
-		CollectorImage: collectorImage,
-		OnGKE:          onGKE,
+		K8sVersion:           k8sVersion,
+		CollectorImage:       collectorImage,
+		OnGKE:                onGKE,
+		EbpfProfilerEnabled:  ebpfProfilerEnabled,
 	}
 
 	err = controllers.SetupWithManager(mgr, odigosVersion)

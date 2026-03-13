@@ -1,0 +1,76 @@
+# OTel Collector: receives OTLP (profiles + traces) on 4317, exports profiles to Grafana Pyroscope on 4040.
+# Pyroscope accepts OTLP on port 4040. Deploy after Pyroscope is running (e.g. helm install pyroscope grafana/pyroscope -n pyroscope).
+# Odigos gateway -> this collector (4317) -> Pyroscope (4040).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-pyroscope-config
+  namespace: pyroscope
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+    processors:
+      batch: {}
+    exporters:
+      otlp/pyroscope:
+        endpoint: pyroscope.pyroscope.svc.cluster.local:4040
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        profiles:
+          receivers: [otlp]
+          exporters: [otlp/pyroscope]
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/pyroscope]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector-pyroscope
+  namespace: pyroscope
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector-pyroscope
+  template:
+    metadata:
+      labels:
+        app: otel-collector-pyroscope
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.129.1
+          args:
+            - "--config=/etc/otel-collector-config.yaml"
+            - "--feature-gates=+service.profilesSupport"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel-collector-config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-pyroscope-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector-pyroscope
+  namespace: pyroscope
+spec:
+  selector:
+    app: otel-collector-pyroscope
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+---
+# Odigos destination: OTLP_GRPC_ENDPOINT = otel-collector-pyroscope.pyroscope.svc.cluster.local:4317

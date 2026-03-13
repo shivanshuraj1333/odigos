@@ -1,0 +1,14 @@
+# Odigos destination: gateway sends profiles (and traces) to OTel Collector, which forwards to Grafana Pyroscope.
+# Apply after deploying Pyroscope and pyroscope-otel-bridge.yaml.
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: pyroscope
+  namespace: odigos-system
+spec:
+  type: otlp
+  destinationName: Grafana Pyroscope
+  signals:
+    - TRACES
+  data:
+    OTLP_GRPC_ENDPOINT: otel-collector-pyroscope.pyroscope.svc.cluster.local:4317

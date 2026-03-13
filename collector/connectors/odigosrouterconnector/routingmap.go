@@ -79,7 +79,7 @@ func appendIfMissing(slice []string, item string) []string {
 // GetSignalsForDataStream returns all observability signals for a given data stream.
 // This is used to forward all signals for signal data stream pipelines e.g. logs/groupA, traces/groupC, metrics/groupB.
 func GetSignalsForDataStream(dataStream pipelinegen.DataStreams) []common.ObservabilitySignal {
-	const maxSignals = 3 // OpenTelemetry supports logs, traces, metrics
+	const maxSignals = 4 // OpenTelemetry supports logs, traces, metrics, profiles
 
 	signals := []common.ObservabilitySignal{}
 	seen := make(map[common.ObservabilitySignal]struct{})

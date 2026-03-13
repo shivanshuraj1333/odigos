@@ -327,6 +327,14 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 		)
 	}
 
+	if commonconfig.ControllerConfig != nil && commonconfig.ControllerConfig.EbpfProfilerEnabled {
+		desiredDeployment.Spec.Template.Spec.Containers[0].Args = append(
+			desiredDeployment.Spec.Template.Spec.Containers[0].Args,
+			"--feature-gates=+service.profilesSupport",
+		)
+		desiredDeployment.Spec.Template.Spec.Containers[0].Image = commonconfig.ControllerConfig.CollectorImage
+	}
+
 	err = ctrl.SetControllerReference(gateway, desiredDeployment, scheme)
 	if err != nil {
 		return nil, err

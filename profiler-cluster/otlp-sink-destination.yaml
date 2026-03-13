@@ -1,0 +1,14 @@
+# Destination for OTel Collector OTLP sink (accepts OTLP profiles + traces, exports to file).
+# Apply after otelcol-otlp-sink is deployed in namespace profiling.
+apiVersion: odigos.io/v1alpha1
+kind: Destination
+metadata:
+  name: otlp-sink
+  namespace: odigos-system
+spec:
+  type: otlp
+  destinationName: OTLP Sink (profiles to file)
+  signals:
+    - TRACES
+  data:
+    OTLP_GRPC_ENDPOINT: otlp-sink.profiling.svc.cluster.local:4317

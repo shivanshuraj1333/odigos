@@ -742,6 +742,13 @@ odiglet:
   logLevel: "info"
 
   # @schema
+  # description: |-
+  #   Enable the eBPF profiler in the node collector. When true, the node collector runs the profiling receiver and sends profiles to the gateway.
+  #   Requires the collector image to be built with eBPF profiler support. Disabled by default.
+  # @schema
+  ebpfProfilerEnabled: false
+
+  # @schema
   # description: Configuration for the odiglet container.
   # @schema
   odiglet:

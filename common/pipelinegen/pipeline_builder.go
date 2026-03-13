@@ -17,12 +17,18 @@ func buildDataStreamPipelines(
 	pipelines := make(map[string]config.Pipeline)
 
 	for _, dataStream := range dataStreams {
-		for _, signal := range []string{"logs", "metrics", "traces"} {
+		for _, signal := range []string{"logs", "metrics", "traces", "profiles"} {
 			pipelineName := fmt.Sprintf("%s/%s", signal, dataStream.Name)
+
+			// batch processor does not support the profiles signal
+			var processors []string
+			if signal != "profiles" {
+				processors = []string{consts.GenericBatchProcessorConfigKey}
+			}
 
 			pipeline := config.Pipeline{
 				Receivers:  []string{fmt.Sprintf("odigosrouterconnector/%s", signal)},
-				Processors: []string{consts.GenericBatchProcessorConfigKey}, // every group pipeline should have a generic batch processor
+				Processors: processors,
 				Exporters:  []string{},
 			}
 

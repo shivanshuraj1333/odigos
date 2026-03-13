@@ -16,16 +16,19 @@ const (
 )
 
 const (
-	healthCheckExtensionName            = "health_check"
-	odigosEbpfReceiverName              = "odigosebpf"
+	healthCheckExtensionName             = "health_check"
+	odigosEbpfReceiverName               = "odigosebpf"
+	ebpfProfilerReceiverName             = "profiling"
 	pprofExtensionName                  = "pprof"
 	batchProcessorName                  = "batch"
 	memoryLimiterProcessorName          = "memory_limiter"
 	balancerName                        = "round_robin"
 	nodeNameProcessorName               = "resource/node-name"
+	ebpfServiceNameProcessorName        = "resource/ebpf-service-name"
 	clusterCollectorTracesExporterName  = "otlp/out-cluster-collector-traces"
 	clusterCollectorMetricsExporterName = "otlp/out-cluster-collector-metrics"
-	clusterCollectorLogsExporterName    = "otlp/out-cluster-collector-logs"
+	clusterCollectorLogsExporterName     = "otlp/out-cluster-collector-logs"
+	clusterCollectorProfilesExporterName = "otlp/out-cluster-collector-profiles"
 	resourceDetectionProcessorName      = "resourcedetection"
 )
 
@@ -103,10 +106,14 @@ func getCommonExporters(otlpExporterConfiguration *common.OtlpExporterConfigurat
 		traceExporterConfig["retry_on_failure"] = retryConfig
 	}
 
+	// Profiles use the same OTLP exporter config as metrics/logs (cluster collector OTLP endpoint).
+	profilesExporterConfig := buildBaseExporterConfig(odigosNamespace, compression)
+
 	return config.GenericMap{
-		clusterCollectorTracesExporterName:  traceExporterConfig,
-		clusterCollectorMetricsExporterName: commonExporterConfig,
-		clusterCollectorLogsExporterName:    commonExporterConfig,
+		clusterCollectorTracesExporterName:   traceExporterConfig,
+		clusterCollectorMetricsExporterName:  commonExporterConfig,
+		clusterCollectorLogsExporterName:      commonExporterConfig,
+		clusterCollectorProfilesExporterName: profilesExporterConfig,
 	}
 }
 
@@ -119,6 +126,13 @@ func init() {
 			"attributes": []config.GenericMap{{
 				"key":    string(semconv.K8SNodeNameKey),
 				"value":  "${NODE_NAME}",
+				"action": "upsert",
+			}},
+		},
+		ebpfServiceNameProcessorName: config.GenericMap{
+			"attributes": []config.GenericMap{{
+				"key":    "service.name",
+				"value":  "ebpf-profiler",
 				"action": "upsert",
 			}},
 		},
@@ -138,7 +152,8 @@ func init() {
 				},
 			},
 		},
-		odigosEbpfReceiverName: config.GenericMap{},
+		odigosEbpfReceiverName:   config.GenericMap{},
+		ebpfProfilerReceiverName: config.GenericMap{},
 	}
 
 	commonExtensions = config.GenericMap{
