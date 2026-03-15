@@ -32,13 +32,45 @@ const stringifyRenames = (action: ActionFormData): ActionInput => {
     });
   };
 
+  const sanitizeUrlTemplatizationGroups = (
+    groups: ActionFormData['fields']['urlTemplatizationRulesGroups'],
+  ): ActionFormData['fields']['urlTemplatizationRulesGroups'] => {
+    if (!Array.isArray(groups)) return groups;
+
+    return groups.map((group) => {
+      const sanitizedGroup = { ...group };
+
+      if (sanitizedGroup.filterK8sWorkloadKind === '') {
+        sanitizedGroup.filterK8sWorkloadKind = null;
+      }
+
+      if (Array.isArray(sanitizedGroup.workloadFilters)) {
+        const validFilters = sanitizedGroup.workloadFilters.filter(
+          (f) => f.kind && typeof f.kind === 'string' && f.kind.trim() !== '',
+        );
+        sanitizedGroup.workloadFilters = validFilters.length > 0 ? validFilters : null;
+      }
+
+      if (Array.isArray(sanitizedGroup.templatizationRules)) {
+        sanitizedGroup.templatizationRules = sanitizedGroup.templatizationRules.filter(
+          (r) => r.template && typeof r.template === 'string' && r.template.trim() !== '',
+        );
+      }
+
+      return sanitizedGroup;
+    });
+  };
+
+  const { id, conditions, ...actionInput } = action as ActionFormData & { id?: string; conditions?: unknown };
+
   return {
-    ...action,
+    ...actionInput,
     fields: {
       ...action.fields,
       labelsAttributes: sanitizeFromArray(action.fields.labelsAttributes as any),
       annotationsAttributes: sanitizeFromArray(action.fields.annotationsAttributes as any),
       renames: action.fields.renames ? JSON.stringify(action.fields.renames) : null,
+      urlTemplatizationRulesGroups: sanitizeUrlTemplatizationGroups(action.fields.urlTemplatizationRulesGroups),
     },
   };
 };
@@ -83,8 +115,7 @@ export const useActionCRUD = (): UseActionCrud => {
     onCompleted: (res) => {
       const action = res.createAction;
       const { id, type } = action;
-      // addEntities(EntityTypes.Action, [action]);
-      fetchActions(); // refetch because of conditions
+      fetchActions();
       notifyUser(StatusType.Success, Crud.Create, `Successfully created "${type}" action`, id);
     },
   });
@@ -94,8 +125,7 @@ export const useActionCRUD = (): UseActionCrud => {
     onCompleted: (res) => {
       const action = res.updateAction;
       const { id, type } = action;
-      // addEntities(EntityTypes.Action, [action]);
-      fetchActions(); // refetch because of conditions
+      fetchActions();
       notifyUser(StatusType.Success, Crud.Update, `Successfully updated "${type}" action`, id);
     },
   });
