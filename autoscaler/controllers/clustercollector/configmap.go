@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -198,6 +199,25 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 					if err := addOwnMetricsPipeline(c, ownMetricsConfig, env.GetCurrentNamespace(), gateway.Spec.CollectorOwnMetricsPort, destinationPipelineNames); err != nil {
 						return err
 					}
+				}
+			}
+			// Profiles pipeline for verification: gateway receives profiles from node collectors, forwards to configurable OTLP endpoint (e.g. Pyroscope).
+			if ep := os.Getenv("PROFILE_VERIFICATION_OTLP_ENDPOINT"); ep != "" {
+				const profilesVerificationExporter = "otlp/profiles-verification"
+				if c.Exporters == nil {
+					c.Exporters = make(config.GenericMap)
+				}
+				c.Exporters[profilesVerificationExporter] = config.GenericMap{
+					"endpoint": ep,
+					"tls":      config.GenericMap{"insecure": true},
+				}
+				if c.Service.Pipelines == nil {
+					c.Service.Pipelines = make(map[string]config.Pipeline)
+				}
+				c.Service.Pipelines["profiles"] = config.Pipeline{
+					Receivers:  []string{"otlp"},
+					Processors: []string{odigosconsts.GenericBatchProcessorConfigKey},
+					Exporters:  []string{profilesVerificationExporter},
 				}
 			}
 			return nil

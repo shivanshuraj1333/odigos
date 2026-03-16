@@ -17,6 +17,12 @@ exporters:
     endpoint: dns:///odigos-gateway.odigos-system:4317
     tls:
       insecure: true
+  otlp/out-cluster-collector-profiles:
+    balancer_name: round_robin
+    compression: none
+    endpoint: dns:///odigos-gateway.odigos-system:4317
+    tls:
+      insecure: true
   otlp/out-cluster-collector-traces:
     balancer_name: round_robin
     compression: none
@@ -30,6 +36,28 @@ extensions:
     endpoint: 0.0.0.0:1777
 processors:
   batch: {}
+  k8sattributes/profiles:
+    auth_type: serviceAccount
+    extract:
+      metadata:
+      - k8s.pod.name
+      - k8s.namespace.name
+      - k8s.deployment.name
+      - k8s.statefulset.name
+      - k8s.daemonset.name
+      - k8s.node.name
+    filter:
+      node_from_env_var: NODE_NAME
+    passthrough: false
+    pod_association:
+    - sources:
+      - from: resource_attribute
+        name: container.id
+      - from: connection
+      - from: resource_attribute
+        name: k8s.pod.uid
+      - from: resource_attribute
+        name: k8s.pod.ip
   memory_limiter:
     check_interval: 500ms
     limit_mib: 0
@@ -105,6 +133,17 @@ service:
       - resource/odigos-collector-role
       receivers:
       - prometheus/self-metrics-ui
+    profiles:
+      exporters:
+      - otlp/out-cluster-collector-profiles
+      processors:
+      - batch
+      - memory_limiter
+      - resource/node-name
+      - resourcedetection
+      - k8sattributes/profiles
+      receivers:
+      - otlp/in
     traces:
       exporters:
       - otlp/out-cluster-collector-traces

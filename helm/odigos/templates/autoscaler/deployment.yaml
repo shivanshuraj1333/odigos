@@ -70,6 +70,10 @@ spec:
                 name: odigos-deployment
           - name: ODIGOS_COLLECTOR_IMAGE
             value: '{{ template "utils.imageName" (dict "Values" .Values "Component" "collector" "Tag" $imageTag) }}'
+          {{- if .Values.autoscaler.profileVerificationOtlpEndpoint }}
+          - name: PROFILE_VERIFICATION_OTLP_ENDPOINT
+            value: {{ .Values.autoscaler.profileVerificationOtlpEndpoint | quote }}
+          {{- end }}
           - name: GOMEMLIMIT
             value: {{ include "odigos.gomemlimitFromResources" (dict "Resources" .Values.autoscaler.resources) }}
         envFrom:

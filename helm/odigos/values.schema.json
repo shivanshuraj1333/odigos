@@ -65,6 +65,12 @@
           "required": [],
           "title": "logLevel"
         },
+        "profileVerificationOtlpEndpoint": {
+          "default": "",
+          "description": "OTLP endpoint for the gateway to export profiles to (verification/preview). When set, gateway forwards profiles to this endpoint (e.g. Pyroscope, Odigos UI, or host.docker.internal:4040 for local). Empty = disabled.",
+          "required": [],
+          "title": "profileVerificationOtlpEndpoint"
+        },
         "nodeSelector": {
           "default": "",
           "description": "Override the global nodeSelector (values.nodeSelector) for this component",
@@ -405,6 +411,20 @@
           "description": "this configuration is used for logs collection where '/var/log' in a k8s node is a symlink\nto some other directory (for example, '/mnt/var/log')",
           "required": [],
           "title": "k8sNodeLogsDirectory"
+        },
+        "profiles": {
+          "additionalProperties": false,
+          "description": "Override for the node collector profiles pipeline config (e.g. k8sattributes for pid/container id). When config is set, used as the profiles config domain without rebuilding the image.",
+          "properties": {
+            "config": {
+              "default": "",
+              "description": "YAML string for the entire profiles config domain (processors + service.pipelines). Use to set pod_association keys (e.g. from container.id) for profile data that has only pid/container id.",
+              "required": [],
+              "title": "config"
+            }
+          },
+          "required": [],
+          "title": "profiles"
         },
         "limitCPUm": {
           "default": "500",

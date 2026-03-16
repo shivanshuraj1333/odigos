@@ -25,8 +25,10 @@ const (
 	nodeNameProcessorName               = "resource/node-name"
 	clusterCollectorTracesExporterName  = "otlp/out-cluster-collector-traces"
 	clusterCollectorMetricsExporterName = "otlp/out-cluster-collector-metrics"
-	clusterCollectorLogsExporterName    = "otlp/out-cluster-collector-logs"
+	clusterCollectorLogsExporterName     = "otlp/out-cluster-collector-logs"
+	clusterCollectorProfilesExporterName = "otlp/out-cluster-collector-profiles"
 	resourceDetectionProcessorName      = "resourcedetection"
+	k8sattributesProcessorName          = "k8sattributes"
 )
 
 func commonProcessors(nodeCG *odigosv1.CollectorsGroup, runningOnGKE bool) config.GenericMap {
@@ -104,9 +106,10 @@ func getCommonExporters(otlpExporterConfiguration *common.OtlpExporterConfigurat
 	}
 
 	return config.GenericMap{
-		clusterCollectorTracesExporterName:  traceExporterConfig,
-		clusterCollectorMetricsExporterName: commonExporterConfig,
-		clusterCollectorLogsExporterName:    commonExporterConfig,
+		clusterCollectorTracesExporterName:   traceExporterConfig,
+		clusterCollectorMetricsExporterName:  commonExporterConfig,
+		clusterCollectorLogsExporterName:     commonExporterConfig,
+		clusterCollectorProfilesExporterName: commonExporterConfig,
 	}
 }
 

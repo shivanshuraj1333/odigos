@@ -1,0 +1,12 @@
+{{- if .Values.collectorNode.profiles.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: odigos-node-collector-profiles-config
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    odigos.io/system-object: "true"
+data:
+  profiles: |
+{{ .Values.collectorNode.profiles.config | indent 4 }}
+{{- end }}

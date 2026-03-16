@@ -352,6 +352,16 @@ collectorNode:
   k8sNodeLogsDirectory: ''
 
   # @schema
+  # description: |-
+  #   Optional override for the node collector profiles pipeline config (e.g. k8sattributes pod_association
+  #   for profile data that has only pid/container id). When set, this YAML is used as the entire "profiles"
+  #   config domain instead of the built-in default. Change this without rebuilding the collector image.
+  #   Example: use pod_association from resource_attribute "container.id" if your profiler sends that.
+  # @schema
+  profiles:
+    config: ''
+
+  # @schema
   # description: OTLP exporter configuration for the node collector.
   # @schema
   otlpExporterConfiguration:
@@ -396,6 +406,14 @@ autoscaler:
   # description: Log level for autoscaler. Defaults to info.
   # @schema
   logLevel: "info"
+
+  # @schema
+  # description: |-
+  #   OTLP endpoint for the gateway to export profiles to (verification / preview). When set, the gateway
+  #   adds a profiles pipeline that forwards received profiles to this endpoint. Can be Pyroscope, Odigos UI,
+  #   or any OTLP receiver (e.g. host.docker.internal:4040 for a local Mac app). Omit or leave empty to disable.
+  # @schema
+  profileVerificationOtlpEndpoint: ''
 
   # @schema
   # description: Override the global nodeSelector (values.nodeSelector) for this component
