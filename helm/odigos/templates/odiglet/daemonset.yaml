@@ -258,7 +258,7 @@ spec:
               mountPath: /var/exchange
         - name: data-collection
           image: '{{ template "utils.imageName" (dict "Values" .Values "Component" "collector" "Tag" $imageTag) }}'
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command:
             - /odigosotelcol
           args:
