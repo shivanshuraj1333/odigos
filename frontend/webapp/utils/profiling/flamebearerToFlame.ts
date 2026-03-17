@@ -11,6 +11,7 @@ export interface SymbolRow {
   total: number;
 }
 
+/** Pyroscope-compatible API response (backend matches this shape). */
 export interface FlamebearerResponse {
   version?: number;
   flamebearer?: {
@@ -19,7 +20,10 @@ export interface FlamebearerResponse {
     numTicks?: number;
     maxSelf?: number;
   };
-  metadata?: { format?: string; units?: string; name?: string };
+  metadata?: { format?: string; spyName?: string; sampleRate?: number; units?: string; name?: string };
+  timeline?: { startTime: number; samples: number[]; durationDelta: number; watermarks?: number[] } | null;
+  groups?: unknown;
+  heatmap?: unknown;
   symbols?: SymbolRow[];
 }
 

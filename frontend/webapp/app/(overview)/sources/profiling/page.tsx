@@ -5,9 +5,10 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery } from '@apollo/client';
 import { useProfiling } from '@/hooks';
 import { GET_WORKLOADS } from '@/graphql';
-import { ROUTES, flamebearerToFlameNode } from '@/utils';
+import { ROUTES } from '@/utils';
 import { FlexColumn, Text } from '@odigos/ui-kit/components';
-import { FlameGraph, SymbolTable } from '@/components/profiling';
+import { FlamegraphRenderer, Box } from '@pyroscope/flamegraph';
+import '@pyroscope/flamegraph/dist/index.css';
 
 export default function SourcesProfilingPage() {
   const router = useRouter();
@@ -26,21 +27,18 @@ export default function SourcesProfilingPage() {
     pollingEnabled: autoSync,
   });
 
-  const flameTree = useMemo(() => flamebearerToFlameNode(profile), [profile]);
   const hasData = Boolean(profile?.flamebearer?.numTicks && profile?.flamebearer?.levels?.length);
-  const symbols = profile?.symbols ?? [];
-  const totalSamples = profile?.flamebearer?.numTicks ?? 0;
-  const [activeTab, setActiveTab] = useState<'flame' | 'symbols'>('flame');
-  const tabStyle = (active: boolean) => ({
-    padding: '8px 16px',
-    cursor: 'pointer',
-    border: 'none',
-    borderRadius: 6,
-    background: active ? '#313244' : 'transparent',
-    color: active ? '#cdd6f4' : '#a6adc8',
-    fontWeight: active ? 600 : 400,
-    fontSize: 13,
-  });
+  const pyroscopeProfile = useMemo(() => {
+    if (!profile || !hasData) return null;
+    return {
+      version: profile.version ?? 1,
+      flamebearer: profile.flamebearer,
+      metadata: profile.metadata ?? { format: 'single', units: 'samples', name: 'cpu' },
+      timeline: profile.timeline ?? null,
+      groups: profile.groups ?? null,
+      heatmap: profile.heatmap ?? null,
+    };
+  }, [profile, hasData]);
   const panelDark = { background: '#1e1e2e', borderRadius: 8, border: '1px solid #313244', padding: 16 };
 
   const { data: workloadsData } = useQuery<{ workloads: { id: { namespace: string; kind: string; name: string }; serviceName?: string }[] }>(GET_WORKLOADS, {
@@ -140,33 +138,21 @@ export default function SourcesProfilingPage() {
           >
             Refresh now
           </button>
-          {hasData ? (
+          {hasData && pyroscopeProfile ? (
             <div style={{ marginTop: 24, width: '100%', ...panelDark }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-                <button type="button" style={tabStyle(activeTab === 'flame')} onClick={() => setActiveTab('flame')}>
-                  Flame Graph
-                </button>
-                <button type="button" style={tabStyle(activeTab === 'symbols')} onClick={() => setActiveTab('symbols')}>
-                  Symbols
-                </button>
-              </div>
-              {activeTab === 'flame' && (
-                <>
-                  <Text size={14} family="secondary" style={{ marginBottom: 12, color: '#a6adc8', display: 'block' }}>
-                    Hover for sample count and percentage.
-                  </Text>
-                  {flameTree ? (
-                    <FlameGraph data={flameTree} width={900} height={500} dark />
-                  ) : (
-                    <div style={{ padding: 24, textAlign: 'center', color: '#a6adc8' }}>
-                      No profile data to display.
-                    </div>
-                  )}
-                </>
-              )}
-              {activeTab === 'symbols' && (
-                <SymbolTable symbols={symbols} totalSamples={totalSamples} />
-              )}
+              <Box>
+                <FlamegraphRenderer
+                  profile={pyroscopeProfile}
+                  onlyDisplay="both"
+                  showToolbar={true}
+                  showCredit={false}
+                  colorMode="dark"
+                />
+              </Box>
+            </div>
+          ) : hasData ? (
+            <div style={{ marginTop: 24, width: '100%', ...panelDark, padding: 24, color: '#a6adc8' }}>
+              No profile data to display.
             </div>
           ) : (
             <Text family="secondary">No profile data yet. Ensure the gateway sends profiles to the UI backend.</Text>

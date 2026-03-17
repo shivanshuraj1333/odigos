@@ -4,7 +4,6 @@ import React, { useMemo, useState } from 'react';
 import type { FlameNode } from '@/utils/profiling';
 
 const ROW_HEIGHT = 20;
-const MIN_WIDTH = 4;
 const FONT_SIZE = 12;
 
 interface LayoutNode {
@@ -34,6 +33,23 @@ function flattenLayout(
   }
 }
 
+/** Stable color per symbol name (Pyroscope-style). */
+function barColorForName(name: string, dark: boolean, isHovered: boolean): string {
+  if (isHovered) return dark ? '#89b4fa' : 'var(--color-primary-hover, #3b82f6)';
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  const palette = dark
+    ? ['#89b4fa', '#cba6f7', '#a6e3a1', '#f9e2af', '#fab387', '#f38ba8', '#94e2d5', '#b4befe', '#89dceb', '#eba0ac']
+    : ['#3b82f6', '#8b5cf6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#14b8a6', '#6366f1'];
+  return palette[h % palette.length];
+}
+
+function formatSamples(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return String(n);
+}
+
 interface FlameGraphProps {
   data: FlameNode | null;
   width?: number;
@@ -48,7 +64,6 @@ const DARK_THEME = {
   text: '#cdd6f4',
   textMuted: '#a6adc8',
   border: '#313244',
-  barColors: ['#89b4fa', '#cba6f7', '#a6e3a1', '#f9e2af', '#fab387', '#f38ba8', '#94e2d5', '#b4befe'],
 };
 
 export function FlameGraph({ data, width = 800, height = 400, className, dark = true }: FlameGraphProps) {
@@ -117,12 +132,10 @@ export function FlameGraph({ data, width = 800, height = 400, className, dark = 
           const x = (item.x / 100) * width;
           const w = Math.max((item.w / 100) * width, 2);
           const y = item.depth * ROW_HEIGHT;
-          const label = item.node.name.length > 20 ? item.node.name.slice(0, 17) + '…' : item.node.name;
-          const barColor = hovered?.node === item.node
-            ? (dark ? '#89b4fa' : 'var(--color-primary-hover, #3b82f6)')
-            : dark
-              ? DARK_THEME.barColors[i % DARK_THEME.barColors.length]
-              : `hsl(${(i * 47) % 360}, 60%, 75%)`;
+          const samplesStr = formatSamples(item.node.value);
+          const shortName = item.node.name.length > 18 ? item.node.name.slice(0, 15) + '…' : item.node.name;
+          const label = w > 70 ? `${shortName} (${samplesStr})` : w > 40 ? shortName : w > 20 ? '…' : '';
+          const barColor = barColorForName(item.node.name, dark ?? true, hovered?.node === item.node);
           return (
             <g
               key={i}
@@ -135,11 +148,11 @@ export function FlameGraph({ data, width = 800, height = 400, className, dark = 
                 width={w}
                 height={ROW_HEIGHT - 1}
                 fill={barColor}
-                stroke={dark ? DARK_THEME.border : 'rgba(0,0,0,0.1)'}
+                stroke={dark ? 'rgba(0,0,0,0.15)' : 'rgba(0,0,0,0.08)'}
                 strokeWidth={0.5}
-                rx={2}
+                rx={1}
               />
-              {w > 30 && (
+              {w > 20 && label && (
                 <text
                   x={x + 4}
                   y={y + ROW_HEIGHT / 2 + FONT_SIZE / 3}

@@ -58,7 +58,7 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 				NumTicks: 0,
 				MaxSelf:  0,
 			},
-			Metadata: flamegraph.FlamebearerMetadata{Format: "single", Units: "samples", Name: "cpu"},
+			Metadata: pyroscopeMetadata(0),
 		})
 		return
 	}
@@ -74,12 +74,40 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 		}
 	}
 	fb := flamegraph.TreeToFlamebearer(tree, 1024)
+	total := fb.NumTicks
 	c.JSON(http.StatusOK, flamegraph.FlamebearerProfile{
 		Version:     1,
 		Flamebearer: fb,
-		Metadata:    flamegraph.FlamebearerMetadata{Format: "single", Units: "samples", Name: "cpu"},
+		Metadata:    pyroscopeMetadata(total),
+		Timeline:    pyroscopeTimeline(total),
+		Groups:      nil,
+		Heatmap:     nil,
 		Symbols:     tree.SymbolTable(),
 	})
+}
+
+// pyroscopeMetadata returns metadata in Pyroscope API shape (format, spyName, sampleRate, units, name).
+func pyroscopeMetadata(numTicks int64) flamegraph.FlamebearerMetadata {
+	return flamegraph.FlamebearerMetadata{
+		Format:     "single",
+		SpyName:    "ebpf",
+		SampleRate: 1000000000, // 1 GHz typical for CPU profiling
+		Units:      "samples",
+		Name:       "cpu",
+	}
+}
+
+// pyroscopeTimeline returns a minimal timeline so the response matches Pyroscope (single bucket with total).
+func pyroscopeTimeline(numTicks int64) *flamegraph.FlamebearerTimeline {
+	if numTicks == 0 {
+		return nil
+	}
+	return &flamegraph.FlamebearerTimeline{
+		StartTime:     0,
+		Samples:       []int64{0, numTicks},
+		DurationDelta: 15,
+		Watermarks:    nil,
+	}
 }
 
 var errMissingParams = errors.New("missing namespace, kind, or name")

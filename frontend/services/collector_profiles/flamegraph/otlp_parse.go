@@ -65,9 +65,13 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 			return
 		}
 	}
-	// Always fill names from this object first. OTLP puts stringTable/location/function at SCOPE level;
-	// when we recurse into "profiles" we only see profile objects with samples. So we must read names
-	// from the current (scope) object before recursing into profiles, otherwise we get frame_X.
+	// Fill names: (1) OTLP 1.0 top-level "dictionary" (stringTable, locationTable, functionTable);
+	// (2) legacy per-object stringTable/location/function.
+	if dict := getKey(m, "dictionary", "Dictionary"); dict != nil {
+		if dm, ok := dict.(map[string]interface{}); ok {
+			extractNamesFromDictionary(dm, names)
+		}
+	}
 	extractNamesFromObject(m, names)
 
 	if rps := getKey(m, "resourceProfiles", "ResourceProfiles", "resource_profiles"); rps != nil {
@@ -100,15 +104,16 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 			return
 		}
 	}
-	// Process samples (names already filled from this object or parent scope via extractNamesFromObject)
+	// Process samples (names already filled from dictionary or scope). Support both "sample" and "samples", and locationsStartIndex/locationsLength (OTLP 1.0).
 	if sampleArr := getKey(m, "samples", "Samples", "sample", "Sample"); sampleArr != nil {
+		locationIndices := getProfileLocationIndices(m)
 		if arr, ok := sampleArr.([]interface{}); ok {
 			for _, s := range arr {
 				so, ok := s.(map[string]interface{})
 				if !ok {
 					continue
 				}
-				locIDs := getSampleLocIDs(so)
+				locIDs := getSampleLocIDs(so, locationIndices)
 				value := getSampleValue(so)
 				if value <= 0 && len(locIDs) == 0 {
 					continue
@@ -137,6 +142,95 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 			}
 		}
 	}
+}
+
+// extractNamesFromDictionary fills names (location index -> symbol name) from OTLP 1.0 dictionary.
+// Dictionary has stringTable, functionTable (nameStrindex -> stringTable), locationTable (line[].functionIndex -> functionTable).
+func extractNamesFromDictionary(m map[string]interface{}, names map[int]string) {
+	stringTable := getStringTable(m)
+	if len(stringTable) == 0 {
+		return
+	}
+	// functionTable: index -> name (from stringTable)
+	funcNames := make(map[int]string)
+	if ft := getKey(m, "functionTable", "FunctionTable", "function_table"); ft != nil {
+		if arr, ok := ft.([]interface{}); ok {
+			for idx, f := range arr {
+				fm, _ := f.(map[string]interface{})
+				if fm == nil {
+					continue
+				}
+				if nameRef := getKey(fm, "nameStrindex", "name_strindex", "name"); nameRef != nil {
+					if i, ok := toInt(nameRef); ok && i >= 0 && i < len(stringTable) {
+						funcNames[idx] = stringTable[i]
+					}
+				}
+			}
+		}
+	}
+	// locationTable: index -> name from first line's functionIndex
+	if lt := getKey(m, "locationTable", "LocationTable", "location_table"); lt != nil {
+		if arr, ok := lt.([]interface{}); ok {
+			for idx, loc := range arr {
+				lm, _ := loc.(map[string]interface{})
+				if lm == nil {
+					continue
+				}
+				if lineArr := getKey(lm, "line", "Line"); lineArr != nil {
+					if lines, ok := lineArr.([]interface{}); ok && len(lines) > 0 {
+						if first, ok := lines[0].(map[string]interface{}); ok {
+							if fi := getKey(first, "functionIndex", "FunctionIndex", "function_index"); fi != nil {
+								if fiIdx, ok := toInt(fi); ok && fiIdx >= 0 {
+									if name := funcNames[fiIdx]; name != "" {
+										names[idx] = name
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func getStringTable(m map[string]interface{}) []string {
+	st := getKey(m, "stringTable", "StringTable", "string_table")
+	if st == nil {
+		return nil
+	}
+	arr, ok := st.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		} else {
+			out = append(out, "")
+		}
+	}
+	return out
+}
+
+// getProfileLocationIndices returns the profile's locationIndices slice (indices into dictionary locationTable).
+func getProfileLocationIndices(m map[string]interface{}) []int {
+	li := getKey(m, "locationIndices", "LocationIndices", "location_indices")
+	if li == nil {
+		return nil
+	}
+	arr, ok := li.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]int, 0, len(arr))
+	for _, v := range arr {
+		if i, ok := toInt(v); ok {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 // extractNamesFromObject fills names from stringTable, location, function in this object.
@@ -225,7 +319,32 @@ func toInt(v interface{}) (int, bool) {
 	return 0, false
 }
 
-func getSampleLocIDs(so map[string]interface{}) []int {
+// getSampleLocIDs returns location table indices for the sample (root-first order). locationIndices is the profile's locationIndices; pass nil if not used.
+func getSampleLocIDs(so map[string]interface{}, locationIndices []int) []int {
+	// OTLP 1.0: locationsStartIndex + locationsLength — indices into profile's locationIndices (or direct location table). Return root-first.
+	if start := getKey(so, "locationsStartIndex", "locations_start_index"); start != nil {
+		if startIdx, ok := toInt(start); ok && startIdx >= 0 {
+			length := 1
+			if l := getKey(so, "locationsLength", "locations_length"); l != nil {
+				if n, ok := toInt(l); ok && n > 0 {
+					length = n
+				}
+			}
+			ids := make([]int, 0, length)
+			for i := startIdx; i < startIdx+length; i++ {
+				locIdx := i
+				if i < len(locationIndices) {
+					locIdx = locationIndices[i]
+				}
+				ids = append(ids, locIdx)
+			}
+			// Reverse to root-first (leaf was at end in OTLP)
+			for i, j := 0, len(ids)-1; i < j; i, j = i+1, j-1 {
+				ids[i], ids[j] = ids[j], ids[i]
+			}
+			return ids
+		}
+	}
 	if locArray := getKey(so, "attributeIndices", "attribute_indices", "locationIdList", "location_id_list"); locArray != nil {
 		if arr, ok := locArray.([]interface{}); ok {
 			ids := make([]int, 0, len(arr))

@@ -11,19 +11,32 @@ type Flamebearer struct {
 	MaxSelf  int64     `json:"maxSelf"`
 }
 
-// FlamebearerProfile is the full response (version + flamebearer + metadata + symbols for Top Table).
+// FlamebearerProfile is the full response (Pyroscope-compatible: version, flamebearer, metadata, timeline; plus symbols for Odigos).
 type FlamebearerProfile struct {
-	Version      int                 `json:"version"`
-	Flamebearer  Flamebearer        `json:"flamebearer"`
-	Metadata     FlamebearerMetadata `json:"metadata"`
-	Symbols      []SymbolStats       `json:"symbols,omitempty"`
+	Version      int                  `json:"version"`
+	Flamebearer  Flamebearer         `json:"flamebearer"`
+	Metadata     FlamebearerMetadata  `json:"metadata"`
+	Timeline     *FlamebearerTimeline `json:"timeline,omitempty"`
+	Groups       interface{}          `json:"groups"` // null for single profile (Pyroscope shape)
+	Heatmap      interface{}          `json:"heatmap"`
+	Symbols      []SymbolStats        `json:"symbols,omitempty"`
 }
 
-// FlamebearerMetadata describes the profile.
+// FlamebearerMetadata describes the profile (Pyroscope metadata shape).
 type FlamebearerMetadata struct {
-	Format string `json:"format"` // "single"
-	Units  string `json:"units"`  // e.g. "samples"
-	Name   string `json:"name"`   // e.g. "cpu"
+	Format     string `json:"format"`     // "single"
+	SpyName    string `json:"spyName"`    // e.g. "ebpf" or ""
+	SampleRate int    `json:"sampleRate"` // e.g. 1000000000 (Hz) or 0
+	Units      string `json:"units"`      // e.g. "samples"
+	Name       string `json:"name"`      // e.g. "cpu"
+}
+
+// FlamebearerTimeline is optional timeline data (Pyroscope shape); when nil omitted from JSON.
+type FlamebearerTimeline struct {
+	StartTime      int64   `json:"startTime"`
+	Samples        []int64 `json:"samples"`
+	DurationDelta  int     `json:"durationDelta"`
+	Watermarks     *[]int  `json:"watermarks,omitempty"`
 }
 
 const (
@@ -77,21 +90,28 @@ func TreeToFlamebearer(t *Tree, maxNodes int64) Flamebearer {
 		// Append: xOffset (will delta-encode later), total, self, nameIndex
 		row = append(row, cur.xOffset, n.total, n.self, int64(idx))
 		levels[cur.level] = row
-		xNext := cur.xOffset + n.self
 
+		// Compute xOffset per child left-to-right; push in reverse so pop order = left-to-right (Pyroscope-compatible).
+		xStart := cur.xOffset
 		var otherTotal int64
-		// Push in reverse order so pop gives left-to-right (first child first).
-		for i := len(n.children) - 1; i >= 0; i-- {
+		offsets := make([]int64, len(n.children))
+		for i := 0; i < len(n.children); i++ {
 			c := n.children[i]
 			if c.total >= minVal && c.name != otherName {
-				stack = append(stack, item{xOffset: xNext, level: cur.level + 1, n: c})
-				xNext += c.total
+				offsets[i] = xStart
+				xStart += c.total
 			} else {
 				otherTotal += c.total
 			}
 		}
+		for i := len(n.children) - 1; i >= 0; i-- {
+			c := n.children[i]
+			if c.total >= minVal && c.name != otherName {
+				stack = append(stack, item{xOffset: offsets[i], level: cur.level + 1, n: c})
+			}
+		}
 		if otherTotal > 0 {
-			stack = append(stack, item{xOffset: xNext, level: cur.level + 1, n: &node{name: otherName, self: otherTotal, total: otherTotal}})
+			stack = append(stack, item{xOffset: xStart, level: cur.level + 1, n: &node{name: otherName, self: otherTotal, total: otherTotal}})
 		}
 	}
 
