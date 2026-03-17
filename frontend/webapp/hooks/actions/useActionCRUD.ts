@@ -43,6 +43,12 @@ const stringifyRenames = (action: ActionFormData): ActionInput => {
   };
 };
 
+/** Ensure signals is a string[] so ui-kit's monitors map never sees undefined (avoids .toLowerCase() on undefined). */
+function sanitizeSignals(signals: unknown): string[] {
+  if (!Array.isArray(signals)) return [];
+  return signals.filter((s): s is string => typeof s === 'string');
+}
+
 const parseRenames = (action: FetchedAction): Action => {
   return {
     ...action,
@@ -50,6 +56,7 @@ const parseRenames = (action: FetchedAction): Action => {
       ...action.fields,
       renames: action.fields.renames ? JSON.parse(action.fields.renames) : null,
     },
+    signals: sanitizeSignals(action.signals),
   };
 };
 

@@ -17,6 +17,7 @@ export const getNavbarIcons = (router: AppRouterInstance, currentPath: string) =
   const navIcons: NavbarProps['icons'] = [
     getPayloadForIcon(router, currentPath, ROUTES.OVERVIEW, OverviewIcon),
     getPayloadForIcon(router, currentPath, ROUTES.SOURCES, SourceIcon),
+    getPayloadForIcon(router, currentPath, ROUTES.SOURCES_PROFILING, ServiceMapIcon),
     getPayloadForIcon(router, currentPath, ROUTES.DESTINATIONS, DestinationIcon),
     getPayloadForIcon(router, currentPath, ROUTES.ACTIONS, ActionIcon),
     getPayloadForIcon(router, currentPath, ROUTES.INSTRUMENTATION_RULES, InstrumentationRuleIcon),

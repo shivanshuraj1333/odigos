@@ -20,15 +20,17 @@ const makeClient = (csrfToken: string | null) => {
     if (networkError) console.warn(`[Network error]: ${networkError}`);
   });
 
-  // Add CSRF token to headers for mutations
+  // Add CSRF token and dev header. Only send X-Odigos-Dev when same-origin so CORS preflight allows it (dev UI 3001 → backend 3000 is cross-origin).
   const authLink = setContext((_, ctx) => {
-    const headers = {
-      ...ctx.headers,
-    };
+    const headers: Record<string, string> = { ...ctx.headers };
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
     }
-
+    const sameOrigin =
+      typeof window !== 'undefined' && new URL(API.GRAPHQL, window.location.href).origin === window.location.origin;
+    if (IS_LOCAL && sameOrigin) {
+      headers['X-Odigos-Dev'] = '1';
+    }
     return { headers };
   });
 
@@ -47,9 +49,7 @@ const makeClient = (csrfToken: string | null) => {
       query: { fetchPolicy: 'cache-first' },
       mutate: { fetchPolicy: 'network-only' },
     },
-    cache: new InMemoryCache({
-      addTypename: false,
-    }),
+    cache: new InMemoryCache(),
     link:
       typeof window === 'undefined'
         ? ApolloLink.from([
@@ -64,9 +64,17 @@ const makeClient = (csrfToken: string | null) => {
 };
 
 const ApolloProvider: FC<PropsWithChildren> = ({ children }) => {
-  const { token } = useCSRF();
+  const { token, isLoading } = useCSRF();
 
   if (!token && !IS_LOCAL) {
+    return (
+      <CenterThis style={{ height: '100%' }}>
+        <FadeLoader scale={2} />
+      </CenterThis>
+    );
+  }
+  // In dev, wait for CSRF fetch so first GraphQL request has X-CSRF-Token (avoids 400 when backend has cookie)
+  if (!token && IS_LOCAL && isLoading) {
     return (
       <CenterThis style={{ height: '100%' }}>
         <FadeLoader scale={2} />

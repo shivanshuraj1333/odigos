@@ -43,7 +43,8 @@ const getEntityType = (pathname: string) => {
     case ROUTES.INSTRUMENTATION_RULES:
       return EntityTypes.InstrumentationRule;
     default:
-      return undefined;
+      // Overview and other routes: use Source so ui-kit never sees undefined (avoids .toLowerCase() on undefined).
+      return EntityTypes.Source;
   }
 };
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { ActionDrawer, ActionModal, DestinationDrawer, DestinationModal, InstrumentationRuleDrawer, InstrumentationRuleModal, SourceDrawer, SourceModal } from '@odigos/ui-kit/containers';
 import {
   useActionCRUD,
@@ -12,8 +13,11 @@ import {
   useTestConnection,
   useWorkloadUtils,
 } from '@/hooks';
+import { ROUTES } from '@/utils';
+import { SourceDrawerProfilerTrigger } from '@/components/profiling/SourceDrawerProfilerTrigger';
 
 const OverviewModalsAndDrawers = () => {
+  const router = useRouter();
   const { fetchNamespacesWithWorkloads } = useNamespace();
   const { fetchDescribeSource } = useDescribe();
   const { testConnection } = useTestConnection();
@@ -24,6 +28,15 @@ const OverviewModalsAndDrawers = () => {
   const { persistSources, updateSource, fetchSourceById, fetchSourceLibraries, fetchPeerSources } = useSourceCRUD();
   const { createDestination, updateDestination, deleteDestination } = useDestinationCRUD();
   const { createInstrumentationRule, updateInstrumentationRule, deleteInstrumentationRule } = useInstrumentationRuleCRUD();
+
+  const onViewProfiling = (source: { namespace: string; kind: string; name: string }) => {
+    const params = new URLSearchParams({
+      namespace: source.namespace,
+      kind: source.kind,
+      name: source.name,
+    });
+    router.push(`${ROUTES.SOURCES_PROFILING}?${params.toString()}`);
+  };
 
   return (
     <>
@@ -41,21 +54,27 @@ const OverviewModalsAndDrawers = () => {
       <InstrumentationRuleModal createInstrumentationRule={createInstrumentationRule} />
       <ActionModal createAction={createAction} />
 
-      {/* drawers */}
+      {/* drawers: onViewProfiling passed for profiling nav (ui-kit types may not include it yet) */}
       <SourceDrawer
-        persistSources={persistSources}
-        restartWorkloads={restartWorkloads}
-        restartPod={restartPod}
-        recoverFromRollback={recoverFromRollback}
-        updateSource={updateSource}
-        fetchSourceById={fetchSourceById}
-        fetchSourceDescribe={fetchDescribeSource}
-        fetchSourceLibraries={fetchSourceLibraries}
-        fetchPeerSources={fetchPeerSources}
+        {...({
+          persistSources,
+          restartWorkloads,
+          restartPod,
+          recoverFromRollback,
+          updateSource,
+          fetchSourceById,
+          fetchSourceDescribe: fetchDescribeSource,
+          fetchSourceLibraries,
+          fetchPeerSources,
+          onViewProfiling,
+        } as React.ComponentProps<typeof SourceDrawer>)}
       />
       <DestinationDrawer categories={categories} updateDestination={updateDestination} deleteDestination={deleteDestination} testConnection={testConnection} />
       <InstrumentationRuleDrawer updateInstrumentationRule={updateInstrumentationRule} deleteInstrumentationRule={deleteInstrumentationRule} />
       <ActionDrawer updateAction={updateAction} deleteAction={deleteAction} />
+
+      {/* Profiler tab: when source drawer is open, show button that opens Profiler panel (Load data → cache → flame graph) */}
+      <SourceDrawerProfilerTrigger />
     </>
   );
 };

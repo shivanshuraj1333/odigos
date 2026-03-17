@@ -68,9 +68,27 @@ spec:
           - name: ODIGOS_SEQUENTIAL_CACHE_LOAD
             value: "true"
           {{- end }}
+          {{- with .Values.ui.profiling }}
+          - name: ENABLE_PROFILES_RECEIVER
+            value: {{ .enabled | default false | quote }}
+          - name: PROFILES_SLOT_TTL_SECONDS
+            value: {{ .slotTTLSeconds | default 30 | quote }}
+          - name: PROFILES_MAX_SLOTS
+            value: {{ .maxSlots | default 10 | quote }}
+          - name: PROFILES_SLOT_MAX_BYTES
+            value: {{ .slotMaxBytes | default 5242880 | int | quote }}
+          - name: PROFILES_CLEANUP_INTERVAL_SECONDS
+            value: {{ .cleanupIntervalSeconds | default 15 | quote }}
+          {{- if .debugLogs }}
+          - name: PROFILING_DEBUG
+            value: "true"
+          {{- end }}
+          {{- end }}
         ports:
           - containerPort: 3000
             name: ui
+          - containerPort: 4318
+            name: otlp-profiles
         livenessProbe:
           httpGet:
             path: /healthz

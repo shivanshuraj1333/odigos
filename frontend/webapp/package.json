@@ -5,6 +5,8 @@
   "scripts": {
     "postinstall": "check-peer-dependencies --runOnlyOnRootDependencies",
     "dev": "next dev --turbopack",
+    "dev:portforward": "echo 'Backend: in another terminal run: kubectl port-forward -n <odigos-ns> svc/odigos-ui 8085:3000' && next dev --turbopack",
+    "dev:remote": "NEXT_PUBLIC_BACKEND_ORIGIN=http://localhost:3001 next dev --turbopack",
     "prebuild": "rm -rf out .next",
     "build": "cross-env NODE_ENV=production next build --turbopack",
     "back:build": "cd .. && go build -o odigos-backend",

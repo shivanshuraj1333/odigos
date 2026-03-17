@@ -8,6 +8,20 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 const nextConfig: NextConfig = {
   output: 'export',
   reactStrictMode: false,
+  // Hide dev overlay/portal in development (nextjs-portal element)
+  devIndicators: false,
+  // Dev: proxy to backend so you can run Next (fast UI) + port-forward to cluster backend. No Go build needed.
+  // In another terminal: kubectl port-forward -n <ns> svc/odigos-ui 8085:3000
+  async rewrites() {
+    if (process.env.NODE_ENV !== 'development') return [];
+    const backend = process.env.NEXT_PUBLIC_BACKEND_ORIGIN || 'http://localhost:8085';
+    return [
+      { source: '/api/:path*', destination: `${backend}/api/:path*` },
+      { source: '/graphql', destination: `${backend}/graphql` },
+      { source: '/auth/csrf-token', destination: `${backend}/auth/csrf-token` },
+      { source: '/diagnose/download', destination: `${backend}/diagnose/download` },
+    ];
+  },
   images: {
     unoptimized: true,
   },

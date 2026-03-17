@@ -1,0 +1,46 @@
+# Odigos with profiling: node collectors (eBPF 97 Hz) → gateway → Pyroscope + UI backend.
+# On-demand: user opens Profiler in UI and clicks "Load data"; backend caches and serves flame graph.
+#
+# Usage:
+#   helm upgrade odigos ./helm/odigos -n odigos-system -f ./helm/odigos/values-profiles-override.yaml
+#   kubectl rollout restart daemonset/odiglet -n odigos-system   # pick up node collector config
+#
+# If your release is in another namespace, change "odigos-system" in profilesOtlpEndpointUI and Pyroscope endpoint.
+
+image:
+  tag: "v1.21.0"
+
+images:
+  scheduler: "keyval/odigos-scheduler:v1.21.0"
+  instrumentor: "keyval/odigos-instrumentor:v1.21.0"
+  ui: "public.ecr.aws/odigos/dev/coretestbed:odigos-ui-2255195f"
+  odiglet: "keyval/odigos-odiglet:v1.21.0"
+  agents: "keyval/odigos-agents:v1.21.0"
+  collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-2255195f"
+  autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-2255195f"
+
+# Gateway: receive profiles from node collectors, export to Pyroscope (verification) and UI backend (on-demand).
+# Replace namespace in endpoints if your Odigos/Pyroscope are in different namespaces.
+# Timeout/retry (profilesExporterTimeout, profilesExporterRetry) are in values.yaml; override here to tune without rebuilding images.
+autoscaler:
+  profileVerificationOtlpEndpoint: "pyroscope.pyroscope.svc.cluster.local:4040"
+  profilesOtlpEndpointUI: "ui.odigos-system.svc.cluster.local:4318"
+
+# UI: profiling receiver + cache; debug logging for [profiling] and main app.
+ui:
+  logLevel: "debug"
+  profiling:
+    enabled: true
+    debugLogs: true
+    slotTTLSeconds: 30
+    maxSlots: 10
+    slotMaxBytes: 5242880
+    cleanupIntervalSeconds: 15
+
+# Node collector (DC): eBPF profiling at 97 Hz, enrich with k8s metadata, send to gateway.
+# requirePrivileged: required for eBPF; filterUnattributedOnly: drop unattributed; samplesPerSecond: 97.
+collectorNode:
+  profiles:
+    requirePrivileged: true
+    filterUnattributedOnly: true
+    samplesPerSecond: 97

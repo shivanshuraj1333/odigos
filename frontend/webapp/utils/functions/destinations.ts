@@ -1,5 +1,11 @@
 import type { Destination } from '@odigos/ui-kit/types';
 
+/** Normalize exportedSignals so ui-kit's monitors array never gets undefined (avoids .toLowerCase() on undefined). */
+function normalizeExportedSignals(signals: Destination['exportedSignals']): { logs: boolean; metrics: boolean; traces: boolean } {
+  if (!signals || typeof signals !== 'object') return { logs: false, metrics: false, traces: false };
+  return { logs: !!signals.logs, metrics: !!signals.metrics, traces: !!signals.traces };
+}
+
 export const mapFetchedDestinations = (items: Destination[]): Destination[] => {
   return items.map((item) => {
     // Replace deprecated string values, with boolean values
@@ -20,6 +26,6 @@ export const mapFetchedDestinations = (items: Destination[]): Destination[] => {
             .replace('"QRYN_OSS_RESOURCE_TO_TELEMETRY_CONVERSION":"No"', '"QRYN_OSS_RESOURCE_TO_TELEMETRY_CONVERSION":"false"')
         : item.fields;
 
-    return { ...item, fields };
+    return { ...item, fields, exportedSignals: normalizeExportedSignals(item.exportedSignals) };
   });
 };

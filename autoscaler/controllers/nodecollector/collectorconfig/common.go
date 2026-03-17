@@ -18,6 +18,7 @@ const (
 const (
 	healthCheckExtensionName            = "health_check"
 	odigosEbpfReceiverName              = "odigosebpf"
+	profilingReceiverName              = "profiling" // eBPF profiling receiver (go.opentelemetry.io/ebpf-profiler)
 	pprofExtensionName                  = "pprof"
 	batchProcessorName                  = "batch"
 	memoryLimiterProcessorName          = "memory_limiter"
@@ -25,8 +26,10 @@ const (
 	nodeNameProcessorName               = "resource/node-name"
 	clusterCollectorTracesExporterName  = "otlp/out-cluster-collector-traces"
 	clusterCollectorMetricsExporterName = "otlp/out-cluster-collector-metrics"
-	clusterCollectorLogsExporterName    = "otlp/out-cluster-collector-logs"
+	clusterCollectorLogsExporterName     = "otlp/out-cluster-collector-logs"
+	clusterCollectorProfilesExporterName = "otlp/out-cluster-collector-profiles"
 	resourceDetectionProcessorName      = "resourcedetection"
+	k8sattributesProcessorName          = "k8sattributes"
 )
 
 func commonProcessors(nodeCG *odigosv1.CollectorsGroup, runningOnGKE bool) config.GenericMap {
@@ -104,9 +107,10 @@ func getCommonExporters(otlpExporterConfiguration *common.OtlpExporterConfigurat
 	}
 
 	return config.GenericMap{
-		clusterCollectorTracesExporterName:  traceExporterConfig,
-		clusterCollectorMetricsExporterName: commonExporterConfig,
-		clusterCollectorLogsExporterName:    commonExporterConfig,
+		clusterCollectorTracesExporterName:   traceExporterConfig,
+		clusterCollectorMetricsExporterName:  commonExporterConfig,
+		clusterCollectorLogsExporterName:     commonExporterConfig,
+		clusterCollectorProfilesExporterName: commonExporterConfig,
 	}
 }
 
@@ -139,6 +143,7 @@ func init() {
 			},
 		},
 		odigosEbpfReceiverName: config.GenericMap{},
+		profilingReceiverName:  config.GenericMap{}, // in-node eBPF CPU profiling; requires Linux, privileged
 	}
 
 	commonExtensions = config.GenericMap{

@@ -70,6 +70,31 @@ spec:
                 name: odigos-deployment
           - name: ODIGOS_COLLECTOR_IMAGE
             value: '{{ template "utils.imageName" (dict "Values" .Values "Component" "collector" "Tag" $imageTag) }}'
+          {{- if .Values.autoscaler.profileVerificationOtlpEndpoint }}
+          - name: PROFILE_VERIFICATION_OTLP_ENDPOINT
+            value: {{ .Values.autoscaler.profileVerificationOtlpEndpoint | quote }}
+          {{- end }}
+          {{- if .Values.autoscaler.profilesOtlpEndpointUI }}
+          - name: PROFILES_OTLP_ENDPOINT_UI
+            value: {{ .Values.autoscaler.profilesOtlpEndpointUI | quote }}
+          {{- end }}
+          {{- if or .Values.autoscaler.profileVerificationOtlpEndpoint .Values.autoscaler.profilesOtlpEndpointUI }}
+          {{- $retry := .Values.autoscaler.profilesExporterRetry | default dict }}
+          - name: PROFILES_EXPORTER_TIMEOUT
+            value: {{ .Values.autoscaler.profilesExporterTimeout | default "120s" | quote }}
+          - name: PROFILES_EXPORTER_RETRY_ENABLED
+            {{- if (default true $retry.enabled) }}
+            value: "true"
+            {{- else }}
+            value: "false"
+            {{- end }}
+          - name: PROFILES_EXPORTER_RETRY_INITIAL_INTERVAL
+            value: {{ $retry.initialInterval | default "5s" | quote }}
+          - name: PROFILES_EXPORTER_RETRY_MAX_INTERVAL
+            value: {{ $retry.maxInterval | default "30s" | quote }}
+          - name: PROFILES_EXPORTER_RETRY_MAX_ELAPSED_TIME
+            value: {{ $retry.maxElapsedTime | default "5m" | quote }}
+          {{- end }}
           - name: GOMEMLIMIT
             value: {{ include "odigos.gomemlimitFromResources" (dict "Resources" .Values.autoscaler.resources) }}
         envFrom:

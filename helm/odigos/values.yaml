@@ -352,6 +352,22 @@ collectorNode:
   k8sNodeLogsDirectory: ''
 
   # @schema
+  # description: |-
+  #   Node collector eBPF profiling. When requirePrivileged is true, the data-collection container runs
+  #   privileged and mounts host /proc and /sys/kernel (required for the eBPF profiling receiver). Set true
+  #   when using a collector image that includes the "profiling" receiver (e.g. custom build from builder-config.yaml).
+  #   Optional config override: YAML for the profiles config domain (e.g. k8sattributes pod_association).
+  #   filterUnattributedOnly: when true, creates a profiles config override that adds the filter processor to drop
+  #   profiles with no container/pod attribution (no collector/autoscaler rebuild required).
+  # @schema
+  profiles:
+    requirePrivileged: false
+    config: ''
+    filterUnattributedOnly: false
+    # eBPF profiling receiver sampling rate (samples per second). Set in collector config when the profiles ConfigMap exists.
+    samplesPerSecond: 97
+
+  # @schema
   # description: OTLP exporter configuration for the node collector.
   # @schema
   otlpExporterConfiguration:
@@ -396,6 +412,39 @@ autoscaler:
   # description: Log level for autoscaler. Defaults to info.
   # @schema
   logLevel: "info"
+
+  # @schema
+  # description: |-
+  #   OTLP endpoint for the gateway to export profiles to (verification / preview). When set, the gateway
+  #   adds a profiles pipeline that forwards received profiles to this endpoint. For Pyroscope use
+  #   <svc>.pyroscope.svc.cluster.local:4040 (Pyroscope listens on 4040 for OTLP/gRPC). Omit or leave empty to disable.
+  # @schema
+  profileVerificationOtlpEndpoint: ''
+
+  # @schema
+  # description: |-
+  #   Additional OTLP endpoint for the gateway to export profiles to (e.g. frontend OTLP receiver).
+  #   When set together with profileVerificationOtlpEndpoint, the gateway exports to both. Use the UI
+  #   service (e.g. odigos-ui.odigos-system.svc.cluster.local:4318) so the frontend can display profiles.
+  # @schema
+  profilesOtlpEndpointUI: ''
+
+  # @schema
+  # description: |-
+  #   Timeout for gateway profile OTLP exporters (Pyroscope, UI). Used when profileVerificationOtlpEndpoint
+  #   or profilesOtlpEndpointUI is set. Tune via helm upgrade without rebuilding images.
+  # @schema
+  profilesExporterTimeout: '120s'
+
+  # @schema
+  # description: |-
+  #   Retry policy for gateway profile OTLP exporters. Used when profile endpoints are set.
+  # @schema
+  profilesExporterRetry:
+    enabled: true
+    initialInterval: '5s'
+    maxInterval: '30s'
+    maxElapsedTime: '5m'
 
   # @schema
   # description: Override the global nodeSelector (values.nodeSelector) for this component
@@ -619,6 +668,37 @@ ui:
   #    - If not set, the UI will not connect to the central backend.
   # @schema
   centralBackendURL: ''
+
+  # @schema
+  # description: |-
+  #   Profiling cache and receiver settings. When a user opens the profiling view for a source,
+  #   the UI backend accepts OTLP profiles for that source and serves them until the user leaves (TTL).
+  # @schema
+  profiling:
+    # @schema
+    # description: Enable the OTLP profiles receiver and profiling cache (set to "true" to enable).
+    # @schema
+    enabled: false
+    # @schema
+    # description: When true, set PROFILING_DEBUG so the UI backend logs [profiling] enable/get/receiver/store. Default false.
+    # @schema
+    debugLogs: false
+    # @schema
+    # description: Seconds after the last GET/enable request before a source slot is evicted and cache flushed. Default 30.
+    # @schema
+    slotTTLSeconds: 30
+    # @schema
+    # description: Maximum number of source slots (concurrent sources being profiled). Default 10.
+    # @schema
+    maxSlots: 10
+    # @schema
+    # description: Max bytes per slot (rolling buffer). Default 5242880 (5Mi).
+    # @schema
+    slotMaxBytes: 5242880
+    # @schema
+    # description: How often (seconds) the cleanup job runs to evict expired slots. Default 15.
+    # @schema
+    cleanupIntervalSeconds: 15
 
 # @schema
 # description: Configuration for the instrumentor component.
