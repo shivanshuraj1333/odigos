@@ -1,0 +1,165 @@
+{
+    "version": 1,
+    "flamebearer": {
+        "names": [
+            "total",
+            "internal/abi.(*FuncType).Out",
+            "internal/abi.(*FuncType).InSlice",
+            "entry_SYSCALL_64_after_hwframe",
+            "do_syscall_64",
+            "syscall_exit_to_user_mode",
+            "__rseq_handle_notify_resume",
+            "rseq_ip_fixup",
+            "rseq_get_rseq_cs",
+            "__get_user_8",
+            "__x64_sys_sched_yield",
+            "schedule",
+            "__schedule",
+            "__x64_sys_futex",
+            "do_futex",
+            "futex_wake",
+            "futex_wait",
+            "__futex_wait",
+            "futex_wait_queue",
+            "finish_task_switch.isra.0"
+        ],
+        "levels": [
+            [
+                0,
+                61855668,
+                0,
+                0
+            ],
+            [
+                0,
+                41237112,
+                0,
+                3,
+                0,
+                10309278,
+                10309278,
+                2,
+                0,
+                10309278,
+                10309278,
+                1
+            ],
+            [
+                0,
+                41237112,
+                0,
+                4
+            ],
+            [
+                0,
+                20618556,
+                0,
+                13,
+                0,
+                10309278,
+                0,
+                10,
+                0,
+                10309278,
+                0,
+                5
+            ],
+            [
+                0,
+                20618556,
+                0,
+                14,
+                0,
+                10309278,
+                0,
+                11,
+                0,
+                10309278,
+                0,
+                6
+            ],
+            [
+                0,
+                10309278,
+                0,
+                16,
+                0,
+                10309278,
+                10309278,
+                15,
+                0,
+                10309278,
+                10309278,
+                12,
+                0,
+                10309278,
+                0,
+                7
+            ],
+            [
+                0,
+                10309278,
+                0,
+                17,
+                20618556,
+                10309278,
+                0,
+                8
+            ],
+            [
+                0,
+                10309278,
+                0,
+                18,
+                20618556,
+                10309278,
+                10309278,
+                9
+            ],
+            [
+                0,
+                10309278,
+                0,
+                11
+            ],
+            [
+                0,
+                10309278,
+                0,
+                12
+            ],
+            [
+                0,
+                10309278,
+                10309278,
+                19
+            ]
+        ],
+        "numTicks": 61855668,
+        "maxSelf": 10309278
+    },
+    "metadata": {
+        "format": "single",
+        "spyName": "",
+        "sampleRate": 1000000000,
+        "units": "samples",
+        "name": "cpu"
+    },
+    "timeline": {
+        "startTime": 1773777240,
+        "samples": [
+            0,
+            0,
+            30927834,
+            51546390,
+            30927834,
+            20618556,
+            41237112,
+            10309278
+        ],
+        "durationDelta": 15,
+        "watermarks": null
+    },
+    "groups": null,
+    "heatmap": null
+}

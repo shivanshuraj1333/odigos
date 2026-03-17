@@ -112,7 +112,11 @@ func startWatchers(ctx context.Context) error {
 }
 
 func startDatabase(logger *commonlogger.OdigosLogger) error {
-	database, err := db.NewSQLiteDB("/data/data.db")
+	dbPath := os.Getenv("ODIGOS_UI_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/data/data.db"
+	}
+	database, err := db.NewSQLiteDB(dbPath)
 	if err != nil {
 		// TODO: Move to fatal once db required
 		// return err
@@ -354,7 +358,10 @@ func main() {
 	}
 
 	var promAPI v1.API
-	metricsURL := fmt.Sprintf("http://%s.%s.svc:8428", metrics.VictoriaMetricsServiceName, flags.Namespace)
+	metricsURL := os.Getenv("VICTORIA_METRICS_URL")
+	if metricsURL == "" {
+		metricsURL = fmt.Sprintf("http://%s.%s.svc:8428", metrics.VictoriaMetricsServiceName, flags.Namespace)
+	}
 	if api, err := metrics.NewAPIFromURL(metricsURL); err != nil {
 		log.Warn("failed to initialize VictoriaMetrics API", "url", metricsURL, "err", err)
 	} else {

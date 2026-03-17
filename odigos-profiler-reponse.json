@@ -1,0 +1,601 @@
+{
+    "version": 1,
+    "flamebearer": {
+        "names": [
+            "total",
+            "frame_11",
+            "frame_10",
+            "frame_9",
+            "frame_8",
+            "frame_7",
+            "frame_6",
+            "frame_403",
+            "frame_402",
+            "frame_401",
+            "frame_400",
+            "frame_399",
+            "frame_13",
+            "frame_139",
+            "frame_132",
+            "frame_131",
+            "frame_130",
+            "frame_138",
+            "frame_18",
+            "frame_129",
+            "frame_128",
+            "frame_64",
+            "frame_63",
+            "frame_62",
+            "frame_61",
+            "frame_60",
+            "frame_19",
+            "frame_119",
+            "frame_118",
+            "frame_117",
+            "frame_116",
+            "frame_115",
+            "frame_5",
+            "frame_17",
+            "frame_21",
+            "frame_38",
+            "frame_37",
+            "frame_36",
+            "frame_35",
+            "frame_34",
+            "frame_67",
+            "frame_66",
+            "frame_65",
+            "frame_48",
+            "frame_57",
+            "frame_133",
+            "frame_4"
+        ],
+        "levels": [
+            [
+                0,
+                14,
+                0,
+                0
+            ],
+            [
+                0,
+                2,
+                0,
+                1,
+                0,
+                1,
+                0,
+                12,
+                0,
+                2,
+                0,
+                18,
+                0,
+                2,
+                0,
+                26,
+                0,
+                1,
+                0,
+                34,
+                0,
+                1,
+                0,
+                39,
+                0,
+                1,
+                0,
+                43,
+                0,
+                2,
+                0,
+                44,
+                0,
+                2,
+                0,
+                3
+            ],
+            [
+                0,
+                1,
+                0,
+                2,
+                0,
+                1,
+                0,
+                7,
+                0,
+                1,
+                0,
+                13,
+                0,
+                1,
+                0,
+                14,
+                0,
+                1,
+                0,
+                21,
+                0,
+                1,
+                0,
+                27,
+                0,
+                1,
+                0,
+                18,
+                0,
+                1,
+                0,
+                35,
+                0,
+                1,
+                0,
+                40,
+                0,
+                1,
+                0,
+                27,
+                0,
+                2,
+                0,
+                45,
+                0,
+                2,
+                0,
+                4
+            ],
+            [
+                0,
+                1,
+                0,
+                3,
+                0,
+                1,
+                0,
+                8,
+                0,
+                1,
+                0,
+                14,
+                0,
+                1,
+                0,
+                15,
+                0,
+                1,
+                0,
+                22,
+                0,
+                1,
+                0,
+                28,
+                0,
+                1,
+                0,
+                5,
+                0,
+                1,
+                0,
+                36,
+                0,
+                1,
+                0,
+                41,
+                0,
+                1,
+                0,
+                28,
+                0,
+                2,
+                0,
+                14,
+                0,
+                2,
+                0,
+                5
+            ],
+            [
+                0,
+                1,
+                0,
+                4,
+                0,
+                1,
+                0,
+                9,
+                0,
+                1,
+                0,
+                15,
+                0,
+                1,
+                0,
+                16,
+                0,
+                1,
+                0,
+                23,
+                0,
+                1,
+                0,
+                29,
+                0,
+                1,
+                0,
+                6,
+                0,
+                1,
+                0,
+                37,
+                0,
+                1,
+                0,
+                42,
+                0,
+                1,
+                0,
+                29,
+                0,
+                2,
+                0,
+                15,
+                0,
+                2,
+                0,
+                6
+            ],
+            [
+                0,
+                1,
+                0,
+                5,
+                0,
+                1,
+                0,
+                10,
+                0,
+                1,
+                0,
+                16,
+                0,
+                1,
+                0,
+                19,
+                0,
+                1,
+                0,
+                24,
+                0,
+                1,
+                0,
+                30,
+                0,
+                1,
+                0,
+                32,
+                0,
+                1,
+                0,
+                38,
+                0,
+                1,
+                0,
+                21,
+                0,
+                1,
+                0,
+                30,
+                0,
+                2,
+                0,
+                16,
+                0,
+                2,
+                0,
+                32
+            ],
+            [
+                0,
+                1,
+                1,
+                6,
+                0,
+                1,
+                1,
+                11,
+                0,
+                1,
+                1,
+                17,
+                0,
+                1,
+                1,
+                20,
+                0,
+                1,
+                1,
+                25,
+                0,
+                1,
+                1,
+                31,
+                0,
+                1,
+                1,
+                33,
+                0,
+                1,
+                1,
+                39,
+                0,
+                1,
+                1,
+                22,
+                0,
+                1,
+                1,
+                31,
+                0,
+                2,
+                2,
+                19,
+                0,
+                2,
+                2,
+                46
+            ]
+        ],
+        "numTicks": 14,
+        "maxSelf": 2
+    },
+    "metadata": {
+        "format": "single",
+        "spyName": "ebpf",
+        "sampleRate": 1000000000,
+        "units": "samples",
+        "name": "cpu"
+    },
+    "timeline": {
+        "startTime": 0,
+        "samples": [
+            0,
+            14
+        ],
+        "durationDelta": 15
+    },
+    "groups": null,
+    "heatmap": null,
+    "symbols": [
+        {
+            "name": "frame_129",
+            "self": 2,
+            "total": 3
+        },
+        {
+            "name": "frame_4",
+            "self": 2,
+            "total": 2
+        },
+        {
+            "name": "frame_115",
+            "self": 2,
+            "total": 2
+        },
+        {
+            "name": "frame_138",
+            "self": 1,
+            "total": 1
+        },
+        {
+            "name": "frame_34",
+            "self": 1,
+            "total": 2
+        },
+        {
+            "name": "frame_399",
+            "self": 1,
+            "total": 1
+        },
+        {
+            "name": "frame_60",
+            "self": 1,
+            "total": 1
+        },
+        {
+            "name": "frame_6",
+            "self": 1,
+            "total": 4
+        },
+        {
+            "name": "frame_63",
+            "self": 1,
+            "total": 2
+        },
+        {
+            "name": "frame_17",
+            "self": 1,
+            "total": 1
+        },
+        {
+            "name": "frame_128",
+            "self": 1,
+            "total": 1
+        },
+        {
+            "name": "frame_403",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_48",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_13",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_131",
+            "self": 0,
+            "total": 4
+        },
+        {
+            "name": "frame_132",
+            "self": 0,
+            "total": 4
+        },
+        {
+            "name": "frame_62",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_35",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_11",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_61",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_119",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_118",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_117",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_133",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_21",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_67",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_9",
+            "self": 0,
+            "total": 3
+        },
+        {
+            "name": "frame_65",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_401",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_400",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_18",
+            "self": 0,
+            "total": 3
+        },
+        {
+            "name": "frame_38",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_36",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_66",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_8",
+            "self": 0,
+            "total": 3
+        },
+        {
+            "name": "frame_130",
+            "self": 0,
+            "total": 4
+        },
+        {
+            "name": "frame_57",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_402",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_7",
+            "self": 0,
+            "total": 4
+        },
+        {
+            "name": "frame_64",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_19",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_116",
+            "self": 0,
+            "total": 2
+        },
+        {
+            "name": "frame_5",
+            "self": 0,
+            "total": 3
+        },
+        {
+            "name": "frame_37",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_10",
+            "self": 0,
+            "total": 1
+        },
+        {
+            "name": "frame_139",
+            "self": 0,
+            "total": 1
+        }
+    ]
+}

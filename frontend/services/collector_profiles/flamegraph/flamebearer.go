@@ -1,7 +1,5 @@
 package flamegraph
 
-import "sort"
-
 // Flamebearer is the JSON shape sent to the frontend (Pyroscope-compatible).
 // Each level is a row; each node is 4 ints: xOffset (delta), total, self, nameIndex.
 type Flamebearer struct {
@@ -45,6 +43,8 @@ const (
 )
 
 // TreeToFlamebearer converts a Tree to Flamebearer (Pyroscope format).
+// Uses same algorithm as Grafana Pyroscope pkg/model/flamegraph.go NewFlameGraph:
+// 4-tuple [xOffset (delta), total, self, nameIndex], delta-encoded, "other" folding.
 // maxNodes limits the number of nodes; smaller nodes are folded into "other".
 func TreeToFlamebearer(t *Tree, maxNodes int64) Flamebearer {
 	if maxNodes <= 0 {
@@ -133,38 +133,35 @@ func TreeToFlamebearer(t *Tree, maxNodes int64) Flamebearer {
 }
 
 // minValue returns the minimum node total to include (nodes below are folded into "other").
+// Uses same min-heap algorithm as Grafana Pyroscope pkg/model/tree.go for identical folding.
 func (t *Tree) minValue(maxNodes int64) int64 {
 	if maxNodes < 1 {
 		return 0
 	}
-	count := t.nodeCount()
-	if count <= maxNodes {
-		return 0
-	}
-	type pair struct {
-		total int64
-		n     *node
-	}
-	var nodes []pair
-	var visit func(*node)
-	visit = func(n *node) {
-		if n == nil {
-			return
-		}
-		nodes = append(nodes, pair{n.total, n})
-		for _, c := range n.children {
-			visit(c)
-		}
-	}
+	const defaultDFSSize = 128
+	nodes := make([]*node, 0, defaultDFSSize)
 	for _, r := range t.root {
-		visit(r)
+		nodes = append(nodes, r)
 	}
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].total < nodes[j].total })
-	if len(nodes) <= int(maxNodes) {
+	var n *node
+	h := make([]int64, 0, maxNodes+1)
+	for len(nodes) > 0 {
+		last := len(nodes) - 1
+		n, nodes = nodes[last], nodes[:last]
+		if len(h) >= int(maxNodes) {
+			if n.total > h[0] {
+				h = minHeapPop(h)
+			} else {
+				continue
+			}
+		}
+		h = minHeapPush(h, n.total)
+		nodes = append(nodes, n.children...)
+	}
+	if int64(len(h)) < maxNodes {
 		return 0
 	}
-	cut := len(nodes) - int(maxNodes)
-	return nodes[cut].total
+	return h[0]
 }
 
 func (t *Tree) nodeCount() int64 {

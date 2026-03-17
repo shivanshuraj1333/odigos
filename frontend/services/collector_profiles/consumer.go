@@ -3,7 +3,12 @@ package collectorprofiles
 import (
 	"context"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/xconsumer"
@@ -12,6 +17,28 @@ import (
 )
 
 var jsonMarshaler pprofile.JSONMarshaler
+
+// dumpDir is set from PROFILE_DEBUG_DUMP_DIR at first use; when non-empty, raw profile chunks are written there.
+var dumpDir string
+var dumpSeq atomic.Uint64
+
+const defaultDumpDir = "profile-dumps"
+
+func init() {
+	dumpDir = os.Getenv("PROFILE_DEBUG_DUMP_DIR")
+	switch strings.ToLower(dumpDir) {
+	case "off", "disabled", "false":
+		dumpDir = ""
+	case "":
+		dumpDir = defaultDumpDir
+	}
+	if dumpDir != "" {
+		if err := os.MkdirAll(dumpDir, 0755); err != nil {
+			log.Printf("[profiling] profile dump mkdir %q: %v", dumpDir, err)
+			dumpDir = ""
+		}
+	}
+}
 
 // NewProfilesConsumer returns an xconsumer.Profiles that routes incoming profile data
 // to the store only for sources that are in the active set (have a slot).
@@ -40,9 +67,27 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 			}
 			store.AddProfileData(key, bytes)
 			profilingDebugLog("[profiling] receiver: stored chunk sourceKey=%q size=%d", key, len(bytes))
+			if dumpDir != "" {
+				writeRawProfileDump(key, bytes)
+			}
 		}
 		return nil
 	}, consumer.WithCapabilities(consumer.Capabilities{MutatesData: false}))
+}
+
+// writeRawProfileDump writes raw profile JSON to a file under dumpDir for debugging and accounting.
+// Filename: {sanitizedSourceKey}_{unixNano}_{seq}.json so you can reference the exact payload when improving parser logic.
+func writeRawProfileDump(sourceKey string, rawJSON []byte) {
+	sanitized := strings.ReplaceAll(sourceKey, "/", "_")
+	sanitized = strings.ReplaceAll(sanitized, " ", "_")
+	seq := dumpSeq.Add(1)
+	name := sanitized + "_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + strconv.FormatUint(seq, 10) + ".json"
+	path := filepath.Join(dumpDir, name)
+	if err := os.WriteFile(path, rawJSON, 0644); err != nil {
+		log.Printf("[profiling] dump write failed: %v", err)
+		return
+	}
+	profilingDebugLog("[profiling] dump wrote %s (%d bytes)", path, len(rawJSON))
 }
 
 // attrsToDebugString returns a short string of attribute keys for debug logs (e.g. "k8s.namespace.name,k8s.pod.name").

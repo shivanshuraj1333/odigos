@@ -65,11 +65,20 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 			return
 		}
 	}
-	// Fill names: (1) OTLP 1.0 top-level "dictionary" (stringTable, locationTable, functionTable);
-	// (2) legacy per-object stringTable/location/function.
-	if dict := getKey(m, "dictionary", "Dictionary"); dict != nil {
+	// Fill names: (1) OTLP 1.0 dictionary (top-level or under schema); (2) per-object stringTable/location/function.
+	if dict := getKey(m, "dictionary", "Dictionary", "schema", "Schema"); dict != nil {
 		if dm, ok := dict.(map[string]interface{}); ok {
 			extractNamesFromDictionary(dm, names)
+		}
+	}
+	// Schema may wrap dictionary (collector JSON).
+	if schema := getKey(m, "schema", "Schema"); schema != nil {
+		if sm, ok := schema.(map[string]interface{}); ok {
+			if dict := getKey(sm, "dictionary", "Dictionary"); dict != nil {
+				if dm, ok := dict.(map[string]interface{}); ok {
+					extractNamesFromDictionary(dm, names)
+				}
+			}
 		}
 	}
 	extractNamesFromObject(m, names)
@@ -160,8 +169,10 @@ func extractNamesFromDictionary(m map[string]interface{}, names map[int]string) 
 				if fm == nil {
 					continue
 				}
-				if nameRef := getKey(fm, "nameStrindex", "name_strindex", "name"); nameRef != nil {
-					if i, ok := toInt(nameRef); ok && i >= 0 && i < len(stringTable) {
+				if nameRef := getKey(fm, "nameStrindex", "nameStrIndex", "name_strindex", "name"); nameRef != nil {
+					if s, ok := nameRef.(string); ok && s != "" {
+						funcNames[idx] = s
+					} else if i, ok := toInt(nameRef); ok && i >= 0 && i < len(stringTable) {
 						funcNames[idx] = stringTable[i]
 					}
 				}
@@ -275,6 +286,9 @@ func resolveLocationName(loc interface{}, names map[int]string) string {
 		return ""
 	}
 	if nameRef := getKey(lm, "name", "Name", "functionName", "function_name"); nameRef != nil {
+		if s, ok := nameRef.(string); ok && s != "" {
+			return s
+		}
 		if idx, ok := toInt(nameRef); ok && idx >= 0 {
 			return names[idx]
 		}
@@ -300,6 +314,9 @@ func resolveFunctionName(fn interface{}, names map[int]string) string {
 		return ""
 	}
 	if nameRef := getKey(fm, "name", "Name"); nameRef != nil {
+		if s, ok := nameRef.(string); ok && s != "" {
+			return s
+		}
 		if idx, ok := toInt(nameRef); ok && idx >= 0 {
 			return names[idx]
 		}
@@ -321,11 +338,11 @@ func toInt(v interface{}) (int, bool) {
 
 // getSampleLocIDs returns location table indices for the sample (root-first order). locationIndices is the profile's locationIndices; pass nil if not used.
 func getSampleLocIDs(so map[string]interface{}, locationIndices []int) []int {
-	// OTLP 1.0: locationsStartIndex + locationsLength — indices into profile's locationIndices (or direct location table). Return root-first.
-	if start := getKey(so, "locationsStartIndex", "locations_start_index"); start != nil {
+	// OTLP 1.0: locationsStartIndex + locationsLength (camelCase / snake_case for collector JSON). Return root-first.
+	if start := getKey(so, "locationsStartIndex", "LocationsStartIndex", "locations_start_index"); start != nil {
 		if startIdx, ok := toInt(start); ok && startIdx >= 0 {
 			length := 1
-			if l := getKey(so, "locationsLength", "locations_length"); l != nil {
+			if l := getKey(so, "locationsLength", "LocationsLength", "locations_length"); l != nil {
 				if n, ok := toInt(l); ok && n > 0 {
 					length = n
 				}
