@@ -40,6 +40,11 @@ func init() {
 	}
 }
 
+// GetProfileDumpDir returns the directory where raw profile chunks are written (empty if disabled).
+func GetProfileDumpDir() string {
+	return dumpDir
+}
+
 // NewProfilesConsumer returns an xconsumer.Profiles that routes incoming profile data
 // to the store only for sources that are in the active set (have a slot).
 func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
@@ -57,7 +62,9 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 				profilingDebugLog("[profiling] receiver: dropped sourceKey=%q (not active/viewing)", key)
 				continue
 			}
-			// Copy this resource's profiles into a new Profiles and marshal to bytes.
+			// Copy this resource's profiles (already unmarshaled from gRPC) and marshal to JSON.
+			// We dump this JSON so you can run ParseOTLPChunk(dumpBytes) locally to iterate on
+			// parser and Pyroscope-format flamegraph logic without hitting the cluster.
 			newPd := pprofile.NewProfiles()
 			rp.CopyTo(newPd.ResourceProfiles().AppendEmpty())
 			bytes, err := jsonMarshaler.MarshalProfiles(newPd)
@@ -75,8 +82,9 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 	}, consumer.WithCapabilities(consumer.Capabilities{MutatesData: false}))
 }
 
-// writeRawProfileDump writes raw profile JSON to a file under dumpDir for debugging and accounting.
-// Filename: {sanitizedSourceKey}_{unixNano}_{seq}.json so you can reference the exact payload when improving parser logic.
+// writeRawProfileDump writes profile JSON (post gRPC unmarshal, same as store) to dumpDir.
+// Use the file with ParseOTLPChunk(dumpBytes) locally to iterate on parser and Pyroscope-format output.
+// Filename: {sanitizedSourceKey}_{unixNano}_{seq}.json
 func writeRawProfileDump(sourceKey string, rawJSON []byte) {
 	sanitized := strings.ReplaceAll(sourceKey, "/", "_")
 	sanitized = strings.ReplaceAll(sanitized, " ", "_")

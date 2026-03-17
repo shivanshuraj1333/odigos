@@ -3,6 +3,8 @@ package collectorprofiles
 import (
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +27,11 @@ func RegisterProfilingRoutes(r *gin.RouterGroup, store ProfileStoreRef) {
 	r.GET("/sources/:namespace/:kind/:name/profiling", func(c *gin.Context) {
 		handleGetProfileData(c, store)
 	})
+	// Debug: list and download raw profile dumps (for copying from pod when kubectl cp is not available).
+	if dir := GetProfileDumpDir(); dir != "" {
+		r.GET("/debug/profile-dumps", handleListProfileDumps)
+		r.GET("/debug/profile-dumps/:filename", handleGetProfileDumpFile)
+	}
 }
 
 func handleEnableProfiling(c *gin.Context, store ProfileStoreRef) {
@@ -111,6 +118,55 @@ func pyroscopeTimeline(numTicks int64) *flamegraph.FlamebearerTimeline {
 }
 
 var errMissingParams = errors.New("missing namespace, kind, or name")
+
+func handleListProfileDumps(c *gin.Context) {
+	dir := GetProfileDumpDir()
+	if dir == "" {
+		c.JSON(http.StatusOK, gin.H{"files": []string{}})
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			names = append(names, e.Name())
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"files": names})
+}
+
+func handleGetProfileDumpFile(c *gin.Context) {
+	dir := GetProfileDumpDir()
+	if dir == "" {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	filename := c.Param("filename")
+	if filename == "" || strings.Contains(filename, "..") || filepath.Clean(filename) != filename {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
+		return
+	}
+	path := filepath.Join(dir, filename)
+	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(dir)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename"})
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Data(http.StatusOK, "application/json", data)
+}
 
 // normalizeWorkloadKind returns the canonical PascalCase kind so the source key matches
 // keys built from OTLP resource attributes (e.g. "deployment" -> "Deployment").
