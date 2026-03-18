@@ -14,7 +14,6 @@ SHORT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo 'local')"
 COMPONENT="${1:-autoscaler}"
 
 # Single ECR repo: tag is public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<sha> (no /odigos-* in path)
-make ecr-login
 
 case "$COMPONENT" in
   autoscaler)
