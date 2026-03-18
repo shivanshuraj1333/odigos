@@ -267,6 +267,16 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 					}
 					profileExporters = append(profileExporters, profilesUIExporter)
 				}
+				// Optional: debug exporter logs the same profile payload (including dictionary) to gateway stdout.
+				// Enable via Helm: autoscaler.profilesDebugExport: true (sets PROFILE_DEBUG_EXPORT on autoscaler).
+				// Capture: kubectl logs -f deployment/<gateway> -n <ns> > gateway-profiles-debug.log
+				if strings.ToLower(strings.TrimSpace(os.Getenv("PROFILE_DEBUG_EXPORT"))) == "true" {
+					const profilesDebugExporter = "debug/profiles-debug"
+					c.Exporters[profilesDebugExporter] = config.GenericMap{
+						"verbosity": "detailed",
+					}
+					profileExporters = append(profileExporters, profilesDebugExporter)
+				}
 				if c.Service.Pipelines == nil {
 					c.Service.Pipelines = make(map[string]config.Pipeline)
 				}

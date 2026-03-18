@@ -292,6 +292,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: OTEL_LOG_LEVEL
+              value: {{ .Values.collectorNode.logLevel | default .Values.logLevel | default "info" | quote }}
 {{- $nodeLimiter := include "collector.node.memoryLimiter" . | fromYaml }}
             - name: GOMEMLIMIT
               value: "{{ $nodeLimiter.goMiB }}MiB"

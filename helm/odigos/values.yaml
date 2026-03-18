@@ -431,6 +431,13 @@ autoscaler:
 
   # @schema
   # description: |-
+  #   When true, gateway profiles pipeline includes a debug exporter; profile payloads are logged to
+  #   gateway stdout. Capture with: kubectl logs -f deployment/<gateway> -n <ns> > debug.log
+  # @schema
+  profilesDebugExport: false
+
+  # @schema
+  # description: |-
   #   Timeout for gateway profile OTLP exporters (Pyroscope, UI). Used when profileVerificationOtlpEndpoint
   #   or profilesOtlpEndpointUI is set. Tune via helm upgrade without rebuilding images.
   # @schema

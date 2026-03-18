@@ -3,6 +3,7 @@ package collectorprofiles
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -109,4 +110,62 @@ func TestMergedDumpPyroscopeFormat(t *testing.T) {
 		}
 	}
 	t.Logf("JSON shape matches Pyroscope (keys and nested structure)")
+}
+
+// TestDcDumpRunsOnRealDumps runs BuildPyroscopeProfileFromChunks on all JSON files in dc-dump/
+// (when present). Run from frontend: go test -v -run TestDcDump ./services/collector_profiles/
+// Dumps live at repo dc-dump/ (use ../dc-dump when running from frontend).
+func TestDcDumpRunsOnRealDumps(t *testing.T) {
+	var dumpDir string
+	for _, d := range []string{"../../../dc-dump", "../dc-dump", "dc-dump"} {
+		if _, err := os.Stat(d); err == nil {
+			dumpDir = d
+			break
+		}
+	}
+	if dumpDir == "" {
+		t.Skipf("dc-dump/ not found (try from frontend with dumps at ../dc-dump)")
+		return
+	}
+	entries, err := os.ReadDir(dumpDir)
+	if err != nil {
+		t.Fatalf("read dc-dump: %v", err)
+	}
+	var chunks [][]byte
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dumpDir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Logf("skip %s: %v", path, err)
+			continue
+		}
+		chunks = append(chunks, data)
+	}
+	if len(chunks) == 0 {
+		t.Skip("no .json files in dc-dump/")
+		return
+	}
+	profile := BuildPyroscopeProfileFromChunks(chunks)
+	fb := profile.Flamebearer
+	t.Logf("dc-dump: %d chunks -> numTicks=%d names=%d levels=%d", len(chunks), fb.NumTicks, len(fb.Names), len(fb.Levels))
+	show := 25
+	if len(fb.Names) < show {
+		show = len(fb.Names)
+	}
+	for i := 0; i < show; i++ {
+		t.Logf("  names[%d]=%q", i, fb.Names[i])
+	}
+	if len(fb.Names) > show {
+		t.Logf("  ... and %d more names", len(fb.Names)-show)
+	}
+	// Sanity: same shape as merged test
+	if profile.Version != 1 || fb.Names[0] != "total" {
+		t.Errorf("unexpected shape: version=%d names[0]=%q", profile.Version, fb.Names[0])
+	}
 }

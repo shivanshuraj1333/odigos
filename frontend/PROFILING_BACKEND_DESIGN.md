@@ -177,24 +177,52 @@ Incoming OTLP ResourceProfiles
 
 ---
 
-## Pyroscope symbolization (OTLP dictionary)
+## Why Odigos shows `frame_N` and Pyroscope shows real names
 
-Pyroscope **does not** do external symbolization for OTLP profiles in the ingest path. It **extracts all symbol data from the OTLP packet**:
+### How Pyroscope actually works (eBPF/OTLP case)
 
-- **ingest_handler.go**: Requires `er.Dictionary` and returns error if missing (`"missing profile metadata dictionary"`).
-- **convert.go**: `ConvertOtelToGoogle(profile, dictionary)` uses only the dictionary:
-  - `dictionary.StringTable` → type/unit, function names, filenames, mapping names, attribute keys/values
-  - `dictionary.FunctionTable` → Function (NameStrindex, FilenameStrindex, etc.) resolved via StringTable
-  - `dictionary.LocationTable` → Location (MappingIndex, Address, Lines with FunctionIndex)
-  - `dictionary.MappingTable` → Mapping (FilenameStrindex, MemoryStart/Limit, FileOffset, build_id attribute)
-  - `dictionary.StackTable` → Stack (LocationIndices = call stack)
-  - `dictionary.AttributeTable` → sample/resource attributes (e.g. service.name)
+1. **What the eBPF profiler sends (by design)**  
+   The [OpenTelemetry eBPF profiler](https://github.com/open-telemetry/opentelemetry-ebpf-profiler) sends **unsymbolized** stacks: each frame is a **mapping index** + **address** (offset in that mapping). The OTLP payload is supposed to include:
+   - **Dictionary**: `locationTable` (each entry: `mappingIndex`, `address`) and `mappingTable` (each entry: `filenameStrindex` → binary path, and `attributeIndices` → e.g. `process.executable.build_id.gnu`). So the dictionary has **no function names** (unsymbolized), but it **does** have (mapping → filename/build_id) and (location → mappingIndex, address). See [ebpf-profiler PR #153](https://github.com/open-telemetry/opentelemetry-ebpf-profiler/pull/153) (build_id), [issue #3715](https://github.com/grafana/pyroscope/issues/3715) (symbolization in backend).
 
-So when Pyroscope shows correct flame graphs from the same data, the **dictionary in the OTLP request must be populated** when it reaches them. If our pipeline receives the same gRPC but we see `dictionary: {}` in dumps, either (1) the collector pdata JSON marshaler does not emit the dictionary, or (2) the dictionary is not being copied/preserved (e.g. it lives per-ResourceProfiles in the wire format and we only copy top-level). Options:
+2. **What Pyroscope does with that**  
+   - **Ingest**: It stores the profile **with that dictionary** (locationTable + mappingTable). So it has, for every frame index: which binary (filename/build_id) and which address.
+   - **Display when not symbolized**: It can show at least **"libfoo.so 0x1234"** (binary + hex offset) using the mapping filename and location address ([PR #3741](https://github.com/grafana/pyroscope/pull/3741)). So unsymbolized frames don’t disappear.
+   - **Full names (read-path symbolization)**: When you query, it resolves (build_id, address) → function name via **DWARF + debuginfod** ([PR #3799](https://github.com/grafana/pyroscope/pull/3799)). So: same OTLP (dictionary with mapping + location, no function names) → Pyroscope still has the data to symbolize on read.
 
-1. **Use Pyroscope's conversion**: Depend on `github.com/grafana/pyroscope/pkg/ingester/otlp` (or copy `ConvertOtelToGoogle`); unmarshal incoming request as `ExportProfilesServiceRequest` (same proto as Pyroscope: `go.opentelemetry.io/proto/otlp/.../v1development`), call their converter to get Google pprof, then build our flame graph from the pprof. This requires receiving the same proto (our receiver may use collector pdata which might differ).
-2. **Verify dictionary preservation**: Log or dump the raw gRPC request (before pdata) and confirm whether the dictionary is present on the wire. If it is, fix our copy/marshal path so the dictionary is included in stored chunks and in `ParseOTLPChunk`.
-3. **Backend symbolization** (if dictionary is truly empty from sender): Add a separate step that resolves stack frames (e.g. file ID + offset from mapping/location) via debuginfod/DWARF; see Pyroscope PR #3799. Only needed if the eBPF profiler never sends a filled dictionary.
+3. **Why Odigos shows only `frame_N`**  
+   Our **dumps have `"dictionary": {}`**. So the OTLP that **reaches our consumer** has **no** locationTable and no mappingTable. Without them we have:
+   - No (mappingIndex, address) per location → nothing to pass to the symbolizer.
+   - No build_id or filename → no way to call debuginfod or show "binary 0xaddr".
+
+   So the difference is **not** that Pyroscope has magic we don’t; it’s that **our pipeline is not giving us the dictionary**. Possible causes:
+   - The **collector** (node or gateway) that exports profiles to the Odigos UI might be sending only `ResourceProfiles` and **dropping or not forwarding** the request-level `ProfilesDictionary`.
+   - Or the **eBPF receiver / exporter** in our pipeline might be sending profiles with an **empty dictionary** (e.g. only stack indices, no location/mapping tables).
+
+4. **What we need to match Pyroscope**  
+   - **Data path**: Ensure the full OTLP profile (including **non-empty dictionary** with `locationTable` and `mappingTable`) is sent from the collector to the UI and stored. Then we have (mappingIndex, address) and (filename, build_id) and our existing symbolizer can run.
+   - **Optional**: If we only get dictionary later, we can still show "binary 0xaddr" when we have mapping filename + address (like Pyroscope’s fallback).
+
+### Odigos today
+
+- We use the dictionary in the payload: `stringTable`, `functionTable`, `locationTable`, `mappingTable`. If the dictionary is **empty** (as in our dumps), we have no mapping/address and use `frame_<index>`.
+- We **implement** backend symbolization when `DEBUGINFOD_URLS` is set and the dictionary **has** locationTable + mappingTable (with build_id). So once the pipeline delivers that dictionary, we can show real names like Pyroscope.
+
+### What we do with the dictionary
+
+- **consumer.go**: We copy `pd.Dictionary()` into the profile we store and marshal to JSON, so any dictionary present on ingest is preserved for the parser.
+- **otlp_parse.go**: We read `dictionary` (and `schema.dictionary`) and `extractNamesFromDictionary` / `extractNamesFromObject` to fill `names`; samples use location indices into that map. If the dictionary is empty, we fall back to `frame_<id>`.
+
+### How to get real names in Odigos
+
+1. **Confirm what we receive**  
+   Set `PROFILE_DEBUG_DUMP_DIR` (e.g. to `profile-dumps`) so the consumer writes raw JSON chunks. Inspect a file: if `dictionary` is missing or `stringTable`/`functionTable`/`locationTable` are empty, the sender is not providing symbols.
+
+2. **Backend symbolization (like Pyroscope)** — **implemented**  
+   Set `DEBUGINFOD_URLS` (space-separated URLs, e.g. `https://debuginfod.elfutils.org/`). When building the GET response we extract `locationTable` (mappingIndex, address) and `mappingTable` (filename, build_id from attributeTable), then for each unresolved location call the symbolizer (debuginfod fetch + DWARF lookup). Results are cached per (build_id, address). See `flamegraph/symbolizer.go` and `resolveStackNames` in `handlers.go`.
+
+3. **Collector/exporter fills the dictionary**  
+   If the node collector or an OTLP exporter in the pipeline can resolve addresses to names (e.g. using a symbolizer in the collector) and fill the OTLP dictionary before sending to Odigos, our current parser will show real names with no backend symbolization.
 
 ## File roles (backend)
 

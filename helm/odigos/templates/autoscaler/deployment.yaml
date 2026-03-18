@@ -78,6 +78,10 @@ spec:
           - name: PROFILES_OTLP_ENDPOINT_UI
             value: {{ .Values.autoscaler.profilesOtlpEndpointUI | quote }}
           {{- end }}
+          {{- if .Values.autoscaler.profilesDebugExport }}
+          - name: PROFILE_DEBUG_EXPORT
+            value: "true"
+          {{- end }}
           {{- if or .Values.autoscaler.profileVerificationOtlpEndpoint .Values.autoscaler.profilesOtlpEndpointUI }}
           {{- $retry := .Values.autoscaler.profilesExporterRetry | default dict }}
           - name: PROFILES_EXPORTER_TIMEOUT

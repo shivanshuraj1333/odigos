@@ -17,6 +17,15 @@ import (
 	"github.com/odigos-io/odigos/frontend/services/collector_profiles/flamegraph"
 )
 
+// defaultSymbolizer is used for backend symbolization when DEBUGINFOD_URLS is set.
+var defaultSymbolizer *flamegraph.Symbolizer
+
+func init() {
+	if u := os.Getenv("DEBUGINFOD_URLS"); u != "" {
+		defaultSymbolizer = flamegraph.NewSymbolizer(u)
+	}
+}
+
 // RegisterProfilingRoutes adds routes for "enable continuous profiling" and "get profile data".
 // namespace, kind, name are path params (e.g. /api/sources/:namespace/:kind/:name/profiling).
 func RegisterProfilingRoutes(r *gin.RouterGroup, store ProfileStoreRef) {
@@ -87,7 +96,8 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 // BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
 // merges samples into a tree, and returns a Pyroscope-compatible response (version, flamebearer, metadata, timeline).
 // Tries Pyroscope's OTLP→pprof conversion first when the chunk has a non-empty dictionary (for proper symbols);
-// otherwise falls back to ParseOTLPChunk (frame_N when dictionary is empty).
+// otherwise falls back to ParseOTLPChunk. When dictionary names are missing, backend symbolization (DEBUGINFOD_URLS)
+// resolves mapping+address to function names via debuginfod+DWARF, like Pyroscope's read path.
 func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProfile {
 	tree := flamegraph.NewTree()
 	for _, b := range chunks {
@@ -101,8 +111,17 @@ func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProf
 		if err != nil {
 			continue
 		}
+		stackNames := resolveStackNames(parsed)
 		for _, s := range parsed.Samples {
-			tree.InsertStack(s.Value, s.Stack...)
+			if len(s.LocIndices) == 0 {
+				tree.InsertStack(s.Value, s.Stack...)
+				continue
+			}
+			stack := make([]string, 0, len(s.LocIndices))
+			for _, locIdx := range s.LocIndices {
+				stack = append(stack, stackNames[locIdx])
+			}
+			tree.InsertStack(s.Value, stack...)
 		}
 	}
 	fb := flamegraph.TreeToFlamebearer(tree, 1024)
@@ -114,8 +133,49 @@ func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProf
 		Timeline:    pyroscopeTimeline(fb.NumTicks, startTimeSec),
 		Groups:      nil,
 		Heatmap:     nil,
-		Symbols:     nil, // omit for strict Pyroscope shape (no extra keys)
+		Symbols:     nil,
 	}
+}
+
+// resolveStackNames returns location index -> display name (dictionary name, or symbolizer result, or frame_N).
+func resolveStackNames(parsed *flamegraph.ParsedChunk) map[int]string {
+	out := make(map[int]string)
+	for idx, name := range parsed.Names {
+		out[idx] = name
+	}
+	if defaultSymbolizer == nil || parsed.LocationInfos == nil || parsed.MappingInfos == nil {
+		for _, s := range parsed.Samples {
+			for _, locIdx := range s.LocIndices {
+				if _, ok := out[locIdx]; !ok {
+					out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+				}
+			}
+		}
+		return out
+	}
+	for _, s := range parsed.Samples {
+		for _, locIdx := range s.LocIndices {
+			if _, ok := out[locIdx]; ok && out[locIdx] != "" {
+				continue
+			}
+			loc, ok := parsed.LocationInfos[locIdx]
+			if !ok {
+				out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+				continue
+			}
+			mapping, ok := parsed.MappingInfos[loc.MappingIndex]
+			if !ok {
+				out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+				continue
+			}
+			if name := defaultSymbolizer.Resolve(mapping.BuildID, loc.Address); name != "" {
+				out[locIdx] = name
+			} else {
+				out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+			}
+		}
+	}
+	return out
 }
 
 // pyroscopeMetadata returns metadata in Pyroscope API shape (format, spyName, sampleRate, units, name).

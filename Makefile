@@ -501,6 +501,9 @@ build-tag-push-ecr-image/%:
 	docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
 	docker push $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
 
+# ECR repo for dev/coretestbed-style tags: public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<short_sha>
+ECR_CORETESTBED ?= public.ecr.aws/odigos/dev/coretestbed
+
 .PHONY: publish-to-ecr
 publish-to-ecr:
 	if [ -z "$(IMG_PREFIX)" ]; then \
@@ -512,9 +515,23 @@ publish-to-ecr:
 	make -j 3 build-tag-push-ecr-image/autoscaler SUMMARY="Autoscaler for Odigos" DESCRIPTION="Autoscaler manages the installation of Odigos components." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
 	make -j 3 build-tag-push-ecr-image/instrumentor SUMMARY="Instrumentor for Odigos" DESCRIPTION="Instrumentor manages auto-instrumentation for workloads with Odigos." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
 	make -j 3 build-tag-push-ecr-image/scheduler SUMMARY="Scheduler for Odigos" DESCRIPTION="Scheduler manages the installation of OpenTelemetry Collectors with Odigos." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
-	make -j 3 build-tag-push-ecr-image/collector DOCKERFILE=collector/$(DOCKERFILE) SUMMARY="Odigos Collector" DESCRIPTION="The Odigos build of the OpenTelemetry Collector." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
+	make -j 3 build-tag-push-ecr-image/collector DOCKERFILE=collector/$(DOCKERFILE) BUILD_DIR=. SUMMARY="Odigos Collector" DESCRIPTION="The Odigos build of the OpenTelemetry Collector." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
 	make -j 3 build-tag-push-ecr-image/ui DOCKERFILE=frontend/$(DOCKERFILE) SUMMARY="UI for Odigos" DESCRIPTION="UI provides the frontend webapp for managing an Odigos installation." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
 	echo "✅ Deployed Odigos to EKS, now install the CLI"
+
+# Push one image to public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<short_sha>
+# e.g. make push-ecr-autoscaler  -> public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-<short_sha>
+SHORT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo "local")
+.PHONY: push-ecr-autoscaler
+push-ecr-autoscaler:
+	$(MAKE) ecr-login
+	$(MAKE) build-tag-push-ecr-image/autoscaler \
+		IMG_PREFIX=$(ECR_CORETESTBED) \
+		TAG=odigos-autoscaler-$(SHORT_SHA) \
+		ORG=registry.odigos.io \
+		SUMMARY="Autoscaler for Odigos" \
+		DESCRIPTION="Autoscaler manages the installation of Odigos components."
+	@echo "✅ Pushed $(ECR_CORETESTBED):odigos-autoscaler-$(SHORT_SHA)"
 
 .PHONY: build-cli-image
 build-cli-image:

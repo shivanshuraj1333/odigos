@@ -77,6 +77,12 @@
           "required": [],
           "title": "profilesOtlpEndpointUI"
         },
+        "profilesDebugExport": {
+          "default": false,
+          "description": "When true, gateway logs profile payloads (including dictionary) to stdout. Capture with kubectl logs -f deployment/<gateway> -n <ns> > debug.log",
+          "required": [],
+          "title": "profilesDebugExport"
+        },
         "profilesExporterTimeout": {
           "default": "120s",
           "description": "Timeout for gateway profile OTLP exporters (Pyroscope, UI). Tune via helm upgrade without rebuilding images.",

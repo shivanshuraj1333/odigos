@@ -3,31 +3,56 @@ package flamegraph
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
+
+// LocationInfo holds mapping index and address for a location (for backend symbolization).
+type LocationInfo struct {
+	MappingIndex int
+	Address      uint64
+}
+
+// MappingInfo holds filename and build_id from the OTLP mapping table (for debuginfod lookup).
+type MappingInfo struct {
+	Filename string
+	BuildID  string
+}
 
 // ParsedChunk holds extracted samples and name lookup from one OTLP/JSON chunk.
 type ParsedChunk struct {
-	Names   map[int]string // location/frame index -> symbol name
-	Samples []Sample       // each sample: stack (root-first) and value
+	Names         map[int]string            // location index -> symbol name (from dictionary)
+	Samples       []Sample                  // each sample: stack (root-first) and value
+	LocationInfos map[int]LocationInfo      // location index -> (mappingIndex, address); for symbolization
+	MappingInfos  map[int]MappingInfo       // mapping index -> (filename, build_id)
 }
 
 // Sample is one profile sample: stack of frame names (root first) and value (e.g. count).
+// LocIndices are the location table indices (root-first) so we can re-resolve names with a symbolizer.
 type Sample struct {
-	Stack []string
-	Value int64
+	Stack     []string
+	Value     int64
+	LocIndices []int // same length as Stack; location table indices for each frame
 }
 
 // ParseOTLPChunk parses one OTLP/JSON profile chunk (as produced by pprofile.JSONMarshaler)
 // and returns samples with resolved stack names. Handles camelCase and snake_case keys.
+// Also extracts LocationInfos and MappingInfos for backend symbolization (mapping+address → name).
 func ParseOTLPChunk(data []byte) (*ParsedChunk, error) {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
 	names := make(map[int]string)
+	locationInfos := make(map[int]LocationInfo)
+	mappingInfos := make(map[int]MappingInfo)
 	var samples []Sample
-	extractSamplesAndNames(raw, &samples, names)
-	return &ParsedChunk{Names: names, Samples: samples}, nil
+	extractSamplesAndNames(raw, &samples, names, locationInfos, mappingInfos)
+	return &ParsedChunk{
+		Names:         names,
+		Samples:       samples,
+		LocationInfos: locationInfos,
+		MappingInfos:  mappingInfos,
+	}, nil
 }
 
 func getKey(m map[string]interface{}, keys ...string) interface{} {
@@ -51,7 +76,7 @@ func toInt64(v interface{}) int64 {
 	return 0
 }
 
-func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]string) {
+func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]string, locationInfos map[int]LocationInfo, mappingInfos map[int]MappingInfo) {
 	if obj == nil {
 		return
 	}
@@ -61,22 +86,27 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 	}
 	if data := getKey(m, "data", "Data"); data != nil {
 		if dm, ok := data.(map[string]interface{}); ok {
-			extractSamplesAndNames(dm, samples, names)
+			extractSamplesAndNames(dm, samples, names, locationInfos, mappingInfos)
 			return
 		}
 	}
-	// Fill names: (1) OTLP 1.0 dictionary (top-level); (2) schema.dictionary (collector JSON); (3) per-object stringTable/location/function.
+	// Fill names and location/mapping tables from dictionary.
 	if dict := getKey(m, "dictionary", "Dictionary"); dict != nil {
 		if dm, ok := dict.(map[string]interface{}); ok {
 			extractNamesFromDictionary(dm, names)
+			if locationInfos != nil && mappingInfos != nil {
+				extractLocationAndMappingTables(dm, locationInfos, mappingInfos)
+			}
 		}
 	}
-	// Schema may wrap dictionary (collector JSON): schema.dictionary has stringTable/functionTable/locationTable.
 	if schema := getKey(m, "schema", "Schema"); schema != nil {
 		if sm, ok := schema.(map[string]interface{}); ok {
 			if dict := getKey(sm, "dictionary", "Dictionary"); dict != nil {
 				if dm, ok := dict.(map[string]interface{}); ok {
 					extractNamesFromDictionary(dm, names)
+					if locationInfos != nil && mappingInfos != nil {
+						extractLocationAndMappingTables(dm, locationInfos, mappingInfos)
+					}
 				}
 			}
 		}
@@ -87,7 +117,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 		if arr, ok := rps.([]interface{}); ok {
 			for _, rp := range arr {
 				if rpm, ok := rp.(map[string]interface{}); ok {
-					extractSamplesAndNames(rpm, samples, names)
+					extractSamplesAndNames(rpm, samples, names, locationInfos, mappingInfos)
 				}
 			}
 			return
@@ -97,7 +127,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 		if arr, ok := scopes.([]interface{}); ok {
 			for _, s := range arr {
 				if sm, ok := s.(map[string]interface{}); ok {
-					extractSamplesAndNames(sm, samples, names)
+					extractSamplesAndNames(sm, samples, names, locationInfos, mappingInfos)
 				}
 			}
 			return
@@ -107,13 +137,13 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 		if arr, ok := profs.([]interface{}); ok {
 			for _, p := range arr {
 				if pm, ok := p.(map[string]interface{}); ok {
-					extractSamplesAndNames(pm, samples, names)
+					extractSamplesAndNames(pm, samples, names, locationInfos, mappingInfos)
 				}
 			}
 			return
 		}
 	}
-	// Process samples (names already filled from dictionary or scope). Support both "sample" and "samples", and locationsStartIndex/locationsLength (OTLP 1.0).
+	// Process samples (names already filled from dictionary or scope).
 	if sampleArr := getKey(m, "samples", "Samples", "sample", "Sample"); sampleArr != nil {
 		locationIndices := getProfileLocationIndices(m)
 		if arr, ok := sampleArr.([]interface{}); ok {
@@ -138,16 +168,15 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 						stack = append(stack, fmt.Sprintf("frame_%d", id))
 					}
 				}
-				*samples = append(*samples, Sample{Stack: stack, Value: value})
+				*samples = append(*samples, Sample{Stack: stack, Value: value, LocIndices: locIDs})
 			}
 		}
 		return
 	}
-	// Recurse into nested objects that might contain profiles
 	for _, key := range []string{"resource", "scope", "profile", "Profile"} {
 		if v := m[key]; v != nil {
 			if vm, ok := v.(map[string]interface{}); ok {
-				extractSamplesAndNames(vm, samples, names)
+				extractSamplesAndNames(vm, samples, names, locationInfos, mappingInfos)
 			}
 		}
 	}
@@ -203,6 +232,118 @@ func extractNamesFromDictionary(m map[string]interface{}, names map[int]string) 
 			}
 		}
 	}
+}
+
+// extractLocationAndMappingTables fills locationInfos (location index -> mappingIndex, address) and
+// mappingInfos (mapping index -> filename, build_id) from the OTLP dictionary for backend symbolization.
+func extractLocationAndMappingTables(m map[string]interface{}, locationInfos map[int]LocationInfo, mappingInfos map[int]MappingInfo) {
+	stringTable := getStringTable(m)
+	// AttributeTable: index -> (key, value) via stringTable for build_id lookup on mappings.
+	attrTable := getAttributeTable(m, stringTable)
+	// LocationTable: index -> mappingIndex, address
+	if lt := getKey(m, "locationTable", "LocationTable", "location_table"); lt != nil {
+		if arr, ok := lt.([]interface{}); ok {
+			for idx, loc := range arr {
+				lm, _ := loc.(map[string]interface{})
+				if lm == nil {
+					continue
+				}
+				var info LocationInfo
+				if mi := getKey(lm, "mappingIndex", "MappingIndex", "mapping_index"); mi != nil {
+					if i, ok := toInt(mi); ok {
+						info.MappingIndex = i
+					}
+				}
+				if addr := getKey(lm, "address", "Address"); addr != nil {
+					if u := toUint64(addr); u != nil {
+						info.Address = *u
+					}
+				}
+				locationInfos[idx] = info
+			}
+		}
+	}
+	// MappingTable: index -> filename (stringTable[filenameStrindex]), build_id (from attributeTable)
+	if mt := getKey(m, "mappingTable", "MappingTable", "mapping_table"); mt != nil {
+		if arr, ok := mt.([]interface{}); ok {
+			for idx, mapping := range arr {
+				mm, _ := mapping.(map[string]interface{})
+				if mm == nil {
+					continue
+				}
+				var info MappingInfo
+				if fi := getKey(mm, "filenameStrindex", "FilenameStrindex", "filename_strindex"); fi != nil {
+					if i, ok := toInt(fi); ok && i >= 0 && i < len(stringTable) {
+						info.Filename = stringTable[i]
+					}
+				}
+				if attrIndices := getKey(mm, "attributeIndices", "AttributeIndices", "attribute_indices"); attrIndices != nil {
+					if indices, ok := attrIndices.([]interface{}); ok {
+						for _, ai := range indices {
+							if i, ok := toInt(ai); ok && i >= 0 {
+								if kv, ok := attrTable[i]; ok && kv.Value != "" {
+									if strings.Contains(strings.ToLower(kv.Key), "build_id") {
+										info.BuildID = kv.Value
+										break
+									}
+								}
+							}
+						}
+					}
+				}
+				mappingInfos[idx] = info
+			}
+		}
+	}
+}
+
+// attrEntry is a key-value from the dictionary's attribute table.
+type attrEntry struct{ Key, Value string }
+
+func getAttributeTable(m map[string]interface{}, stringTable []string) map[int]attrEntry {
+	out := make(map[int]attrEntry)
+	at := getKey(m, "attributeTable", "AttributeTable", "attribute_table")
+	if at == nil {
+		return out
+	}
+	arr, ok := at.([]interface{})
+	if !ok {
+		return out
+	}
+	for idx, v := range arr {
+		vm, _ := v.(map[string]interface{})
+		if vm == nil {
+			continue
+		}
+		var key, val string
+		if k := getKey(vm, "keyStrindex", "KeyStrindex", "key_strindex"); k != nil {
+			if i, ok := toInt(k); ok && i >= 0 && i < len(stringTable) {
+				key = stringTable[i]
+			}
+		}
+		if vv := getKey(vm, "valueStrindex", "ValueStrindex", "value_strindex"); vv != nil {
+			if i, ok := toInt(vv); ok && i >= 0 && i < len(stringTable) {
+				val = stringTable[i]
+			}
+		}
+		out[idx] = attrEntry{Key: key, Value: val}
+	}
+	return out
+}
+
+func toUint64(v interface{}) *uint64 {
+	switch x := v.(type) {
+	case float64:
+		u := uint64(x)
+		return &u
+	case int:
+		u := uint64(x)
+		return &u
+	case int64:
+		u := uint64(x)
+		return &u
+	}
+	return nil
 }
 
 func getStringTable(m map[string]interface{}) []string {
