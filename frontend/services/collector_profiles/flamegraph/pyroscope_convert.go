@@ -70,6 +70,7 @@ func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfil
 }
 
 // extractGoogleProfile reads the unexported .profile field from otlp.convertedProfile via reflection.
+// cp may be an addressable or non-addressable value (e.g. range copy); only use UnsafeAddr when addressable.
 func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 	v := reflect.ValueOf(cp)
 	if v.Kind() == reflect.Struct {
@@ -78,9 +79,9 @@ func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 			var p *googleProfile.Profile
 			if f.CanInterface() {
 				p, _ = f.Interface().(*googleProfile.Profile)
-			} else {
-				// unexported field: field holds *googleProfile.Profile; read pointer via unsafe
-				p = *(**googleProfile.Profile)(unsafe.Pointer(f.UnsafeAddr()))
+			} else if f.CanAddr() {
+				// unexported field: read pointer via unsafe (only when addressable)
+				p = *(**googleProfile.Profile)(unsafe.Pointer(f.Addr().UnsafePointer()))
 			}
 			return p
 		}
