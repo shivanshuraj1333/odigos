@@ -55,6 +55,21 @@ func ParseOTLPChunk(data []byte) (*ParsedChunk, error) {
 	}, nil
 }
 
+// ParsedChunkHasDictionary returns true if the chunk had a non-empty dictionary (names or location/mapping tables).
+// Used to pick a reference chunk for resolving names when other chunks have empty dictionary.
+func ParsedChunkHasDictionary(p *ParsedChunk) bool {
+	if p == nil {
+		return false
+	}
+	if len(p.Names) > 0 {
+		return true
+	}
+	if len(p.LocationInfos) > 0 || len(p.MappingInfos) > 0 {
+		return true
+	}
+	return false
+}
+
 func getKey(m map[string]interface{}, keys ...string) interface{} {
 	for _, k := range keys {
 		if v, ok := m[k]; ok {
@@ -216,7 +231,7 @@ func extractNamesFromDictionary(m map[string]interface{}, names map[int]string) 
 				if lm == nil {
 					continue
 				}
-				if lineArr := getKey(lm, "line", "Line"); lineArr != nil {
+				if lineArr := getKey(lm, "line", "Line", "lines"); lineArr != nil {
 					if lines, ok := lineArr.([]interface{}); ok && len(lines) > 0 {
 						if first, ok := lines[0].(map[string]interface{}); ok {
 							if fi := getKey(first, "functionIndex", "FunctionIndex", "function_index"); fi != nil {
@@ -434,7 +449,7 @@ func resolveLocationName(loc interface{}, names map[int]string) string {
 			return names[idx]
 		}
 	}
-	if lineArr := getKey(lm, "line", "Line"); lineArr != nil {
+	if lineArr := getKey(lm, "line", "Line", "lines"); lineArr != nil {
 		if arr, ok := lineArr.([]interface{}); ok && len(arr) > 0 {
 			first := arr[0]
 			if fm, ok := first.(map[string]interface{}); ok {

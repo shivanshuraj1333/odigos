@@ -40,6 +40,11 @@ func RegisterProfilingRoutes(r *gin.RouterGroup, store ProfileStoreRef) {
 	r.GET("/sources/:namespace/:kind/:name/profiling", func(c *gin.Context) {
 		handleGetProfileData(c, store)
 	})
+	// Debug: list active profiling slots and which have data (for debugging empty flame graphs).
+	r.GET("/debug/profiling-slots", func(c *gin.Context) {
+		active, withData := store.DebugSlots()
+		c.JSON(http.StatusOK, gin.H{"activeKeys": active, "keysWithData": withData})
+	})
 	// Debug: list and download raw profile dumps (for copying from pod when kubectl cp is not available).
 	if dir := GetProfileDumpDir(); dir != "" {
 		r.GET("/debug/profile-dumps", handleListProfileDumps)
@@ -55,6 +60,7 @@ func handleEnableProfiling(c *gin.Context, store ProfileStoreRef) {
 	}
 	key := SourceKeyFromSourceID(id)
 	store.StartViewing(key)
+	log.Printf("[profiling] enable: sourceKey=%q namespace=%q kind=%q name=%q", key, id.Namespace, id.Kind, id.Name)
 	profilingDebugLog("[profiling] enable: sourceKey=%q (namespace=%q kind=%q name=%q)", key, id.Namespace, id.Kind, id.Name)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "sourceKey": key})
 }
@@ -74,9 +80,12 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 	key := SourceKeyFromSourceID(id)
 	store.StartViewing(key)
 	chunks := store.GetProfileData(key)
+	wantDebug := c.Query("debug") == "1"
+
 	if chunks == nil {
+		log.Printf("[profiling] get: sourceKey=%q chunks=0 (no slot or empty)", key)
 		profilingDebugLog("[profiling] get: sourceKey=%q chunks=0 (no slot or empty)", key)
-		c.JSON(http.StatusOK, flamegraph.FlamebearerProfile{
+		payload := flamegraph.FlamebearerProfile{
 			Version: 1,
 			Flamebearer: flamegraph.Flamebearer{
 				Names:    []string{"total"},
@@ -85,11 +94,33 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 				MaxSelf:  0,
 			},
 			Metadata: pyroscopeMetadata(0),
-		})
+		}
+		if wantDebug {
+			c.JSON(http.StatusOK, gin.H{"profile": payload, "debug": ProfileBuildDebug{
+				ChunkCount: 0,
+				NumTicks:  0,
+			}, "debugReason": "no_slot_or_empty"})
+		} else {
+			c.JSON(http.StatusOK, payload)
+		}
 		return
 	}
+	log.Printf("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
 	profilingDebugLog("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
-	profile := BuildPyroscopeProfileFromChunks(chunks)
+	profile, buildDebug := BuildPyroscopeProfileFromChunksWithDebug(chunks)
+	// Always log aggregation result so we can spot dictionary/parse/flamegraph issues.
+	log.Printf("[profiling] build: sourceKey=%q chunkCount=%d numTicks=%d parseErrors=%d chunksWithSamples=%d namesCount=%d",
+		key, buildDebug.ChunkCount, buildDebug.NumTicks, buildDebug.ParseErrors, buildDebug.ChunksWithSamples, len(profile.Flamebearer.Names))
+	if buildDebug.ParseErrors > 0 {
+		log.Printf("[profiling] build: sourceKey=%q parseErrors=%d (some chunks failed to parse)", key, buildDebug.ParseErrors)
+	}
+	if buildDebug.ChunkCount > 0 && buildDebug.ChunksWithSamples == 0 && buildDebug.NumTicks == 0 {
+		log.Printf("[profiling] build: sourceKey=%q chunks have no samples or all failed (chunkCount=%d)", key, buildDebug.ChunkCount)
+	}
+	if wantDebug {
+		c.JSON(http.StatusOK, gin.H{"profile": profile, "debug": buildDebug})
+		return
+	}
 	c.JSON(http.StatusOK, profile)
 }
 
@@ -98,10 +129,46 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 // Tries Pyroscope's OTLP→pprof conversion first when the chunk has a non-empty dictionary (for proper symbols);
 // otherwise falls back to ParseOTLPChunk. When dictionary names are missing, backend symbolization (DEBUGINFOD_URLS)
 // resolves mapping+address to function names via debuginfod+DWARF, like Pyroscope's read path.
+//
+// ProfileBuildDebug holds debug info from building a profile from chunks (for ?debug=1).
+type ProfileBuildDebug struct {
+	ChunkCount        int   `json:"chunkCount"`
+	NumTicks          int64 `json:"numTicks"`
+	ParseErrors       int   `json:"parseErrors"`
+	ChunksWithSamples int   `json:"chunksWithSamples"`
+	ChunksViaPyroscope int  `json:"chunksViaPyroscope"`
+}
+
+// Fallback dictionary: the gateway/collector may send the top-level dictionary only in the first batch (or some batches);
+// later chunks for the same source can arrive with empty dictionary. We use the first chunk that has a non-empty
+// dictionary as reference to resolve names for all chunks, so symbols still appear when only some batches omit the dictionary.
 func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProfile {
+	profile, _ := BuildPyroscopeProfileFromChunksWithDebug(chunks)
+	return profile
+}
+
+func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.FlamebearerProfile, ProfileBuildDebug) {
+	debug := ProfileBuildDebug{ChunkCount: len(chunks)}
 	tree := flamegraph.NewTree()
+	// First pass: parse all chunks and find one with non-empty dictionary to use as fallback when others have empty dict.
+	var refParsed *flamegraph.ParsedChunk
+	for _, b := range chunks {
+		if _, ok := flamegraph.ChunksFromPyroscopeOTLP(b); ok {
+			continue
+		}
+		parsed, err := flamegraph.ParseOTLPChunk(b)
+		if err != nil {
+			debug.ParseErrors++
+			continue
+		}
+		if refParsed == nil && flamegraph.ParsedChunkHasDictionary(parsed) {
+			refParsed = parsed
+		}
+	}
+	// Second pass: merge samples into tree, resolving names from each chunk's dictionary or from refParsed.
 	for _, b := range chunks {
 		if samples, ok := flamegraph.ChunksFromPyroscopeOTLP(b); ok {
+			debug.ChunksViaPyroscope++
 			for _, s := range samples {
 				tree.InsertStack(s.Value, s.Stack...)
 			}
@@ -109,9 +176,13 @@ func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProf
 		}
 		parsed, err := flamegraph.ParseOTLPChunk(b)
 		if err != nil {
+			debug.ParseErrors++
 			continue
 		}
-		stackNames := resolveStackNames(parsed)
+		if len(parsed.Samples) > 0 {
+			debug.ChunksWithSamples++
+		}
+		stackNames := resolveStackNamesWithFallback(parsed, refParsed)
 		for _, s := range parsed.Samples {
 			if len(s.LocIndices) == 0 {
 				tree.InsertStack(s.Value, s.Stack...)
@@ -125,54 +196,105 @@ func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProf
 		}
 	}
 	fb := flamegraph.TreeToFlamebearer(tree, 1024)
+	debug.NumTicks = fb.NumTicks
 	startTimeSec := extractStartTimeFromChunks(chunks)
+	meta := pyroscopeMetadata(fb.NumTicks)
+	if allNamesArePlaceholders(fb.Names) {
+		meta.SymbolsHint = "Symbols unavailable. Set DEBUGINFOD_URLS on the backend to resolve addresses to names, or ensure the collector sends symbol tables."
+	}
 	return flamegraph.FlamebearerProfile{
 		Version:     1,
 		Flamebearer: fb,
-		Metadata:    pyroscopeMetadata(fb.NumTicks),
+		Metadata:    meta,
 		Timeline:    pyroscopeTimeline(fb.NumTicks, startTimeSec),
 		Groups:      nil,
 		Heatmap:     nil,
 		Symbols:     nil,
-	}
+	}, debug
 }
 
-// resolveStackNames returns location index -> display name (dictionary name, or symbolizer result, or frame_N).
-func resolveStackNames(parsed *flamegraph.ParsedChunk) map[int]string {
+// allNamesArePlaceholders returns true if every name is frame_N, 0x..., "total", or "other" (no real symbols).
+func allNamesArePlaceholders(names []string) bool {
+	for _, n := range names {
+		if n == "" || n == "total" || n == "other" {
+			continue
+		}
+		if len(n) > 6 && n[:6] == "frame_" {
+			continue
+		}
+		if len(n) > 2 && n[:2] == "0x" {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// resolveStackNamesWithFallback returns location index -> display name. Uses parsed first; when a location has no name
+// and ref is non-nil (another chunk with dictionary), uses ref's names and ref's location/mapping for symbolizer.
+func resolveStackNamesWithFallback(parsed *flamegraph.ParsedChunk, ref *flamegraph.ParsedChunk) map[int]string {
 	out := make(map[int]string)
 	for idx, name := range parsed.Names {
-		out[idx] = name
+		if name != "" {
+			out[idx] = name
+		}
 	}
-	if defaultSymbolizer == nil || parsed.LocationInfos == nil || parsed.MappingInfos == nil {
+	// Prefill from reference dictionary when current chunk has no name for an index (e.g. chunk had empty dictionary).
+	if ref != nil && ref != parsed {
+		for idx, name := range ref.Names {
+			if name != "" && out[idx] == "" {
+				out[idx] = name
+			}
+		}
+	}
+	// Use symbolizer when we have location+mapping (from parsed or ref).
+	locInfos := parsed.LocationInfos
+	mapInfos := parsed.MappingInfos
+	if ref != nil && (locInfos == nil || mapInfos == nil) {
+		locInfos = ref.LocationInfos
+		mapInfos = ref.MappingInfos
+	}
+	if defaultSymbolizer != nil && locInfos != nil && mapInfos != nil {
 		for _, s := range parsed.Samples {
 			for _, locIdx := range s.LocIndices {
-				if _, ok := out[locIdx]; !ok {
-					out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+				if out[locIdx] != "" && out[locIdx] != fmt.Sprintf("frame_%d", locIdx) {
+					continue
+				}
+				loc, ok := locInfos[locIdx]
+				if !ok {
+					if out[locIdx] == "" {
+						out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+					}
+					continue
+				}
+				mapping, ok := mapInfos[loc.MappingIndex]
+				if !ok {
+					if out[locIdx] == "" {
+						out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
+					}
+					continue
+				}
+				if name := defaultSymbolizer.Resolve(mapping.BuildID, loc.Address); name != "" {
+					out[locIdx] = name
+				} else if out[locIdx] == "" {
+					out[locIdx] = fmt.Sprintf("0x%x", loc.Address)
 				}
 			}
 		}
-		return out
 	}
+	// Fill any still-missing with address or frame_N.
 	for _, s := range parsed.Samples {
 		for _, locIdx := range s.LocIndices {
-			if _, ok := out[locIdx]; ok && out[locIdx] != "" {
+			if out[locIdx] != "" {
 				continue
 			}
-			loc, ok := parsed.LocationInfos[locIdx]
-			if !ok {
-				out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
-				continue
+			if locInfos != nil {
+				if loc, ok := locInfos[locIdx]; ok && loc.Address != 0 {
+					out[locIdx] = fmt.Sprintf("0x%x", loc.Address)
+					continue
+				}
 			}
-			mapping, ok := parsed.MappingInfos[loc.MappingIndex]
-			if !ok {
-				out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
-				continue
-			}
-			if name := defaultSymbolizer.Resolve(mapping.BuildID, loc.Address); name != "" {
-				out[locIdx] = name
-			} else {
-				out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
-			}
+			out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
 		}
 	}
 	return out

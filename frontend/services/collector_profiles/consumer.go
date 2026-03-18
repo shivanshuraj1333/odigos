@@ -2,7 +2,6 @@ package collectorprofiles
 
 import (
 	"context"
-	"hash/fnv"
 	"log"
 	"os"
 	"path/filepath"
@@ -24,11 +23,6 @@ var dumpDir string
 var dumpSeq atomic.Uint64
 
 const defaultDumpDir = "profile-dumps"
-
-// maxResourceProfilesPerBatch limits how many distinct profile chunks we store per incoming batch.
-// When a batch has more resource profiles than this, we group by hash(key)%maxResourceProfilesPerBatch
-// and merge each group into one chunk, so we store at most this many chunks per batch.
-const maxResourceProfilesPerBatch = 3
 
 func init() {
 	dumpDir = os.Getenv("PROFILE_DEBUG_DUMP_DIR")
@@ -53,10 +47,10 @@ func GetProfileDumpDir() string {
 
 // NewProfilesConsumer returns an xconsumer.Profiles that routes incoming profile data
 // to the store only for sources that are in the active set (have a slot).
-// When a batch has more than maxResourceProfilesPerBatch resource profiles, they are
-// grouped into that many buckets (by hash of source key), merged per bucket, and stored
-// under the first active source key in each bucket—so at most maxResourceProfilesPerBatch
-// chunks are stored per batch.
+// Batches are not guaranteed to be one service: the eBPF profiler / DC / gateway do not
+// batch by source key. We group by source key and only merge resource profiles that share
+// the same key, so each stored chunk is exactly one service. OTLP proto has dictionary at
+// root (ProfilesData), not per sample; we keep it per chunk so the parser can resolve symbols.
 func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 	return xconsumer.NewProfiles(func(ctx context.Context, pd pprofile.Profiles) error {
 		rps := pd.ResourceProfiles()
@@ -64,23 +58,11 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 		if n == 0 {
 			return nil
 		}
+		log.Printf("[profiling] receiver: batch with %d resource profile(s)", n)
+		profilingDebugLog("[profiling] receiver: batch with %d resource profile(s)", n)
 
-		if n <= maxResourceProfilesPerBatch {
-			// No grouping: store one chunk per resource profile (current behavior).
-			for i := 0; i < n; i++ {
-				storeOne(store, pd, rps, i)
-			}
-			return nil
-		}
-
-		// Group resource profile indices by bucket; record first active key per bucket.
-		type bucketInfo struct {
-			indices    []int
-			firstKey   string
-			hasActive  bool
-		}
-		buckets := make(map[uint32]*bucketInfo)
-		h := fnv.New32a()
+		// Group resource profile indices by source key (same service only). No fixed n or bucket limit.
+		byKey := make(map[string][]int)
 		for i := 0; i < n; i++ {
 			rp := rps.At(i)
 			key, ok := SourceKeyFromResource(rp.Resource().Attributes())
@@ -88,55 +70,58 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 				profilingDebugLog("[profiling] receiver: dropped resource (no source key); have attributes: %s", attrsToDebugString(rp.Resource().Attributes()))
 				continue
 			}
-			h.Reset()
-			h.Write([]byte(key))
-			b := h.Sum32() % maxResourceProfilesPerBatch
-			if buckets[b] == nil {
-				buckets[b] = &bucketInfo{indices: nil, firstKey: "", hasActive: false}
-			}
-			info := buckets[b]
-			info.indices = append(info.indices, i)
-			if store.IsActive(key) {
-				info.hasActive = true
-				if info.firstKey == "" {
-					info.firstKey = key
-				}
-			}
+			byKey[key] = append(byKey[key], i)
+		}
+		// Log grouping result so we can verify one chunk per key and no arbitrary cap.
+		for k, idxs := range byKey {
+			profilingDebugLog("[profiling] receiver: grouped key=%q rpCount=%d", k, len(idxs))
 		}
 
-		for _, info := range buckets {
-			if !info.hasActive || info.firstKey == "" || len(info.indices) == 0 {
+		storedAny := false
+		for key, indices := range byKey {
+			if !store.IsActive(key) {
+				profilingDebugLog("[profiling] receiver: dropped sourceKey=%q (not active/viewing)", key)
 				continue
 			}
+			if len(indices) == 0 {
+				continue
+			}
+			storedAny = true
+			if len(indices) == 1 {
+				storeOne(store, pd, rps, indices[0])
+				continue
+			}
+			// Merge only resource profiles with the same key (same service).
 			merged := pprofile.NewProfiles()
 			pd.Dictionary().CopyTo(merged.Dictionary())
-			for _, idx := range info.indices {
+			for _, idx := range indices {
 				single := pprofile.NewProfiles()
 				pd.Dictionary().CopyTo(single.Dictionary())
 				rps.At(idx).CopyTo(single.ResourceProfiles().AppendEmpty())
 				if err := single.MergeTo(merged); err != nil {
-					log.Printf("profiles: merge error for bucket key %q: %v", info.firstKey, err)
+					log.Printf("[profiling] merge error for key %q: %v", key, err)
 					continue
 				}
 			}
-			// Ensure the marshaled chunk has the full dictionary so the UI can resolve symbols.
-			// Use the original batch dictionary so string/function/location indices in the merged
-			// resource profiles correctly resolve to names (all profiles in the bucket came from pd).
-			pd.Dictionary().CopyTo(merged.Dictionary())
 			bytes, err := jsonMarshaler.MarshalProfiles(merged)
 			if err != nil {
-				log.Printf("profiles: marshal error for bucket key %q: %v", info.firstKey, err)
+				log.Printf("[profiling] marshal error for key %q: %v", key, err)
 				continue
 			}
 			hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
+			log.Printf("[profiling] stored merged chunk key=%q size=%d rpCount=%d dictionary=%v", key, len(bytes), len(indices), hasDict)
 			if !hasDict {
-				profilingDebugLog("[profiling] receiver: merged chunk sourceKey=%q has no dictionary", info.firstKey)
+				profilingDebugLog("[profiling] receiver: merged chunk sourceKey=%q has no dictionary", key)
 			}
-			store.AddProfileData(info.firstKey, bytes)
-			profilingDebugLog("[profiling] receiver: stored merged chunk sourceKey=%q size=%d (merged %d resource profiles)", info.firstKey, len(bytes), len(info.indices))
+			store.AddProfileData(key, bytes)
+			profilingDebugLog("[profiling] receiver: stored merged chunk sourceKey=%q size=%d (merged %d resource profiles)", key, len(bytes), len(indices))
 			if dumpDir != "" {
-				writeRawProfileDump(info.firstKey, bytes)
+				writeRawProfileDump(key, bytes)
 			}
+		}
+		if !storedAny && n > 0 {
+			log.Printf("[profiling] dropped all %d resource profile(s) (no active slot or key extraction failed)", n)
+			profilingDebugLog("[profiling] receiver: dropped all %d resource profile(s) (no matching active slot or key extraction failed)", n)
 		}
 		return nil
 	}, consumer.WithCapabilities(consumer.Capabilities{MutatesData: false}))
@@ -160,10 +145,11 @@ func storeOne(store *ProfileStore, pd pprofile.Profiles, rps pprofile.ResourcePr
 	rp.CopyTo(newPd.ResourceProfiles().AppendEmpty())
 	bytes, err := jsonMarshaler.MarshalProfiles(newPd)
 	if err != nil {
-		log.Printf("profiles: marshal error for source %q: %v", key, err)
+		log.Printf("[profiling] marshal error for source %q: %v", key, err)
 		return
 	}
 	hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
+	log.Printf("[profiling] stored single chunk key=%q size=%d dictionary=%v", key, len(bytes), hasDict)
 	if !hasDict {
 		profilingDebugLog("[profiling] receiver: chunk sourceKey=%q has no dictionary (symbols will show as frame_N); add backend symbolization or have exporter fill dictionary", key)
 	}

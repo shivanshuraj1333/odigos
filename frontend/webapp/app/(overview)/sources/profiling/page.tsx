@@ -138,6 +138,11 @@ export default function SourcesProfilingPage() {
           >
             Refresh now
           </button>
+          {profile?.metadata?.symbolsHint && (
+            <div style={{ padding: '10px 14px', background: 'rgba(137, 180, 250, 0.15)', border: '1px solid rgba(137, 180, 250, 0.4)', borderRadius: 8, color: '#cdd6f4', fontSize: 14 }}>
+              {profile.metadata.symbolsHint}
+            </div>
+          )}
           {hasData && pyroscopeProfile ? (
             <div style={{ marginTop: 24, width: '100%', ...panelDark }}>
               <Box>

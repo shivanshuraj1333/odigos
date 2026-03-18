@@ -2,6 +2,7 @@ package collectorprofiles
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 )
@@ -68,6 +69,7 @@ func (s *ProfileStore) StartViewing(sourceKey string) {
 		profilingDebugLog("[profiling] store: refresh slot sourceKey=%q", sourceKey)
 		return
 	}
+	log.Printf("[profiling] store: new slot sourceKey=%q activeSlots=%d", sourceKey, len(s.slots)+1)
 	profilingDebugLog("[profiling] store: new slot sourceKey=%q (active=%d)", sourceKey, len(s.slots)+1)
 
 	if len(s.slots) >= s.maxSlots {
@@ -126,6 +128,19 @@ func (s *ProfileStore) IsActive(sourceKey string) bool {
 	_, ok := s.slots[sourceKey]
 	s.mu.RUnlock()
 	return ok
+}
+
+// DebugSlots returns active source keys and which have non-empty buffers (for debugging).
+func (s *ProfileStore) DebugSlots() (activeKeys []string, keysWithData []string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for k, slot := range s.slots {
+		activeKeys = append(activeKeys, k)
+		if slot.Buffer != nil && slot.Buffer.Size() > 0 {
+			keysWithData = append(keysWithData, k)
+		}
+	}
+	return activeKeys, keysWithData
 }
 
 // RunCleanup starts a background goroutine that removes slots not requested in the last ttlSeconds.

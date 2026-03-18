@@ -441,6 +441,12 @@
           "required": [],
           "title": "k8sNodeLogsDirectory"
         },
+        "logLevel": {
+          "default": "info",
+          "description": "OTEL_LOG_LEVEL for the node collector (e.g. info, debug). Use debug to troubleshoot profiling pipeline.",
+          "required": [],
+          "title": "logLevel"
+        },
         "profiles": {
           "additionalProperties": false,
           "description": "Node collector eBPF profiling. Set requirePrivileged true when using a collector image with the profiling receiver. Optional config override for the profiles pipeline.",

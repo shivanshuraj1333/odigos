@@ -51,6 +51,11 @@ func SourceKeyFromResource(attrs pcommon.Map) (string, bool) {
 		kind = k8sconsts.WorkloadKindArgoRollout
 	}
 	if !found || name == "" {
+		// Fallback: some pipelines set service.name but not k8s.deployment.name (e.g. from a different processor order).
+		// Use namespace/Deployment/service.name so gateway data still matches the UI slot (UI uses Deployment for workloads).
+		if svcName, ok := getStr(attrs, "service.name"); ok && svcName != "" {
+			return namespace + "/" + string(k8sconsts.WorkloadKindDeployment) + "/" + svcName, true
+		}
 		return "", false
 	}
 

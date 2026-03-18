@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -285,8 +284,8 @@ func TestDcDumpRunsOnRealDumps(t *testing.T) {
 	t.Logf("dc-dump response is Pyroscope-like (version, flamebearer, metadata, timeline, valid levels)")
 }
 
-// TestMergePathPreservesDictionary verifies that when a batch has more than maxResourceProfilesPerBatch
-// resource profiles, the consumer merges them into buckets and the stored chunk retains the dictionary
+// TestMergePathPreservesDictionary verifies that when a batch has multiple resource profiles
+// for the same source key, the consumer merges them and the stored chunk retains the dictionary
 // so the UI can show symbols (not frame_N). Uses testdata/accounting-merged.json; if MergeTo fails
 // (e.g. due to dictionary index mapping in pprofile), the test is skipped.
 func TestMergePathPreservesDictionary(t *testing.T) {
@@ -303,20 +302,19 @@ func TestMergePathPreservesDictionary(t *testing.T) {
 	if pd.ResourceProfiles().Len() < 1 {
 		t.Fatal("testdata has no resource profiles")
 	}
-	// Build a Profiles with 4 resource profiles (so n > maxResourceProfilesPerBatch) with distinct source keys.
+	// Same key for all: consumer will take the merge path (multiple RPs per key).
 	multi := pprofile.NewProfiles()
 	pd.Dictionary().CopyTo(multi.Dictionary())
 	baseRp := pd.ResourceProfiles().At(0)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 3; i++ {
 		rp := multi.ResourceProfiles().AppendEmpty()
 		baseRp.CopyTo(rp)
 		attrs := rp.Resource().Attributes()
 		attrs.PutStr(string(semconv.K8SNamespaceNameKey), "test-ns")
-		attrs.PutStr(string(semconv.K8SDeploymentNameKey), "svc"+strconv.Itoa(i))
+		attrs.PutStr(string(semconv.K8SDeploymentNameKey), "svc0")
 	}
 	store := NewProfileStore(10, 60, 0, 0)
 	store.StartViewing("test-ns/Deployment/svc0")
-	store.StartViewing("test-ns/Deployment/svc1")
 	pc, err := NewProfilesConsumer(store)
 	if err != nil {
 		t.Fatalf("NewProfilesConsumer: %v", err)
@@ -324,21 +322,15 @@ func TestMergePathPreservesDictionary(t *testing.T) {
 	if err := pc.ConsumeProfiles(context.Background(), multi); err != nil {
 		t.Fatalf("ConsumeProfiles: %v", err)
 	}
-	var chunks [][]byte
-	for _, key := range []string{"test-ns/Deployment/svc0", "test-ns/Deployment/svc1"} {
-		chunks = store.GetProfileData(key)
-		if len(chunks) > 0 {
-			break
-		}
-	}
+	chunks := store.GetProfileData("test-ns/Deployment/svc0")
 	if len(chunks) == 0 {
-		t.Skip("merge path produced no chunks (MergeTo may have failed with dictionary index mapping; consumer still applies pd.Dictionary().CopyTo before marshal for real batches)")
+		t.Skip("merge path produced no chunks (MergeTo may have failed with dictionary index mapping)")
 		return
 	}
 	mergedBytes := chunks[0]
 	hasDict := strings.Contains(string(mergedBytes), "stringTable") || strings.Contains(string(mergedBytes), "functionTable") || strings.Contains(string(mergedBytes), "locationTable")
 	if !hasDict {
-		t.Skip("merged chunk has no dictionary (MergeTo may have failed; in production consumer forces pd.Dictionary().CopyTo before marshal)")
+		t.Skip("merged chunk has no dictionary (MergeTo may have failed)")
 		return
 	}
 	profile := BuildPyroscopeProfileFromChunks(chunks)

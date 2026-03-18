@@ -145,6 +145,18 @@ Incoming OTLP ResourceProfiles
 
 ---
 
+## Dictionary and symbol resolution (flame graph)
+
+- **Why:** Stored chunks must include the OTLP dictionary (stringTable, functionTable, locationTable) so the parser can map sample location indices to symbol names. Without it, the flame graph shows `frame_N` or `0x...`.
+- **Consumer (single resource):** Before marshaling, `pd.Dictionary().CopyTo(newPd.Dictionary())` so the stored chunk has the same dictionary as the batch.
+- **Consumer (merge path):** When batching >3 resource profiles we merge with `pprofile.MergeTo(merged)`. **Do not** overwrite `merged.Dictionary()` with `pd.Dictionary()` after the loop: `MergeTo` may merge/remap dictionary indices, so merged resource profiles reference `merged`’s dictionary; overwriting would break indices and symbol resolution. Marshal `merged` as-is.
+- **Parser:** `ParseOTLPChunk` reads dictionary from root `dictionary` or `schema.dictionary`, fills `names` (location index → symbol name), then walks `resourceProfiles` → scopeProfiles → profiles → samples; samples use `attributeIndices` or `locationsStartIndex`/`locationsLength`; `getSampleValue` from `value` or `timestampsUnixNano`. BuildPyroscopeProfileFromChunks uses these samples and names for the flamebearer.
+- **Sample count:** Merging combines samples; the merged chunk’s sample count is the sum (or deduped) from MergeTo. If the dictionary was overwritten incorrectly, indices would be wrong and some samples could be dropped or misattributed during conversion.
+
+**Who batches:** Neither the DC (node collector) nor the gateway uses a batch processor for the profiles signal (it is not supported). The "batch" is one ExportProfiles request: produced by the eBPF profiler / receiver and forwarded as-is. So a batch can contain multiple ResourceProfiles (different containers/cgroups or nodes). We **group by source key** and only merge resource profiles that share the same key, so each stored chunk is one service. The OTLP proto does not allow dictionary per sample; dictionary is at ProfilesData (root). We keep one dictionary per stored chunk so the parser can resolve symbols.
+
+---
+
 ## ASCII art: “only when viewing” flow
 
 ```

@@ -27,7 +27,7 @@ images:
   odiglet: "public.ecr.aws/odigos/dev/coretestbed:odigos-odiglet-c8297dd"
   agents: "keyval/odigos-agents:v1.21.0"
   collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-c8297dd"
-  autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-c8297dd"
+  autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-2660b8d"
 
 # Gateway: receive profiles from node collectors, export to Pyroscope (verification) and UI backend (on-demand).
 # Replace namespace in endpoints if your Odigos/Pyroscope are in different namespaces.

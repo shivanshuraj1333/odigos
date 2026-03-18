@@ -20,7 +20,7 @@ export interface FlamebearerResponse {
     numTicks?: number;
     maxSelf?: number;
   };
-  metadata?: { format?: string; spyName?: string; sampleRate?: number; units?: string; name?: string };
+  metadata?: { format?: string; spyName?: string; sampleRate?: number; units?: string; name?: string; symbolsHint?: string };
   timeline?: { startTime: number; samples: number[]; durationDelta: number; watermarks?: number[] } | null;
   groups?: unknown;
   heatmap?: unknown;

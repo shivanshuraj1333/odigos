@@ -113,6 +113,12 @@ export function ProfilerTabPanel({ namespace, kind, name, onClose }: ProfilerTab
                 </Text>
               </div>
 
+              {profile?.metadata?.symbolsHint && (
+                <div style={{ padding: '10px 14px', background: 'rgba(137, 180, 250, 0.15)', border: '1px solid rgba(137, 180, 250, 0.4)', borderRadius: 8, color: '#cdd6f4', fontSize: 14 }}>
+                  {profile.metadata.symbolsHint}
+                </div>
+              )}
+
               {hasData ? (
                 <div style={{ marginTop: 16, width: '100%', ...panelDark }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>

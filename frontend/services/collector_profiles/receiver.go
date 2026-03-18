@@ -91,10 +91,11 @@ func profilesReceiverEnabled() bool {
 	return enabled
 }
 
-// ProfileStoreRef is a small interface for HTTP handlers that need only StartViewing and GetProfileData.
+// ProfileStoreRef is a small interface for HTTP handlers that need StartViewing, GetProfileData, and optional DebugSlots.
 type ProfileStoreRef interface {
 	StartViewing(sourceKey string)
 	GetProfileData(sourceKey string) [][]byte
+	DebugSlots() (activeKeys []string, keysWithData []string)
 }
 
 // RunWithStore is like Run but accepts an existing store and returns it so the caller can pass it to HTTP handlers.
