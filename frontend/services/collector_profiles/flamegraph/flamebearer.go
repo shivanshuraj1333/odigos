@@ -34,7 +34,7 @@ type FlamebearerTimeline struct {
 	StartTime      int64   `json:"startTime"`
 	Samples        []int64 `json:"samples"`
 	DurationDelta  int     `json:"durationDelta"`
-	Watermarks     *[]int  `json:"watermarks,omitempty"`
+	Watermarks     *[]int  `json:"watermarks"` // null for single profile (Pyroscope shape)
 }
 
 const (

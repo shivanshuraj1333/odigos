@@ -1,6 +1,7 @@
 package collectorprofiles
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -70,6 +71,14 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 		return
 	}
 	profilingDebugLog("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
+	profile := BuildPyroscopeProfileFromChunks(chunks)
+	c.JSON(http.StatusOK, profile)
+}
+
+// BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
+// merges samples into a tree, and returns a Pyroscope-compatible response (version, flamebearer, metadata, timeline).
+// Used by GET profiling and by tests that use merged dumps (e.g. accounting-merged.json).
+func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProfile {
 	tree := flamegraph.NewTree()
 	for _, b := range chunks {
 		parsed, err := flamegraph.ParseOTLPChunk(b)
@@ -81,40 +90,114 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 		}
 	}
 	fb := flamegraph.TreeToFlamebearer(tree, 1024)
-	total := fb.NumTicks
-	c.JSON(http.StatusOK, flamegraph.FlamebearerProfile{
+	startTimeSec := extractStartTimeFromChunks(chunks)
+	return flamegraph.FlamebearerProfile{
 		Version:     1,
 		Flamebearer: fb,
-		Metadata:    pyroscopeMetadata(total),
-		Timeline:    pyroscopeTimeline(total),
+		Metadata:    pyroscopeMetadata(fb.NumTicks),
+		Timeline:    pyroscopeTimeline(fb.NumTicks, startTimeSec),
 		Groups:      nil,
 		Heatmap:     nil,
-		Symbols:     tree.SymbolTable(),
-	})
+		Symbols:     nil, // omit for strict Pyroscope shape (no extra keys)
+	}
 }
 
 // pyroscopeMetadata returns metadata in Pyroscope API shape (format, spyName, sampleRate, units, name).
 func pyroscopeMetadata(numTicks int64) flamegraph.FlamebearerMetadata {
 	return flamegraph.FlamebearerMetadata{
 		Format:     "single",
-		SpyName:    "ebpf",
-		SampleRate: 1000000000, // 1 GHz typical for CPU profiling
+		SpyName:    "", // match Pyroscope (empty)
+		SampleRate: 1000000000,
 		Units:      "samples",
 		Name:       "cpu",
 	}
 }
 
 // pyroscopeTimeline returns a minimal timeline so the response matches Pyroscope (single bucket with total).
-func pyroscopeTimeline(numTicks int64) *flamegraph.FlamebearerTimeline {
+// startTimeSec is Unix seconds from earliest profile in chunks (0 if unknown).
+func pyroscopeTimeline(numTicks int64, startTimeSec int64) *flamegraph.FlamebearerTimeline {
 	if numTicks == 0 {
 		return nil
 	}
 	return &flamegraph.FlamebearerTimeline{
-		StartTime:     0,
+		StartTime:     startTimeSec,
 		Samples:       []int64{0, numTicks},
 		DurationDelta: 15,
-		Watermarks:    nil,
+		Watermarks:    nil, // Pyroscope uses null
 	}
+}
+
+// extractStartTimeFromChunks returns the earliest timeUnixNano from chunks as Unix seconds, or 0 if none found.
+func extractStartTimeFromChunks(chunks [][]byte) int64 {
+	var minNano int64
+	for _, b := range chunks {
+		var raw map[string]interface{}
+		if json.Unmarshal(b, &raw) != nil {
+			continue
+		}
+		rps := getKey(raw, "resourceProfiles", "ResourceProfiles")
+		arr, ok := rps.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, rp := range arr {
+			rpm, _ := rp.(map[string]interface{})
+			if rpm == nil {
+				continue
+			}
+			scopes := getKey(rpm, "scopeProfiles", "ScopeProfiles")
+			sarr, ok := scopes.([]interface{})
+			if !ok {
+				continue
+			}
+			for _, s := range sarr {
+				sm, _ := s.(map[string]interface{})
+				if sm == nil {
+					continue
+				}
+				profs := getKey(sm, "profiles", "Profiles")
+				parr, ok := profs.([]interface{})
+				if !ok || len(parr) == 0 {
+					continue
+				}
+				p, _ := parr[0].(map[string]interface{})
+				if p == nil {
+					continue
+				}
+				ts := getKey(p, "timeUnixNano", "TimeUnixNano")
+				if ts == nil {
+					continue
+				}
+				var nano int64
+				switch v := ts.(type) {
+				case string:
+					for _, c := range v {
+						if c >= '0' && c <= '9' {
+							nano = nano*10 + int64(c-'0')
+						}
+					}
+				case float64:
+					nano = int64(v)
+				}
+				if nano > 0 && (minNano == 0 || nano < minNano) {
+					minNano = nano
+				}
+			}
+		}
+	}
+	if minNano == 0 {
+		return 0
+	}
+	return minNano / 1e9
+}
+
+func getKey(m map[string]interface{}, keys ...string) interface{} {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			return v
+		}
+	}
+	return nil
 }
 
 var errMissingParams = errors.New("missing namespace, kind, or name")
