@@ -213,6 +213,13 @@ Incoming OTLP ResourceProfiles
 - **consumer.go**: We copy `pd.Dictionary()` into the profile we store and marshal to JSON, so any dictionary present on ingest is preserved for the parser.
 - **otlp_parse.go**: We read `dictionary` (and `schema.dictionary`) and `extractNamesFromDictionary` / `extractNamesFromObject` to fill `names`; samples use location indices into that map. If the dictionary is empty, we fall back to `frame_<id>`.
 
+### Data path: where the top-level dictionary can be absent
+
+- **Node collector (DCN)**: Profiles pipeline: `profiling` + `otlp/in` → processors → `otlp/out-cluster-collector-profiles`. The **profiling receiver** (eBPF) produces `pdata.Profiles`; the dictionary is filled by that receiver (or left empty). The OTLP exporter sends whatever it receives (one ExportProfilesServiceRequest per batch; each request has one `Profiles` with a single top-level `Dictionary` and N `ResourceProfiles`).
+- **Gateway**: Receives OTLP on `otlp`, forwards to `otlp/profiles-ui` (and optionally `otlp/profiles-verification`). No batch processor for profiles. The gateway may send **multiple gRPC requests** to the UI (e.g. one per batch). If the upstream collector or the gateway’s exporter **omits the dictionary in some batches** (e.g. only the first request in a stream includes it), the UI will receive some chunks with an empty top-level dictionary.
+- **Frontend consumer**: For each incoming `pd pprofile.Profiles` we iterate `pd.ResourceProfiles()` and for **each** resource profile we build `newPd := NewProfiles(); pd.Dictionary().CopyTo(newPd.Dictionary()); rp.CopyTo(newPd.ResourceProfiles().AppendEmpty())` and store the marshaled JSON. So we do **not** build the payload without the dictionary; we always copy whatever `pd.Dictionary()` contains. If that was empty (because this request had no dictionary), the stored chunk has `"dictionary": {}`.
+- **Fix (fallback dictionary)**: In `BuildPyroscopeProfileFromChunks` we now take the **first chunk that has a non-empty dictionary** (names or location/mapping tables) as a reference. When resolving names for any chunk (including ones with empty dictionary), we use that reference’s names and location/mapping so symbols still appear. See `resolveStackNamesWithFallback` and `ParsedChunkHasDictionary`; test: `TestFallbackDictionary`.
+
 ### How to get real names in Odigos
 
 1. **Confirm what we receive**  
@@ -223,6 +230,31 @@ Incoming OTLP ResourceProfiles
 
 3. **Collector/exporter fills the dictionary**  
    If the node collector or an OTLP exporter in the pipeline can resolve addresses to names (e.g. using a symbolizer in the collector) and fill the OTLP dictionary before sending to Odigos, our current parser will show real names with no backend symbolization.
+
+### 10-minute live capture and verify
+
+To capture ~10 minutes of live profile data from the gateway and verify flame graphs and symbols:
+
+1. **Start the frontend** with the gateway sending OTLP profiles to it (e.g. Odigos deployed in cluster, UI receiving on 4318).
+2. **Set** `PROFILE_DEBUG_DUMP_DIR=./live-capture` (or any directory path). The consumer will write every stored chunk as a JSON file there.
+3. **In the UI**, enable continuous profiling for at least one source (PUT enable). Leave it open or polling for ~10 minutes so chunks accumulate.
+4. **Run the verification test** on the capture directory:
+   ```bash
+   cd frontend
+   PROFILE_LIVE_CAPTURE_DIR=./live-capture go test -v -run TestVerifyLiveCapture ./services/collector_profiles/
+   ```
+   The test groups chunks by source key, runs `BuildPyroscopeProfileFromChunks` on each source, and asserts: at least one chunk has a dictionary, the flame graph has real symbol names (not only `frame_N`), and `numTicks` > 0.
+
+Using existing dumps (e.g. `profile-dumps-from-pod/`):  
+`PROFILE_LIVE_CAPTURE_DIR=/path/to/profile-dumps-from-pod go test -v -run TestVerifyLiveCapture ./services/collector_profiles/`
+
+### End-to-end and raw logs
+
+- **Capture:** `./scripts/capture-gateway-profile-logs.sh` (writes `gateway-profiles-raw.log`). Optional: set `TAIL=20000` for more lines.
+- **Analysis:** `./scripts/analyze-gateway-profile-logs.sh [gateway-profiles-raw.log]` greps for `stringTable`, `locationTable`, `mappingTable`, `dictionary` and prints interpretation.
+- **Finding (current run):** On 10k gateway log lines, **none** of those keys appear. So either (1) no profile batches were logged in that window (only traces/metrics), or (2) the **debug exporter for profiles is not in the gateway config**.
+- **Debug exporter:** To see raw profile payloads (and dictionary) in gateway logs, the profiles pipeline must include `debug/profiles-debug` with `verbosity: detailed`. That is added by the autoscaler only when `PROFILE_DEBUG_EXPORT=true` (Helm: `autoscaler.profilesDebugExport: true`). After `helm upgrade` with that set, the gateway ConfigMap will include the debug exporter; then capture logs again while **triggering profile traffic** (open Profiling in UI for a source, generate load).
+- **Why Pyroscope shows symbols and Odigos does not:** The gateway sends the **same** OTLP profile stream to both `otlp/profiles-verification` (Pyroscope) and `otlp/profiles-ui` (Odigos). So both receive the same bytes. If Pyroscope shows function names, it is either (1) doing **read-path symbolization** from (mapping, address) in the payload (no dictionary needed), or (2) receiving a different pipeline elsewhere. Our dc-dump tests show **empty dictionary** in chunks the UI stores; so the data reaching the UI does not contain a filled dictionary. Conclusion: the payload likely has **location/mapping/address** but **empty or minimal dictionary**; Pyroscope symbolizes from mapping+address; we can do the same via backend symbolization once we have locationTable/mappingTable in the parsed chunk (already implemented; needs non-empty mapping/location data in the payload).
 
 ## File roles (backend)
 
