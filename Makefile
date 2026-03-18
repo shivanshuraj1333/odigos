@@ -490,8 +490,10 @@ push-workload-lifecycle-images:
 ecr-login:
 	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 
+# Optional extra args for docker build (e.g. --no-cache). Set from script: DOCKER_EXTRA_ARGS=--no-cache
+DOCKER_EXTRA_ARGS ?=
 build-tag-push-ecr-image/%:
-	docker build --platform linux/amd64 -t $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(BUILD_DIR) -f $(DOCKERFILE) \
+	docker build --platform linux/amd64 $(DOCKER_EXTRA_ARGS) -t $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(BUILD_DIR) -f $(DOCKERFILE) \
 	--build-arg SERVICE_NAME="$*" \
 	--build-arg ODIGOS_VERSION=$(TAG) \
 	--build-arg VERSION=$(TAG) \
