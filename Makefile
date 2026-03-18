@@ -498,11 +498,33 @@ build-tag-push-ecr-image/%:
 	--build-arg RELEASE=$(TAG) \
 	--build-arg SUMMARY="$(SUMMARY)" \
 	--build-arg DESCRIPTION="$(DESCRIPTION)"
+ifeq ($(ECR_SINGLE_REPO),1)
+	# Single ECR repo: public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<sha>
+	docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX):$(TAG)
+	docker push $(IMG_PREFIX):$(TAG)
+else
 	docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
 	docker push $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
+endif
 
-# ECR repo for dev/coretestbed-style tags: public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<short_sha>
+# ECR repo for dev/coretestbed: one repository, tag = odigos-<component>-<short_sha>
+# e.g. public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-ba607436
 ECR_CORETESTBED ?= public.ecr.aws/odigos/dev/coretestbed
+SHORT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo "local")
+
+# Build, tag as $(ECR_CORETESTBED):odigos-<component>-<sha>, push (single repo)
+build-tag-push-ecr-coretestbed/%:
+	$(MAKE) ecr-login
+	$(MAKE) build-tag-push-ecr-image/$* \
+		IMG_PREFIX=$(ECR_CORETESTBED) \
+		TAG=odigos-$*-$(SHORT_SHA) \
+		ORG=registry.odigos.io \
+		ECR_SINGLE_REPO=1 \
+		$(if $(filter collector,$*),DOCKERFILE=collector/$(DOCKERFILE) BUILD_DIR=.,) \
+		$(if $(filter ui,$*),DOCKERFILE=frontend/$(DOCKERFILE),) \
+		$(if $(filter odiglet,$*),DOCKERFILE=odiglet/$(DOCKERFILE),) \
+		SUMMARY="Odigos $*" DESCRIPTION="Odigos $*"
+	@echo "✅ Pushed $(ECR_CORETESTBED):odigos-$*-$(SHORT_SHA)"
 
 .PHONY: publish-to-ecr
 publish-to-ecr:
@@ -520,8 +542,6 @@ publish-to-ecr:
 	echo "✅ Deployed Odigos to EKS, now install the CLI"
 
 # Push one image to public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<short_sha>
-# e.g. make push-ecr-autoscaler  -> public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-<short_sha>
-SHORT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo "local")
 .PHONY: push-ecr-autoscaler
 push-ecr-autoscaler:
 	$(MAKE) ecr-login
@@ -529,6 +549,7 @@ push-ecr-autoscaler:
 		IMG_PREFIX=$(ECR_CORETESTBED) \
 		TAG=odigos-autoscaler-$(SHORT_SHA) \
 		ORG=registry.odigos.io \
+		ECR_SINGLE_REPO=1 \
 		SUMMARY="Autoscaler for Odigos" \
 		DESCRIPTION="Autoscaler manages the installation of Odigos components."
 	@echo "✅ Pushed $(ECR_CORETESTBED):odigos-autoscaler-$(SHORT_SHA)"
