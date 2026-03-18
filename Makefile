@@ -508,6 +508,19 @@ else
 	@docker push $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
 endif
 
+# Multi-arch (amd64 + arm64) build and push to ECR (single repo: IMG_PREFIX:TAG).
+# Use for odiglet/collector so DaemonSet runs on mixed-arch clusters.
+build-tag-push-ecr-image-multiarch/%:
+	docker buildx build --platform linux/amd64,linux/arm64 --push \
+	  $(DOCKER_EXTRA_ARGS) \
+	  -t $(IMG_PREFIX):$(TAG) $(BUILD_DIR) -f $(DOCKERFILE) \
+	  --build-arg SERVICE_NAME="$*" \
+	  --build-arg ODIGOS_VERSION=$(TAG) \
+	  --build-arg VERSION=$(TAG) \
+	  --build-arg RELEASE=$(TAG) \
+	  --build-arg SUMMARY="$(SUMMARY)" \
+	  --build-arg DESCRIPTION="$(DESCRIPTION)"
+
 # ECR repo for dev/coretestbed: one repository, tag = odigos-<component>-<short_sha>
 # e.g. public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-ba607436
 ECR_CORETESTBED ?= public.ecr.aws/odigos/dev/coretestbed
