@@ -65,13 +65,13 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 			return
 		}
 	}
-	// Fill names: (1) OTLP 1.0 dictionary (top-level or under schema); (2) per-object stringTable/location/function.
-	if dict := getKey(m, "dictionary", "Dictionary", "schema", "Schema"); dict != nil {
+	// Fill names: (1) OTLP 1.0 dictionary (top-level); (2) schema.dictionary (collector JSON); (3) per-object stringTable/location/function.
+	if dict := getKey(m, "dictionary", "Dictionary"); dict != nil {
 		if dm, ok := dict.(map[string]interface{}); ok {
 			extractNamesFromDictionary(dm, names)
 		}
 	}
-	// Schema may wrap dictionary (collector JSON).
+	// Schema may wrap dictionary (collector JSON): schema.dictionary has stringTable/functionTable/locationTable.
 	if schema := getKey(m, "schema", "Schema"); schema != nil {
 		if sm, ok := schema.(map[string]interface{}); ok {
 			if dict := getKey(sm, "dictionary", "Dictionary"); dict != nil {

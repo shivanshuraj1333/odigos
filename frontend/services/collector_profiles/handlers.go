@@ -77,10 +77,17 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 
 // BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
 // merges samples into a tree, and returns a Pyroscope-compatible response (version, flamebearer, metadata, timeline).
-// Used by GET profiling and by tests that use merged dumps (e.g. accounting-merged.json).
+// Tries Pyroscope's OTLP→pprof conversion first when the chunk has a non-empty dictionary (for proper symbols);
+// otherwise falls back to ParseOTLPChunk (frame_N when dictionary is empty).
 func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProfile {
 	tree := flamegraph.NewTree()
 	for _, b := range chunks {
+		if samples, ok := flamegraph.ChunksFromPyroscopeOTLP(b); ok {
+			for _, s := range samples {
+				tree.InsertStack(s.Value, s.Stack...)
+			}
+			continue
+		}
 		parsed, err := flamegraph.ParseOTLPChunk(b)
 		if err != nil {
 			continue

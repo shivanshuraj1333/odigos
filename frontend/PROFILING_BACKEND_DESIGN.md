@@ -177,6 +177,25 @@ Incoming OTLP ResourceProfiles
 
 ---
 
+## Pyroscope symbolization (OTLP dictionary)
+
+Pyroscope **does not** do external symbolization for OTLP profiles in the ingest path. It **extracts all symbol data from the OTLP packet**:
+
+- **ingest_handler.go**: Requires `er.Dictionary` and returns error if missing (`"missing profile metadata dictionary"`).
+- **convert.go**: `ConvertOtelToGoogle(profile, dictionary)` uses only the dictionary:
+  - `dictionary.StringTable` → type/unit, function names, filenames, mapping names, attribute keys/values
+  - `dictionary.FunctionTable` → Function (NameStrindex, FilenameStrindex, etc.) resolved via StringTable
+  - `dictionary.LocationTable` → Location (MappingIndex, Address, Lines with FunctionIndex)
+  - `dictionary.MappingTable` → Mapping (FilenameStrindex, MemoryStart/Limit, FileOffset, build_id attribute)
+  - `dictionary.StackTable` → Stack (LocationIndices = call stack)
+  - `dictionary.AttributeTable` → sample/resource attributes (e.g. service.name)
+
+So when Pyroscope shows correct flame graphs from the same data, the **dictionary in the OTLP request must be populated** when it reaches them. If our pipeline receives the same gRPC but we see `dictionary: {}` in dumps, either (1) the collector pdata JSON marshaler does not emit the dictionary, or (2) the dictionary is not being copied/preserved (e.g. it lives per-ResourceProfiles in the wire format and we only copy top-level). Options:
+
+1. **Use Pyroscope's conversion**: Depend on `github.com/grafana/pyroscope/pkg/ingester/otlp` (or copy `ConvertOtelToGoogle`); unmarshal incoming request as `ExportProfilesServiceRequest` (same proto as Pyroscope: `go.opentelemetry.io/proto/otlp/.../v1development`), call their converter to get Google pprof, then build our flame graph from the pprof. This requires receiving the same proto (our receiver may use collector pdata which might differ).
+2. **Verify dictionary preservation**: Log or dump the raw gRPC request (before pdata) and confirm whether the dictionary is present on the wire. If it is, fix our copy/marshal path so the dictionary is included in stored chunks and in `ParseOTLPChunk`.
+3. **Backend symbolization** (if dictionary is truly empty from sender): Add a separate step that resolves stack frames (e.g. file ID + offset from mapping/location) via debuginfod/DWARF; see Pyroscope PR #3799. Only needed if the eBPF profiler never sends a filled dictionary.
+
 ## File roles (backend)
 
 | File / area | Role |

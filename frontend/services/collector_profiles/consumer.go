@@ -63,14 +63,22 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 				continue
 			}
 			// Copy this resource's profiles (already unmarshaled from gRPC) and marshal to JSON.
-			// We dump this JSON so you can run ParseOTLPChunk(dumpBytes) locally to iterate on
-			// parser and Pyroscope-format flamegraph logic without hitting the cluster.
+			// Preserve the top-level dictionary so symbol names (stringTable, etc.) are available
+			// when we parse chunks for the flamegraph; otherwise we get frame_N placeholders.
 			newPd := pprofile.NewProfiles()
+			pd.Dictionary().CopyTo(newPd.Dictionary())
 			rp.CopyTo(newPd.ResourceProfiles().AppendEmpty())
 			bytes, err := jsonMarshaler.MarshalProfiles(newPd)
 			if err != nil {
 				log.Printf("profiles: marshal error for source %q: %v", key, err)
 				continue
+			}
+			// Log when dictionary is empty. Same OTLP data sent to Pyroscope shows symbols because Pyroscope
+			// does backend symbolization (resolves file ID + offset to names via DWARF/debuginfod). We only
+			// display what's in the dictionary; to get real names we need a symbolization step (see issue #3715).
+			hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
+			if !hasDict {
+				profilingDebugLog("[profiling] receiver: chunk sourceKey=%q has no dictionary (symbols will show as frame_N); add backend symbolization or have exporter fill dictionary", key)
 			}
 			store.AddProfileData(key, bytes)
 			profilingDebugLog("[profiling] receiver: stored chunk sourceKey=%q size=%d", key, len(bytes))
