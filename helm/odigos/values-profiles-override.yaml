@@ -1,11 +1,17 @@
-# Odigos with profiling: node collectors (eBPF 97 Hz) → gateway → Pyroscope + UI backend.
+# Odigos with profiling. Pipeline: DC (node collectors) → gateway only → gateway exports to Pyroscope + UI.
+# DC sends only to odigos-gateway.<namespace>:4317; gateway then forwards profiles to Pyroscope and UI backend.
 # On-demand: user opens Profiler in UI and clicks "Load data"; backend caches and serves flame graph.
 #
+# EKS cluster prerequisites:
+#   - kubectl context set to the EKS cluster
+#   - Odigos installed (or will be) in odigos-system; Pyroscope in pyroscope namespace (for verification endpoint)
+#
 # Usage:
-#   helm upgrade odigos ./helm/odigos -n odigos-system -f ./helm/odigos/values-profiles-override.yaml
+#   helm upgrade odigos ./helm/odigos -n odigos-system -f ./helm/odigos/values-profiles-override.yaml \
+#     --set images.ui=public.ecr.aws/odigos/dev/coretestbed:odigos-ui-<SHA>
 #   kubectl rollout restart daemonset/odiglet -n odigos-system   # pick up node collector config + OTEL_LOG_LEVEL
 #
-# If your release is in another namespace, change "odigos-system" in profilesOtlpEndpointUI and Pyroscope endpoint.
+# If your release or Pyroscope is in another namespace, change "odigos-system" / "pyroscope" in the endpoints below.
 #
 # Capture node collector debug logs (after collectorNode.logLevel: "debug" and rollout restart):
 #   ./scripts/capture-node-collector-logs.sh
@@ -15,13 +21,13 @@ image:
   tag: "v1.21.0"
 
 images:
-  scheduler: "keyval/odigos-scheduler:v1.21.0"
-  instrumentor: "keyval/odigos-instrumentor:v1.21.0"
-  ui: "public.ecr.aws/odigos/dev/coretestbed:odigos-ui-4b68c57"
-  odiglet: "keyval/odigos-odiglet:v1.21.0"
+  scheduler: "public.ecr.aws/odigos/dev/coretestbed:odigos-scheduler-c8297dd"
+  instrumentor: "public.ecr.aws/odigos/dev/coretestbed:odigos-instrumentor-c8297dd"
+  ui: "public.ecr.aws/odigos/dev/coretestbed:odigos-ui-c8297dd"
+  odiglet: "public.ecr.aws/odigos/dev/coretestbed:odigos-odiglet-c8297dd"
   agents: "keyval/odigos-agents:v1.21.0"
-  collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-2255195f"
-  autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-2255195f"
+  collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-c8297dd"
+  autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-c8297dd"
 
 # Gateway: receive profiles from node collectors, export to Pyroscope (verification) and UI backend (on-demand).
 # Replace namespace in endpoints if your Odigos/Pyroscope are in different namespaces.
