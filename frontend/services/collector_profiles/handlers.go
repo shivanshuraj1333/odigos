@@ -3,9 +3,12 @@ package collectorprofiles
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -48,6 +51,12 @@ func handleEnableProfiling(c *gin.Context, store ProfileStoreRef) {
 }
 
 func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[profiling] GET panic: %v\n%s", r, debug.Stack())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("internal error: %v", r)})
+		}
+	}()
 	id, err := sourceIDFromParams(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
