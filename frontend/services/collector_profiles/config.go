@@ -8,7 +8,7 @@ import (
 
 const (
 	envSlotTTLSeconds         = "PROFILES_SLOT_TTL_SECONDS"
-	envMaxSlots               = "PROFILES_MAX_SLOTS"
+	envMaxSlots               = "PROFILES_MAX_SLOTS" // max services with profiling enabled at once (default 10)
 	envSlotMaxBytes           = "PROFILES_SLOT_MAX_BYTES"
 	envCleanupIntervalSeconds = "PROFILES_CLEANUP_INTERVAL_SECONDS"
 )

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/odigos-io/odigos/frontend/services/collector_profiles/flamegraph"
 	"go.opentelemetry.io/collector/pdata/pprofile"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
@@ -449,4 +450,48 @@ func TestVerifyLiveCapture(t *testing.T) {
 	if !allPass {
 		t.Fail()
 	}
+}
+
+// TestMockFlameGraphResponse runs the real flame graph pipeline with mock samples and prints
+// the Pyroscope-like JSON response (for documentation / UI contract).
+func TestMockFlameGraphResponse(t *testing.T) {
+	// 1. Mock samples (as if parsed from OTLP chunks): root-first stack + value (count).
+	samples := []struct {
+		stack []string
+		value int64
+	}{
+		{[]string{"main", "handleRequest", "db.Query"}, 50},
+		{[]string{"main", "handleRequest", "json.Marshal"}, 30},
+		{[]string{"main", "handleRequest", "db.Query"}, 20},
+		{[]string{"main", "backgroundWorker", "db.Query"}, 40},
+		{[]string{"runtime", "runtime.main", "main.main"}, 10},
+	}
+	tree := flamegraph.NewTree()
+	for _, s := range samples {
+		tree.InsertStack(s.value, s.stack...)
+	}
+	// 2. Tree → Flamebearer (Pyroscope format: names, levels with 4-tuple, numTicks, maxSelf).
+	fb := flamegraph.TreeToFlamebearer(tree, 1024)
+	// 3. Full response (same shape as GET /api/.../profiling).
+	profile := flamegraph.FlamebearerProfile{
+		Version: 1,
+		Flamebearer: fb,
+		Metadata: flamegraph.FlamebearerMetadata{
+			Format:     "single",
+			SpyName:    "",
+			SampleRate: 1000000000,
+			Units:      "samples",
+			Name:       "cpu",
+		},
+		Timeline: &flamegraph.FlamebearerTimeline{
+			StartTime:     1710000000,
+			Samples:       []int64{0, fb.NumTicks},
+			DurationDelta: 15,
+			Watermarks:    nil,
+		},
+		Groups:  nil,
+		Heatmap: nil,
+	}
+	out, _ := json.MarshalIndent(profile, "", "  ")
+	t.Logf("Pyroscope-like response (use in UI):\n%s", string(out))
 }

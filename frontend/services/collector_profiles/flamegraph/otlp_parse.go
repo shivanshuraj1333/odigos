@@ -34,9 +34,13 @@ type Sample struct {
 	LocIndices []int // same length as Stack; location table indices for each frame
 }
 
+// stackTableMap is stack_index -> location_indices (root-first). Used for v1development format where Sample.stack_index references ProfilesDictionary.stack_table.
+type stackTableMap map[int][]int
+
 // ParseOTLPChunk parses one OTLP/JSON profile chunk (as produced by pprofile.JSONMarshaler)
 // and returns samples with resolved stack names. Handles camelCase and snake_case keys.
 // Also extracts LocationInfos and MappingInfos for backend symbolization (mapping+address → name).
+// Supports both OTEP (locations_start_index/locations_length) and v1development (stack_index → stack_table → location_indices) formats.
 func ParseOTLPChunk(data []byte) (*ParsedChunk, error) {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -45,8 +49,14 @@ func ParseOTLPChunk(data []byte) (*ParsedChunk, error) {
 	names := make(map[int]string)
 	locationInfos := make(map[int]LocationInfo)
 	mappingInfos := make(map[int]MappingInfo)
+	var stackTable stackTableMap
+	if dict := getKey(raw, "dictionary", "Dictionary"); dict != nil {
+		if dm, ok := dict.(map[string]interface{}); ok {
+			stackTable = extractStackTable(dm)
+		}
+	}
 	var samples []Sample
-	extractSamplesAndNames(raw, &samples, names, locationInfos, mappingInfos)
+	extractSamplesAndNames(raw, &samples, names, locationInfos, mappingInfos, stackTable)
 	return &ParsedChunk{
 		Names:         names,
 		Samples:       samples,
@@ -91,7 +101,7 @@ func toInt64(v interface{}) int64 {
 	return 0
 }
 
-func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]string, locationInfos map[int]LocationInfo, mappingInfos map[int]MappingInfo) {
+func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]string, locationInfos map[int]LocationInfo, mappingInfos map[int]MappingInfo, stackTable stackTableMap) {
 	if obj == nil {
 		return
 	}
@@ -101,7 +111,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 	}
 	if data := getKey(m, "data", "Data"); data != nil {
 		if dm, ok := data.(map[string]interface{}); ok {
-			extractSamplesAndNames(dm, samples, names, locationInfos, mappingInfos)
+			extractSamplesAndNames(dm, samples, names, locationInfos, mappingInfos, stackTable)
 			return
 		}
 	}
@@ -132,7 +142,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 		if arr, ok := rps.([]interface{}); ok {
 			for _, rp := range arr {
 				if rpm, ok := rp.(map[string]interface{}); ok {
-					extractSamplesAndNames(rpm, samples, names, locationInfos, mappingInfos)
+					extractSamplesAndNames(rpm, samples, names, locationInfos, mappingInfos, stackTable)
 				}
 			}
 			return
@@ -142,7 +152,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 		if arr, ok := scopes.([]interface{}); ok {
 			for _, s := range arr {
 				if sm, ok := s.(map[string]interface{}); ok {
-					extractSamplesAndNames(sm, samples, names, locationInfos, mappingInfos)
+					extractSamplesAndNames(sm, samples, names, locationInfos, mappingInfos, stackTable)
 				}
 			}
 			return
@@ -152,7 +162,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 		if arr, ok := profs.([]interface{}); ok {
 			for _, p := range arr {
 				if pm, ok := p.(map[string]interface{}); ok {
-					extractSamplesAndNames(pm, samples, names, locationInfos, mappingInfos)
+					extractSamplesAndNames(pm, samples, names, locationInfos, mappingInfos, stackTable)
 				}
 			}
 			return
@@ -167,7 +177,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 				if !ok {
 					continue
 				}
-				locIDs := getSampleLocIDs(so, locationIndices)
+				locIDs := getSampleLocIDs(so, locationIndices, stackTable)
 				value := getSampleValue(so)
 				if value <= 0 && len(locIDs) == 0 {
 					continue
@@ -191,7 +201,7 @@ func extractSamplesAndNames(obj interface{}, samples *[]Sample, names map[int]st
 	for _, key := range []string{"resource", "scope", "profile", "Profile"} {
 		if v := m[key]; v != nil {
 			if vm, ok := v.(map[string]interface{}); ok {
-				extractSamplesAndNames(vm, samples, names, locationInfos, mappingInfos)
+				extractSamplesAndNames(vm, samples, names, locationInfos, mappingInfos, stackTable)
 			}
 		}
 	}
@@ -381,6 +391,46 @@ func getStringTable(m map[string]interface{}) []string {
 	return out
 }
 
+// extractStackTable builds stack_index -> location_indices (root-first) from OTLP v1development ProfilesDictionary.stack_table.
+// Proto Stack has location_indices with first element = leaf; we reverse so caller gets root-first.
+func extractStackTable(dict map[string]interface{}) stackTableMap {
+	st := getKey(dict, "stackTable", "StackTable", "stack_table")
+	if st == nil {
+		return nil
+	}
+	arr, ok := st.([]interface{})
+	if !ok || len(arr) == 0 {
+		return nil
+	}
+	out := make(stackTableMap)
+	for idx, entry := range arr {
+		em, _ := entry.(map[string]interface{})
+		if em == nil {
+			continue
+		}
+		li := getKey(em, "locationIndices", "LocationIndices", "location_indices")
+		if li == nil {
+			continue
+		}
+		locArr, ok := li.([]interface{})
+		if !ok {
+			continue
+		}
+		locs := make([]int, 0, len(locArr))
+		for _, v := range locArr {
+			if i, ok := toInt(v); ok {
+				locs = append(locs, i)
+			}
+		}
+		// Proto: first location is leaf. Reverse for root-first (flame graph convention).
+		for i, j := 0, len(locs)-1; i < j; i, j = i+1, j-1 {
+			locs[i], locs[j] = locs[j], locs[i]
+		}
+		out[idx] = locs
+	}
+	return out
+}
+
 // getProfileLocationIndices returns the profile's locationIndices slice (indices into dictionary locationTable).
 func getProfileLocationIndices(m map[string]interface{}) []int {
 	li := getKey(m, "locationIndices", "LocationIndices", "location_indices")
@@ -492,9 +542,19 @@ func toInt(v interface{}) (int, bool) {
 	return 0, false
 }
 
-// getSampleLocIDs returns location table indices for the sample (root-first order). locationIndices is the profile's locationIndices; pass nil if not used.
-func getSampleLocIDs(so map[string]interface{}, locationIndices []int) []int {
-	// OTLP 1.0: locationsStartIndex + locationsLength (camelCase / snake_case for collector JSON). Return root-first.
+// getSampleLocIDs returns location table indices for the sample (root-first order).
+// locationIndices is the profile's locationIndices (OTEP format); pass nil if not used.
+// stackTable is v1development: stack_index -> location_indices (root-first); pass nil if not used.
+func getSampleLocIDs(so map[string]interface{}, locationIndices []int, stackTable stackTableMap) []int {
+	// v1development: Sample.stack_index references ProfilesDictionary.stack_table; resolve to location indices (root-first).
+	if stackIdx := getKey(so, "stackIndex", "stack_index"); stackIdx != nil {
+		if idx, ok := toInt(stackIdx); ok && stackTable != nil {
+			if locs := stackTable[idx]; len(locs) > 0 {
+				return locs
+			}
+		}
+	}
+	// OTEP: locationsStartIndex + locationsLength (camelCase / snake_case for collector JSON). Return root-first.
 	if start := getKey(so, "locationsStartIndex", "LocationsStartIndex", "locations_start_index"); start != nil {
 		if startIdx, ok := toInt(start); ok && startIdx >= 0 {
 			length := 1
@@ -531,11 +591,6 @@ func getSampleLocIDs(so map[string]interface{}, locationIndices []int) []int {
 	}
 	if locID := getKey(so, "locationId", "LocationId", "location_id"); locID != nil {
 		if idx, ok := toInt(locID); ok {
-			return []int{idx}
-		}
-	}
-	if stackIdx := getKey(so, "stackIndex", "stack_index"); stackIdx != nil {
-		if idx, ok := toInt(stackIdx); ok {
 			return []int{idx}
 		}
 	}

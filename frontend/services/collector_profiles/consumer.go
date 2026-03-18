@@ -2,6 +2,7 @@ package collectorprofiles
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -47,10 +48,12 @@ func GetProfileDumpDir() string {
 
 // NewProfilesConsumer returns an xconsumer.Profiles that routes incoming profile data
 // to the store only for sources that are in the active set (have a slot).
-// Batches are not guaranteed to be one service: the eBPF profiler / DC / gateway do not
-// batch by source key. We group by source key and only merge resource profiles that share
-// the same key, so each stored chunk is exactly one service. OTLP proto has dictionary at
-// root (ProfilesData), not per sample; we keep it per chunk so the parser can resolve symbols.
+//
+// Simplified model: one batch can contain multiple ResourceProfiles (e.g. different services).
+// For each ResourceProfile we derive a source key (namespace/kind/name). If the key is active,
+// we append one chunk per resource: dictionary (shared in batch) + that single ResourceProfile.
+// No merge: each chunk is self-contained with its own dictionary copy, so symbols resolve correctly.
+// Chunks are appended in time-series order; the store's buffer is a rolling window (trimmed by size).
 func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 	return xconsumer.NewProfiles(func(ctx context.Context, pd pprofile.Profiles) error {
 		rps := pd.ResourceProfiles()
@@ -61,8 +64,7 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 		log.Printf("[profiling] receiver: batch with %d resource profile(s)", n)
 		profilingDebugLog("[profiling] receiver: batch with %d resource profile(s)", n)
 
-		// Group resource profile indices by source key (same service only). No fixed n or bucket limit.
-		byKey := make(map[string][]int)
+		storedAny := false
 		for i := 0; i < n; i++ {
 			rp := rps.At(i)
 			key, ok := SourceKeyFromResource(rp.Resource().Attributes())
@@ -70,54 +72,12 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 				profilingDebugLog("[profiling] receiver: dropped resource (no source key); have attributes: %s", attrsToDebugString(rp.Resource().Attributes()))
 				continue
 			}
-			byKey[key] = append(byKey[key], i)
-		}
-		// Log grouping result so we can verify one chunk per key and no arbitrary cap.
-		for k, idxs := range byKey {
-			profilingDebugLog("[profiling] receiver: grouped key=%q rpCount=%d", k, len(idxs))
-		}
-
-		storedAny := false
-		for key, indices := range byKey {
 			if !store.IsActive(key) {
 				profilingDebugLog("[profiling] receiver: dropped sourceKey=%q (not active/viewing)", key)
 				continue
 			}
-			if len(indices) == 0 {
-				continue
-			}
 			storedAny = true
-			if len(indices) == 1 {
-				storeOne(store, pd, rps, indices[0])
-				continue
-			}
-			// Merge only resource profiles with the same key (same service).
-			merged := pprofile.NewProfiles()
-			pd.Dictionary().CopyTo(merged.Dictionary())
-			for _, idx := range indices {
-				single := pprofile.NewProfiles()
-				pd.Dictionary().CopyTo(single.Dictionary())
-				rps.At(idx).CopyTo(single.ResourceProfiles().AppendEmpty())
-				if err := single.MergeTo(merged); err != nil {
-					log.Printf("[profiling] merge error for key %q: %v", key, err)
-					continue
-				}
-			}
-			bytes, err := jsonMarshaler.MarshalProfiles(merged)
-			if err != nil {
-				log.Printf("[profiling] marshal error for key %q: %v", key, err)
-				continue
-			}
-			hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
-			log.Printf("[profiling] stored merged chunk key=%q size=%d rpCount=%d dictionary=%v", key, len(bytes), len(indices), hasDict)
-			if !hasDict {
-				profilingDebugLog("[profiling] receiver: merged chunk sourceKey=%q has no dictionary", key)
-			}
-			store.AddProfileData(key, bytes)
-			profilingDebugLog("[profiling] receiver: stored merged chunk sourceKey=%q size=%d (merged %d resource profiles)", key, len(bytes), len(indices))
-			if dumpDir != "" {
-				writeRawProfileDump(key, bytes)
-			}
+			storeOne(store, pd, rps, i)
 		}
 		if !storedAny && n > 0 {
 			log.Printf("[profiling] dropped all %d resource profile(s) (no active slot or key extraction failed)", n)
@@ -149,7 +109,8 @@ func storeOne(store *ProfileStore, pd pprofile.Profiles, rps pprofile.ResourcePr
 		return
 	}
 	hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
-	log.Printf("[profiling] stored single chunk key=%q size=%d dictionary=%v", key, len(bytes), hasDict)
+	dictStats := dictionaryStatsFromChunkJSON(bytes)
+	log.Printf("[profiling] stored single chunk key=%q size=%d dictionary=%v %s", key, len(bytes), hasDict, dictStats)
 	if !hasDict {
 		profilingDebugLog("[profiling] receiver: chunk sourceKey=%q has no dictionary (symbols will show as frame_N); add backend symbolization or have exporter fill dictionary", key)
 	}
@@ -184,4 +145,36 @@ func attrsToDebugString(attrs pcommon.Map) string {
 		return len(keys) <= 15
 	})
 	return strings.Join(keys, ",")
+}
+
+// dictionaryStatsFromChunkJSON parses the stored chunk JSON and returns a one-line summary of
+// dictionary table lengths so we can see in UI logs whether we received symbols (stringTable,
+// locationTable, mappingTable). Example: "stringTable=0 locationTable=0 mappingTable=0" or
+// "stringTable=42 locationTable=100 mappingTable=2".
+func dictionaryStatsFromChunkJSON(chunkJSON []byte) string {
+	var root map[string]interface{}
+	if err := json.Unmarshal(chunkJSON, &root); err != nil {
+		return "dictionary=parse_error"
+	}
+	dict, _ := root["dictionary"].(map[string]interface{})
+	if dict == nil {
+		if d, _ := root["Dictionary"].(map[string]interface{}); d != nil {
+			dict = d
+		}
+	}
+	if dict == nil {
+		return "dictionary=empty"
+	}
+	length := func(keys ...string) int {
+		for _, k := range keys {
+			if v, ok := dict[k].([]interface{}); ok {
+				return len(v)
+			}
+		}
+		return 0
+	}
+	st := length("stringTable", "StringTable")
+	lt := length("locationTable", "LocationTable")
+	mt := length("mappingTable", "MappingTable")
+	return "stringTable=" + strconv.Itoa(st) + " locationTable=" + strconv.Itoa(lt) + " mappingTable=" + strconv.Itoa(mt)
 }

@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	// defaultMaxSlots: max number of services that can have profiling enabled at once (configurable via PROFILES_MAX_SLOTS).
 	defaultMaxSlots           = 10
 	defaultSlotTTLSeconds     = 30
 	defaultCleanupInt         = 15 * time.Second
@@ -92,6 +93,13 @@ func (s *ProfileStore) StartViewing(sourceKey string) {
 		LastRequestAt: now,
 		Buffer:        NewBoundedBuffer(s.slotMaxBytes),
 	}
+}
+
+// MaxSlots returns the maximum number of concurrent profiling slots (services).
+func (s *ProfileStore) MaxSlots() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.maxSlots
 }
 
 // AddProfileData appends serialized profile data to the slot for sourceKey if it exists.

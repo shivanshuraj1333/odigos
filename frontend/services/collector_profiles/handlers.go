@@ -45,6 +45,10 @@ func RegisterProfilingRoutes(r *gin.RouterGroup, store ProfileStoreRef) {
 		active, withData := store.DebugSlots()
 		c.JSON(http.StatusOK, gin.H{"activeKeys": active, "keysWithData": withData})
 	})
+	// Debug: return raw first chunk JSON for a source (to inspect dictionary: stringTable, functionTable, locationTable).
+	r.GET("/debug/sources/:namespace/:kind/:name/profiling-chunk", func(c *gin.Context) {
+		handleGetProfilingChunkDebug(c, store)
+	})
 	// Debug: list and download raw profile dumps (for copying from pod when kubectl cp is not available).
 	if dir := GetProfileDumpDir(); dir != "" {
 		r.GET("/debug/profile-dumps", handleListProfileDumps)
@@ -60,9 +64,26 @@ func handleEnableProfiling(c *gin.Context, store ProfileStoreRef) {
 	}
 	key := SourceKeyFromSourceID(id)
 	store.StartViewing(key)
+	activeKeys, _ := store.DebugSlots()
+	maxSlots := store.MaxSlots()
 	log.Printf("[profiling] enable: sourceKey=%q namespace=%q kind=%q name=%q", key, id.Namespace, id.Kind, id.Name)
 	profilingDebugLog("[profiling] enable: sourceKey=%q (namespace=%q kind=%q name=%q)", key, id.Namespace, id.Kind, id.Name)
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "sourceKey": key})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "sourceKey": key, "maxSlots": maxSlots, "activeSlots": len(activeKeys)})
+}
+
+func handleGetProfilingChunkDebug(c *gin.Context, store ProfileStoreRef) {
+	id, err := sourceIDFromParams(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	key := SourceKeyFromSourceID(id)
+	chunks := store.GetProfileData(key)
+	if len(chunks) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no chunks", "sourceKey": key})
+		return
+	}
+	c.Data(http.StatusOK, "application/json", chunks[0])
 }
 
 func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {

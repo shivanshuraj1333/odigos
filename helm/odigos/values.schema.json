@@ -112,6 +112,13 @@
           "required": [],
           "title": "priorityClassName"
         },
+        "replicas": {
+          "default": 1,
+          "description": "Number of autoscaler replicas. Set to 0 to scale down (e.g. when capturing gateway profile logs); gateway config stays as last written.",
+          "required": [],
+          "title": "replicas",
+          "type": "integer"
+        },
         "resources": {
           "additionalProperties": false,
           "properties": {

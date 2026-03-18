@@ -24,15 +24,21 @@ images:
   scheduler: "public.ecr.aws/odigos/dev/coretestbed:odigos-scheduler-c8297dd"
   instrumentor: "public.ecr.aws/odigos/dev/coretestbed:odigos-instrumentor-c8297dd"
   ui: "public.ecr.aws/odigos/dev/coretestbed:odigos-ui-c8297dd"
-  odiglet: "public.ecr.aws/odigos/dev/coretestbed:odigos-odiglet-c8297dd"
+  odiglet: "public.ecr.aws/odigos/dev/coretestbed:odigos-odiglet-f896fc9"
   agents: "keyval/odigos-agents:v1.21.0"
-  collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-c8297dd"
+  collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-f896fc9"
   autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-2660b8d"
 
 # Gateway: receive profiles from node collectors, export to Pyroscope (verification) and UI backend (on-demand).
 # Replace namespace in endpoints if your Odigos/Pyroscope are in different namespaces.
-# profilesDebugExport: gateway logs profile payloads to stdout; capture with kubectl logs -f deployment/<gateway> -n <ns> > debug.log
+# Scale gateway to 1 pod (default size_m is 2).
+collectorGateway:
+  minReplicas: 1
+  maxReplicas: 1
+# profilesDebugExport: gateway logs profile payloads (raw OTLP) to stdout; capture with ./scripts/capture-gateway-profile-logs.sh
+# replicas: 0 scales down autoscaler (gateway config stays as last written). First run with replicas: 1 so autoscaler adds debug exporter to gateway, then set 0.
 autoscaler:
+  replicas: 0
   profileVerificationOtlpEndpoint: "pyroscope.pyroscope.svc.cluster.local:4040"
   profilesOtlpEndpointUI: "ui.odigos-system.svc.cluster.local:4318"
   profilesDebugExport: true

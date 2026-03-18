@@ -95,6 +95,7 @@ func profilesReceiverEnabled() bool {
 type ProfileStoreRef interface {
 	StartViewing(sourceKey string)
 	GetProfileData(sourceKey string) [][]byte
+	MaxSlots() int
 	DebugSlots() (activeKeys []string, keysWithData []string)
 }
 
