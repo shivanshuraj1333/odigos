@@ -13,45 +13,46 @@ REPO="${ECR_CORETESTBED:-public.ecr.aws/odigos/dev/coretestbed}"
 SHORT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo 'local')"
 COMPONENT="${1:-autoscaler}"
 
+# Single ECR repo: tag is public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<sha> (no /odigos-* in path)
 make ecr-login
 
 case "$COMPONENT" in
   autoscaler)
     make build-tag-push-ecr-image/autoscaler \
-      IMG_PREFIX="$REPO" TAG="odigos-autoscaler-$SHORT_SHA" ORG=registry.odigos.io \
+      IMG_PREFIX="$REPO" TAG="odigos-autoscaler-$SHORT_SHA" ORG=registry.odigos.io ECR_SINGLE_REPO=1 \
       SUMMARY="Autoscaler for Odigos" DESCRIPTION="Autoscaler manages the installation of Odigos components."
     echo "Pushed $REPO:odigos-autoscaler-$SHORT_SHA"
     ;;
   collector)
     make build-tag-push-ecr-image/collector \
-      IMG_PREFIX="$REPO" TAG="odigos-collector-$SHORT_SHA" ORG=registry.odigos.io \
+      IMG_PREFIX="$REPO" TAG="odigos-collector-$SHORT_SHA" ORG=registry.odigos.io ECR_SINGLE_REPO=1 \
       DOCKERFILE=collector/Dockerfile BUILD_DIR=. \
       SUMMARY="Odigos Collector" DESCRIPTION="The Odigos build of the OpenTelemetry Collector."
     echo "Pushed $REPO:odigos-collector-$SHORT_SHA"
     ;;
   ui)
     make build-tag-push-ecr-image/ui \
-      IMG_PREFIX="$REPO" TAG="odigos-ui-$SHORT_SHA" ORG=registry.odigos.io \
+      IMG_PREFIX="$REPO" TAG="odigos-ui-$SHORT_SHA" ORG=registry.odigos.io ECR_SINGLE_REPO=1 \
       DOCKERFILE=frontend/Dockerfile \
       SUMMARY="UI for Odigos" DESCRIPTION="UI provides the frontend webapp for managing an Odigos installation."
     echo "Pushed $REPO:odigos-ui-$SHORT_SHA"
     ;;
   odiglet)
     make build-tag-push-ecr-image/odiglet \
-      IMG_PREFIX="$REPO" TAG="odigos-odiglet-$SHORT_SHA" ORG=registry.odigos.io \
+      IMG_PREFIX="$REPO" TAG="odigos-odiglet-$SHORT_SHA" ORG=registry.odigos.io ECR_SINGLE_REPO=1 \
       DOCKERFILE=odiglet/Dockerfile \
       SUMMARY="Odiglet for Odigos" DESCRIPTION="Odiglet is the core component of Odigos managing auto-instrumentation."
     echo "Pushed $REPO:odigos-odiglet-$SHORT_SHA"
     ;;
   instrumentor)
     make build-tag-push-ecr-image/instrumentor \
-      IMG_PREFIX="$REPO" TAG="odigos-instrumentor-$SHORT_SHA" ORG=registry.odigos.io \
+      IMG_PREFIX="$REPO" TAG="odigos-instrumentor-$SHORT_SHA" ORG=registry.odigos.io ECR_SINGLE_REPO=1 \
       SUMMARY="Instrumentor for Odigos" DESCRIPTION="Instrumentor manages auto-instrumentation for workloads with Odigos."
     echo "Pushed $REPO:odigos-instrumentor-$SHORT_SHA"
     ;;
   scheduler)
     make build-tag-push-ecr-image/scheduler \
-      IMG_PREFIX="$REPO" TAG="odigos-scheduler-$SHORT_SHA" ORG=registry.odigos.io \
+      IMG_PREFIX="$REPO" TAG="odigos-scheduler-$SHORT_SHA" ORG=registry.odigos.io ECR_SINGLE_REPO=1 \
       SUMMARY="Scheduler for Odigos" DESCRIPTION="Scheduler manages the installation of OpenTelemetry Collectors with Odigos."
     echo "Pushed $REPO:odigos-scheduler-$SHORT_SHA"
     ;;

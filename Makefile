@@ -499,12 +499,11 @@ build-tag-push-ecr-image/%:
 	--build-arg SUMMARY="$(SUMMARY)" \
 	--build-arg DESCRIPTION="$(DESCRIPTION)"
 ifeq ($(ECR_SINGLE_REPO),1)
-	# Single ECR repo: public.ecr.aws/odigos/dev/coretestbed:odigos-<component>-<sha>
-	docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX):$(TAG)
-	docker push $(IMG_PREFIX):$(TAG)
+	@docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX):$(TAG)
+	@docker push $(IMG_PREFIX):$(TAG)
 else
-	docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
-	docker push $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
+	@docker tag $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
+	@docker push $(IMG_PREFIX)/odigos-$*$(IMG_SUFFIX):$(TAG)
 endif
 
 # ECR repo for dev/coretestbed: one repository, tag = odigos-<component>-<short_sha>
