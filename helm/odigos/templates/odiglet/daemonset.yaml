@@ -15,10 +15,11 @@
     {{- end -}}
   {{- end -}}
 {{- end -}}
-{{- $privilegedRequired := or $collectLogs $collectMetrics -}}
+{{- $collectProfiles := .Values.collectorNode.profiles.requirePrivileged | default false -}}
+{{- $privilegedRequired := or $collectLogs $collectMetrics $collectProfiles -}}
 {{- $k8sVersion := include "utils.cleanKubeVersion" . }}
 {{- if and $privilegedRequired .Values.odiglet.unPrivileged }}
-{{ fail "privileged mode is required when collecting logs or metrics, this is currently not supported in unprivileged mode" }}
+{{ fail "privileged mode is required when collecting logs, metrics, or profiles (eBPF); not supported in unprivileged mode" }}
 {{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
@@ -258,11 +259,12 @@ spec:
               mountPath: /var/exchange
         - name: data-collection
           image: '{{ template "utils.imageName" (dict "Values" .Values "Component" "collector" "Tag" $imageTag) }}'
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command:
             - /odigosotelcol
           args:
             - --config=k8scm:{{ .Release.Namespace }}/odigos-data-collection/conf
+            - --feature-gates=service.profilesSupport
           securityContext:
             {{- if $privilegedRequired }}
             privileged: true
@@ -290,6 +292,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: OTEL_LOG_LEVEL
+              value: {{ .Values.collectorNode.logLevel | default .Values.logLevel | default "info" | quote }}
 {{- $nodeLimiter := include "collector.node.memoryLimiter" . | fromYaml }}
             - name: GOMEMLIMIT
               value: "{{ $nodeLimiter.goMiB }}MiB"
@@ -345,6 +349,14 @@ spec:
             {{- if and $collectMetrics (not $hostMetricsDisabled) }}
             - name: hostfs
               mountPath: /hostfs
+              readOnly: true
+            {{- end }}
+            {{- if $collectProfiles }}
+            - name: hostproc
+              mountPath: /hostproc
+              readOnly: true
+            - name: sys-kernel
+              mountPath: /sys/kernel
               readOnly: true
             {{- end }}
             - name: exchange-dir
@@ -526,7 +538,7 @@ spec:
 {{- end }}
       {{- end }} # end of hostPath mounts that are not mandatory
         # needed to load eBPF tracepoints - used by runtime-detector
-      {{- if .Values.odiglet.noHostPid }}
+      {{- if or .Values.odiglet.noHostPid $collectProfiles }}
         - name: hostproc
           hostPath:
             path: /proc

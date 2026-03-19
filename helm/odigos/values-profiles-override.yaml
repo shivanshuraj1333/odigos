@@ -1,0 +1,65 @@
+# Odigos with profiling. Pipeline: DC (node collectors) → gateway only → gateway exports to Pyroscope + UI.
+# DC sends only to odigos-gateway.<namespace>:4317; gateway then forwards profiles to Pyroscope and UI backend.
+# On-demand: user opens Profiler in UI and clicks "Load data"; backend caches and serves flame graph.
+#
+# EKS cluster prerequisites:
+#   - kubectl context set to the EKS cluster
+#   - Odigos installed (or will be) in odigos-system; Pyroscope in pyroscope namespace (for verification endpoint)
+#
+# Usage:
+#   helm upgrade odigos ./helm/odigos -n odigos-system -f ./helm/odigos/values-profiles-override.yaml \
+#     --set images.ui=public.ecr.aws/odigos/dev/coretestbed:odigos-ui-<SHA>
+#   kubectl rollout restart daemonset/odiglet -n odigos-system   # pick up node collector config + OTEL_LOG_LEVEL
+#
+# If your release or Pyroscope is in another namespace, change "odigos-system" / "pyroscope" in the endpoints below.
+#
+# Capture node collector debug logs (after collectorNode.logLevel: "debug" and rollout restart):
+#   ./scripts/capture-node-collector-logs.sh
+#   NAMESPACE=odigos-system OUTPUT=my.log TAIL=10000 ./scripts/capture-node-collector-logs.sh
+
+image:
+  tag: "v1.21.0"
+
+images:
+  scheduler: "public.ecr.aws/odigos/dev/coretestbed:odigos-scheduler-c8297dd"
+  instrumentor: "public.ecr.aws/odigos/dev/coretestbed:odigos-instrumentor-c8297dd"
+  ui: "public.ecr.aws/odigos/dev/coretestbed:odigos-ui-c1b713f"
+  odiglet: "public.ecr.aws/odigos/dev/coretestbed:odigos-odiglet-f896fc9"
+  agents: "keyval/odigos-agents:v1.21.0"
+  collector: "public.ecr.aws/odigos/dev/coretestbed:odigos-collector-f896fc9"
+  autoscaler: "public.ecr.aws/odigos/dev/coretestbed:odigos-autoscaler-2660b8d"
+
+# Gateway: receive profiles from node collectors, export to Pyroscope (verification) and UI backend (on-demand).
+# Replace namespace in endpoints if your Odigos/Pyroscope are in different namespaces.
+# Scale gateway to 1 pod (default size_m is 2).
+collectorGateway:
+  minReplicas: 1
+  maxReplicas: 1
+# profilesDebugExport: gateway logs profile payloads (raw OTLP) to stdout; capture with ./scripts/capture-gateway-profile-logs.sh
+# replicas: 0 scales down autoscaler (gateway config stays as last written). First run with replicas: 1 so autoscaler adds debug exporter to gateway, then set 0.
+autoscaler:
+  replicas: 0
+  profileVerificationOtlpEndpoint: "pyroscope.pyroscope.svc.cluster.local:4040"
+  profilesOtlpEndpointUI: "ui.odigos-system.svc.cluster.local:4318"
+  profilesDebugExport: true
+
+# UI: profiling receiver + cache; debug logging for [profiling] and main app.
+ui:
+  logLevel: "debug"
+  profiling:
+    enabled: true
+    debugLogs: true
+    slotTTLSeconds: 30
+    maxSlots: 10
+    slotMaxBytes: 5242880
+    cleanupIntervalSeconds: 15
+
+# Node collector (DC): eBPF profiling at 97 Hz, enrich with k8s metadata, send to gateway.
+# requirePrivileged: required for eBPF; filterUnattributedOnly: drop unattributed; samplesPerSecond: 97.
+# logLevel: set to "debug" so the data-collection container emits debug logs (OTEL_LOG_LEVEL env in daemonset).
+collectorNode:
+  logLevel: "debug"
+  profiles:
+    requirePrivileged: true
+    filterUnattributedOnly: true
+    samplesPerSecond: 97

@@ -12,5 +12,7 @@ spec:
       port: 3000
     - name: otlp
       port: 4317
+    - name: otlp-profiles
+      port: 4318
   selector:
     app: odigos-ui

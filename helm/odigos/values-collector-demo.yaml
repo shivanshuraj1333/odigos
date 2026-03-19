@@ -1,0 +1,15 @@
+# Fresh install: keyval/* from Docker Hub (https://hub.docker.com/u/keyval) v1.21.0,
+# collector from public.ecr.aws/odigos/dev/coretestbed:odigos-collector-demo.
+# Profiling: gateway forwards profiles to Pyroscope (profileVerificationOtlpEndpoint).
+
+imagePrefix: keyval
+image:
+  tag: "v1.21.0"
+
+images:
+  collector: public.ecr.aws/odigos/dev/coretestbed:odigos-collector-3e415e05
+
+# Gateway forwards profiles to this OTLP endpoint (e.g. Pyroscope). Pyroscope uses port 4040 for OTLP/gRPC (same as UI).
+# Use the pyroscope namespace if Pyroscope is deployed there (e.g. Helm grafana/pyroscope).
+autoscaler:
+  profileVerificationOtlpEndpoint: "pyroscope.pyroscope.svc.cluster.local:4040"

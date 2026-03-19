@@ -7,7 +7,7 @@ import { getSseTargetFromId } from '@odigos/ui-kit/functions';
 import { DISPLAY_TITLES, FORM_ALERTS } from '@odigos/ui-kit/constants';
 import { useEntityStore, useNotificationStore } from '@odigos/ui-kit/store';
 import { CREATE_ACTION, DELETE_ACTION, UPDATE_ACTION } from '@/graphql/mutations';
-import { ActionType, Crud, EntityTypes, StatusType, type Action, type ActionFormData } from '@odigos/ui-kit/types';
+import { ActionType, Crud, EntityTypes, StatusType, type Action, type ActionFormData, SignalType, SIGNAL_KEY_TO_TYPE } from '@odigos/ui-kit/types';
 
 interface UseActionCrud {
   actions: Action[];
@@ -43,6 +43,16 @@ const stringifyRenames = (action: ActionFormData): ActionInput => {
   };
 };
 
+/** Ensure signals is SignalType[] so ui-kit's monitors map never sees undefined. Accepts enum or lowercase keys. */
+function sanitizeSignals(signals: unknown): SignalType[] {
+  if (!Array.isArray(signals)) return [];
+  const valid = new Set(Object.values(SignalType));
+  return signals
+    .filter((s): s is string => typeof s === 'string')
+    .map((s) => (valid.has(s as SignalType) ? (s as SignalType) : SIGNAL_KEY_TO_TYPE[s as keyof typeof SIGNAL_KEY_TO_TYPE]))
+    .filter((s): s is SignalType => s != null);
+}
+
 const parseRenames = (action: FetchedAction): Action => {
   return {
     ...action,
@@ -50,6 +60,7 @@ const parseRenames = (action: FetchedAction): Action => {
       ...action.fields,
       renames: action.fields.renames ? JSON.parse(action.fields.renames) : null,
     },
+    signals: sanitizeSignals(action.signals),
   };
 };
 

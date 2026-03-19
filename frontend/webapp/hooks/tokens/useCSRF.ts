@@ -110,15 +110,13 @@ export const useCSRF = (): UseCSRF => {
   }, []);
 
   useEffect(() => {
-    if (IS_LOCAL) {
-      return;
-    }
-
-    // Fetch token on mount
+    // Always fetch when no token (including dev/port-forward) so GraphQL requests send X-CSRF-Token when backend has cookie → avoids 400
     if (!token) {
       fetchCSRFToken();
       return;
     }
+
+    if (IS_LOCAL) return;
 
     // Refresh token every 23 hours (before 24h expiry)
     const refreshInterval = setInterval(() => fetchCSRFToken(), 23 * 60 * 60 * 1000);
