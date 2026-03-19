@@ -23,15 +23,14 @@ var jsonMarshaler pprofile.JSONMarshaler
 var dumpDir string
 var dumpSeq atomic.Uint64
 
-const defaultDumpDir = "profile-dumps"
-
 func init() {
 	dumpDir = os.Getenv("PROFILE_DEBUG_DUMP_DIR")
-	switch strings.ToLower(dumpDir) {
-	case "off", "disabled", "false":
+	switch strings.ToLower(strings.TrimSpace(dumpDir)) {
+	case "off", "disabled", "false", "":
 		dumpDir = ""
-	case "":
-		dumpDir = defaultDumpDir
+	default:
+		// Only enable dump when explicitly set to a non-empty path (debugging only).
+		dumpDir = strings.TrimSpace(dumpDir)
 	}
 	if dumpDir != "" {
 		if err := os.MkdirAll(dumpDir, 0755); err != nil {
