@@ -143,6 +143,8 @@ const (
 	GroupByTraceProcessorV2         = "groupbytrace/samplingv2"
 	OdigosTailSamplingProcessorName = "odigostailsampling"
 	URLTemplatizationProcessorName  = "odigos-url-templatization"
+	// OdigosURLTemplateProcessorType is the OpenTelemetry component type for the URL templatization processor.
+	OdigosURLTemplateProcessorType = "odigosurltemplate"
 )
 
 // Auto rollback related consts

@@ -2,6 +2,7 @@ package actions
 
 import (
 	"github.com/odigos-io/odigos/api/k8sconsts"
+	"github.com/odigos-io/odigos/common/consts"
 )
 
 const ActionNameURLTemplatization = "URLTemplatization"
@@ -52,9 +53,10 @@ type URLTemplatizationConfig struct {
 }
 
 func (URLTemplatizationConfig) ProcessorType() string {
-	return "odigosurltemplate"
+	return consts.OdigosURLTemplateProcessorType
 }
 
+// OrderHint is 1 so URL templatization runs before spans reach the spanmetrics connector on the data-collection collector.
 func (URLTemplatizationConfig) OrderHint() int {
 	return 1
 }

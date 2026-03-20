@@ -43,7 +43,17 @@ func createTracesProcessor(
 		return nil, err
 	}
 
-	opts := []processorhelper.Option{processorhelper.WithCapabilities(consumerCapabilities)}
+	opts := []processorhelper.Option{
+		processorhelper.WithCapabilities(consumerCapabilities),
+		processorhelper.WithShutdown(func(ctx context.Context) error {
+			if proc.provider != nil {
+				proc.provider.UnregisterWorkloadConfigCacheCallback(proc)
+				proc.provider = nil
+			}
+			proc.parsedRulesCache.clear()
+			return nil
+		}),
+	}
 	if oCfg.WorkloadConfigExtensionID != "" {
 		opts = append(opts, processorhelper.WithStart(func(ctx context.Context, host component.Host) error {
 			return resolveAndRegisterExtension(ctx, host, proc, oCfg.WorkloadConfigExtensionID, set.Logger)

@@ -9,7 +9,7 @@ import (
 )
 
 // SharedURLTemplatizationProcessorReconciler reconciles the shared URL-templatization Processor CR.
-// When that Processor is created/updated/deleted, it re-syncs from Actions (list Actions, create or delete Processor).
+// On any change, it runs SyncUrlTemplatizationProcessor with fromActionController=false so the CR matches Actions and placement.
 type SharedURLTemplatizationProcessorReconciler struct {
 	client.Client
 }

@@ -158,6 +158,7 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 
 	processors := common.FilterAndSortProcessorsByOrderHint(allProcessors, odigosv1.CollectorsGroupRoleClusterGateway)
 
+	// Gateway always registers the Odigos workload config extension; the node collector may also load it when URL templatization runs there.
 	odigosConfigExtensionName := k8sconsts.OdigosConfigK8sExtensionType
 	gatewayOptions := pipelinegen.GatewayConfigOptions{
 		ServiceGraph: odigoscommon.ServiceGraphOptions{

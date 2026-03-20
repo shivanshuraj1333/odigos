@@ -4,6 +4,11 @@ import (
 	"fmt"
 )
 
+// TraceSpanMetricsOrderSplit separates trace processors on the data-collection collector:
+// hints strictly below run in the main "traces" pipeline before exporters (including the spanmetrics connector);
+// hints at or above run in the optional "traces/exporting" pipeline after span metrics (see nodecollector TracesConfig).
+const TraceSpanMetricsOrderSplit = 10
+
 type CrdProcessorResults struct {
 	ProcessorsConfig                Config
 	TracesProcessors                []string
@@ -39,13 +44,10 @@ func CrdProcessorToConfig(processors []ProcessorConfigurer) CrdProcessorResults 
 		results.ProcessorsConfig.Processors[processorKey] = processorsConfig
 
 		if isTracingEnabled(processor) {
-			// for traces processors, we differentiate between 2:
-			// - regular ones with order hint < 10
-			// - those that have order hint >= 10, which are applied for exporting, but after spanmetrics is calculated.
-			// it can be used to add simple sampling (not tail) in node-collector, which will happen after the span metrics are calculated.
-			if processor.GetOrderHint() < 10 {
+			if processor.GetOrderHint() < TraceSpanMetricsOrderSplit {
 				results.TracesProcessors = append(results.TracesProcessors, processorKey)
 			} else {
+				// After spanmetrics: optional second pipeline for processors that must see spans post-connector.
 				results.TracesProcessorsPostSpanMetrics = append(results.TracesProcessorsPostSpanMetrics, processorKey)
 			}
 		}

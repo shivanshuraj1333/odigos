@@ -99,8 +99,9 @@ func TracesConfig(nodeCG *odigosv1.CollectorsGroup, odigosNamespace string, mani
 
 	exporters, traceExporterNames := tracesExporters(nodeCG, odigosNamespace, tracesEnabledInClusterCollector, loadBalancingNeeded)
 
-	// traces pipeline also feeds the spanmetrics connector.
-	// users may want some custom processors (manifestProcessorNames)
+	// manifestProcessorNames: CRD trace processors with order hint < config.TraceSpanMetricsOrderSplit.
+	// They run here before pipeline exporters; when span metrics is on, exporters include the spanmetrics connector input,
+	// so URL templatization (hint 1) sees spans before span metrics are derived.
 
 	tracePipelineProcessors := append([]string{
 		batchProcessorName,         // always start with batch

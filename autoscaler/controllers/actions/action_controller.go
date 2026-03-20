@@ -21,6 +21,7 @@ import (
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	"github.com/odigos-io/odigos/k8sutils/pkg/utils"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type ActionReconciler struct {
@@ -184,9 +185,10 @@ func convertToDefaultProcessor(action *odigosv1.Action, actionConfig ActionConfi
 		return nil, err
 	}
 
-	collectorRoles := []odigosv1.CollectorsGroupRole{}
-	for _, role := range actionConfig.CollectorRoles() {
-		collectorRoles = append(collectorRoles, odigosv1.CollectorsGroupRole(role))
+	roles := actionConfig.CollectorRoles()
+	collectorRoles := make([]odigosv1.CollectorsGroupRole, 0, len(roles))
+	for _, r := range roles {
+		collectorRoles = append(collectorRoles, odigosv1.CollectorsGroupRole(r))
 	}
 
 	processor := odigosv1.Processor{
@@ -235,7 +237,7 @@ func hasAnyUrlTemplatizationAction(ctx context.Context, c client.Client, namespa
 	return false, nil
 }
 
-func buildUrlTemplatizationProcessor(namespace string) (*odigosv1.Processor, error) {
+func buildUrlTemplatizationProcessor(namespace string, spanMetricsEnabled bool) (*odigosv1.Processor, error) {
 	cfg := actions.URLTemplatizationConfig{}
 	configJSON, err := json.Marshal(map[string]interface{}{
 		"workload_config_extension": k8sconsts.OdigosConfigK8sExtensionType,
@@ -243,9 +245,13 @@ func buildUrlTemplatizationProcessor(namespace string) (*odigosv1.Processor, err
 	if err != nil {
 		return nil, fmt.Errorf("marshal url templatization processor config: %w", err)
 	}
-	roles := make([]odigosv1.CollectorsGroupRole, 0, len(cfg.CollectorRoles()))
-	for _, r := range cfg.CollectorRoles() {
-		roles = append(roles, odigosv1.CollectorsGroupRole(r))
+	// Single shared Processor CR: either gateway-only or node-only. Span metrics on → node (gateway still runs the
+	// extension for tail sampling); span metrics off → gateway. Mutually exclusive CollectorRoles.
+	var roles []odigosv1.CollectorsGroupRole
+	if spanMetricsEnabled {
+		roles = []odigosv1.CollectorsGroupRole{odigosv1.CollectorsGroupRoleNodeCollector}
+	} else {
+		roles = []odigosv1.CollectorsGroupRole{odigosv1.CollectorsGroupRoleClusterGateway}
 	}
 	return &odigosv1.Processor{
 		TypeMeta: metav1.TypeMeta{APIVersion: "odigos.io/v1alpha1", Kind: "Processor"},
@@ -265,10 +271,15 @@ func buildUrlTemplatizationProcessor(namespace string) (*odigosv1.Processor, err
 	}, nil
 }
 
-// SyncUrlTemplatizationProcessor creates or deletes the shared URL-templatization Processor to match Actions.
-// When fromActionController is true, skips build+Apply if the Processor already exists (only create when missing).
-// When false (e.g. clustercollector), always build and Apply when need so edits/deletes are reverted.
+// SyncUrlTemplatizationProcessor creates, patches, or deletes the shared URL-templatization Processor from Actions.
+//
+// When fromActionController is true: if the Processor already exists, returns without patching (create-if-missing only).
+// Role or span-metrics changes are handled by other reconcilers that call with fromActionController false.
+//
+// When false: always builds and applies (or deletes) so the CR matches Actions and node CollectorsGroup state
+// (SharedURLTemplatizationProcessorReconciler, URLTemplateNodeCGReconciler, etc.).
 func SyncUrlTemplatizationProcessor(ctx context.Context, c client.Client, fromActionController bool) error {
+	logger := commonlogger.FromContext(ctx).WithName("url-templatization")
 	ns := env.GetCurrentNamespace()
 	need, err := hasAnyUrlTemplatizationAction(ctx, c, ns)
 	if err != nil {
@@ -276,7 +287,12 @@ func SyncUrlTemplatizationProcessor(ctx context.Context, c client.Client, fromAc
 	}
 	if !need {
 		proc := &odigosv1.Processor{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: consts.URLTemplatizationProcessorName}}
-		return client.IgnoreNotFound(c.Delete(ctx, proc))
+		err = c.Delete(ctx, proc)
+		if err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		logger.Debug("shared processor removed", "reason", "no URL templatization action")
+		return nil
 	}
 	if fromActionController {
 		existing := &odigosv1.Processor{}
@@ -284,7 +300,16 @@ func SyncUrlTemplatizationProcessor(ctx context.Context, c client.Client, fromAc
 			return nil
 		}
 	}
-	proc, err := buildUrlTemplatizationProcessor(ns)
+	nodeCG := &odigosv1.CollectorsGroup{}
+	err = c.Get(ctx, client.ObjectKey{Namespace: ns, Name: k8sconsts.OdigosNodeCollectorCollectorGroupName}, nodeCG)
+	spanMetricsEnabled := false
+	if err == nil && nodeCG.Spec.Metrics != nil && nodeCG.Spec.Metrics.SpanMetrics != nil {
+		spanMetricsEnabled = true
+	}
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get node CollectorsGroup: %w", err)
+	}
+	proc, err := buildUrlTemplatizationProcessor(ns, spanMetricsEnabled)
 	if err != nil {
 		return err
 	}
@@ -357,7 +382,7 @@ func (r *ActionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if err := SyncUrlTemplatizationProcessor(ctx, r.Client, true); err != nil {
-		logger.Error(err, "Sync URL templatization processor")
+		logger.Error(err, "sync URL templatization processor failed")
 		return ctrl.Result{}, err
 	}
 	if action.Spec.URLTemplatization != nil {
