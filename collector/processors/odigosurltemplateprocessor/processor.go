@@ -35,7 +35,7 @@ type urlTemplateProcessor struct {
 	excludeMatcher *PropertiesMatcher
 	includeMatcher *PropertiesMatcher
 
-	// provider is optionally set in Start() when workload_config_extension is configured.
+	// provider is optionally set in Start() when odigos_config_extension is configured.
 	// When set, per-workload rules are fetched from the extension cache and the
 	// static include/exclude matchers are bypassed.
 	provider collector.OdigosConfigExtension

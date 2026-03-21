@@ -43,30 +43,39 @@ func createTracesProcessor(
 		return nil, err
 	}
 
-	opts := []processorhelper.Option{processorhelper.WithCapabilities(consumerCapabilities)}
-	if oCfg.WorkloadConfigExtensionID != "" {
+	opts := []processorhelper.Option{
+		processorhelper.WithCapabilities(consumerCapabilities),
+		processorhelper.WithShutdown(func(ctx context.Context) error {
+			if proc.provider != nil {
+				proc.provider.UnregisterWorkloadConfigCacheCallback(proc)
+				proc.provider = nil
+			}
+			proc.parsedRulesCache.clear()
+			return nil
+		}),
+	}
+	if oCfg.OdigosConfigExtension != nil {
 		opts = append(opts, processorhelper.WithStart(func(ctx context.Context, host component.Host) error {
-			return resolveAndRegisterExtension(ctx, host, proc, oCfg.WorkloadConfigExtensionID, set.Logger)
+			return resolveAndRegisterExtension(ctx, host, proc, oCfg.OdigosConfigExtension, set.Logger)
 		}))
 	}
 
 	return processorhelper.NewTraces(ctx, set, cfg, nextConsumer, proc.processTraces, opts...)
 }
 
-// resolveAndRegisterExtension finds the OdigosConfigExtension by type (and optional named instance), registers the processor as callback, and waits for cache sync.
-func resolveAndRegisterExtension(ctx context.Context, host component.Host, proc *urlTemplateProcessor, extTypeStr string, logger *zap.Logger) error {
-	extType, err := component.NewType(extTypeStr)
-	if err != nil {
-		return fmt.Errorf("invalid workload config extension type %q: %w", extTypeStr, err)
+// resolveAndRegisterExtension finds the OdigosConfigExtension by ID (or same type as fallback for named instances), registers the processor as callback, and waits for cache sync.
+func resolveAndRegisterExtension(ctx context.Context, host component.Host, proc *urlTemplateProcessor, extID *component.ID, logger *zap.Logger) error {
+	if extID == nil {
+		return nil
 	}
 	extensions := host.GetExtensions()
-	directID := component.NewID(extType)
-	if ext, ok := extensions[directID]; ok {
-		tryRegisterWithExtension(ext, proc, directID.String(), logger)
+	if ext, ok := extensions[*extID]; ok {
+		tryRegisterWithExtension(ext, proc, extID.String(), logger)
 	} else {
 		// Fallback when extension is registered with a named ID (e.g. odigos_config_k8s/production).
+		wantType := extID.Type()
 		for id, ext := range extensions {
-			if id.Type() == extType {
+			if id.Type() == wantType {
 				tryRegisterWithExtension(ext, proc, id.String(), logger)
 				break
 			}
@@ -74,12 +83,12 @@ func resolveAndRegisterExtension(ctx context.Context, host component.Host, proc 
 	}
 	if proc.provider != nil {
 		if !proc.provider.WaitForCacheSync(ctx) {
-			logger.Warn("workload config extension cache sync did not complete; some spans may be missed on startup")
+			logger.Warn("odigos config extension cache sync did not complete; some spans may be missed on startup")
 		}
 	}
 	if proc.provider == nil {
-		logger.Info("workload config extension not found; using static rules from config",
-			zap.String("type", extTypeStr))
+		logger.Info("odigos config extension not found; using static rules from config",
+			zap.String("extension_id", extID.String()))
 	}
 	return nil
 }

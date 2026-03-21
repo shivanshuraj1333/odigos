@@ -84,11 +84,11 @@ type Config struct {
 	// It is optional and defaults to empty.
 	TemplatizationConfig `mapstructure:",squash"`
 
-	// WorkloadConfigExtensionID is the OTel component type string of the workload config extension.
-	// When set, the processor reads per-workload templatization rules from the extension cache
-	// instead of using the static TemplatizationConfig above.
-	// The extension must implement OdigosConfigExtension (e.g. odigosconfigk8sextension).
-	WorkloadConfigExtensionID string `mapstructure:"workload_config_extension"`
+	// OdigosConfigExtension identifies the collector extension that provides per-workload Odigos config
+	// (same field as odigostailsamplingprocessor). When set, templatization rules are read from the
+	// extension cache; when nil, only static TemplatizationConfig above applies.
+	// The extension must implement OdigosConfigExtension (e.g. odigos_config_k8s).
+	OdigosConfigExtension *component.ID `mapstructure:"odigos_config_extension"`
 }
 
 var _ xconfmap.Validator = (*Config)(nil)
@@ -148,10 +148,11 @@ func (c Config) Validate() error {
 		}
 	}
 
-	if c.WorkloadConfigExtensionID != "" {
-		// Validate the extension type string is a valid OTel component type.
-		if _, err := component.NewType(c.WorkloadConfigExtensionID); err != nil {
-			return fmt.Errorf("invalid workload_config_extension type %q: %w", c.WorkloadConfigExtensionID, err)
+	// When set, the extension component type must be a valid OTel type string.
+	if c.OdigosConfigExtension != nil {
+		typeStr := c.OdigosConfigExtension.Type().String()
+		if _, err := component.NewType(typeStr); err != nil {
+			return fmt.Errorf("invalid odigos_config_extension type %q: %w", typeStr, err)
 		}
 	}
 

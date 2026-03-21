@@ -8,15 +8,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// SharedURLTemplatizationProcessorReconciler reconciles the shared URL-templatization Processor CR.
-// When that Processor is created/updated/deleted, it re-syncs from Actions (list Actions, create or delete Processor).
+// SharedURLTemplatizationProcessorReconciler reconciles the shared URL-templatization Processor CR
 type SharedURLTemplatizationProcessorReconciler struct {
 	client.Client
 }
 
 func (r *SharedURLTemplatizationProcessorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := commonlogger.FromContext(ctx)
-	if err := SyncUrlTemplatizationProcessor(ctx, r.Client, false); err != nil {
+	if err := SyncUrlTemplatizationProcessor(ctx, r.Client, URLTemplatizationSyncApplyFull); err != nil {
 		logger.Error(err, "Sync shared URL-templatization processor failed")
 		return ctrl.Result{}, err
 	}
