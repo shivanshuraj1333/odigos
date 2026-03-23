@@ -1,0 +1,43 @@
+# OTel Demo values — SDK instrumentation and collector disabled.
+# Odigos will instrument all services instead.
+
+# ── Disable the built-in OpenTelemetry Collector ─────────────────────────────
+# Odigos deploys its own collector (odigos-gateway); we don't need otel-demo's.
+opentelemetry-collector:
+  enabled: false
+
+# ── Disable bundled observability backends ────────────────────────────────────
+# Odigos manages telemetry routing; these are not needed.
+jaeger:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
+opensearch:
+  enabled: false
+
+# ── Globally disable OTel telemetry export across every component ─────────────
+# Setting per-signal exporters to "none" keeps the SDK initialized (avoiding
+# issues like the Ruby email service's ProxyMeterProvider bug with SDK_DISABLED)
+# but prevents any telemetry from being sent to a backend.
+# Odigos will instrument all services via eBPF and route telemetry itself.
+# envOverrides are appended to the default env block for every component.
+default:
+  envOverrides:
+    - name: OTEL_TRACES_EXPORTER
+      value: "none"
+    - name: OTEL_METRICS_EXPORTER
+      value: "none"
+    - name: OTEL_LOGS_EXPORTER
+      value: "none"
+
+# ── Disable feature-flag service ──────────────────────────────────────────────
+# flagd-ui sidecar tries to reach the (disabled) collector and crashes.
+# Not needed for our instrumentation demo.
+components:
+  flagd:
+    enabled: false

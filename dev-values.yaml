@@ -1,0 +1,32 @@
+# Odigos dev values — images built from commit 73bf21a9 and pushed to local kind registry.
+#
+# Local registry setup:
+#   - Registry container: kind-registry (Docker) listening on localhost:5001
+#   - Connected to the 'kind' Docker network so cluster nodes resolve it as kind-registry:5000
+#   - Kind nodes configured with /etc/containerd/certs.d/localhost:5001/hosts.toml
+#     to mirror pulls from localhost:5001 → http://kind-registry:5000
+#
+# To install:
+#   helm upgrade --install odigos ./helm/odigos \
+#     --namespace odigos-system --create-namespace \
+#     -f dev-values.yaml
+#
+# To rebuild & re-push after code changes:
+#   COMMIT=$(git rev-parse --short=8 HEAD)
+#   make build-images TAG=dev-${COMMIT} ORG=localhost:5001
+#   for img in autoscaler instrumentor scheduler collector ui odiglet agents; do
+#     docker push localhost:5001/odigos-${img}:dev-${COMMIT} &
+#   done; wait
+#   # Then update image.tag below to dev-${COMMIT} and helm upgrade.
+
+image:
+  tag: "dev-73bf21a9"
+
+# Pull all component images from the local kind registry.
+# The helm chart constructs: {imagePrefix}/odigos-{component}:{image.tag}
+imagePrefix: "localhost:5001"
+
+clusterName: "odigos"
+
+# Speed up dev iteration — verbose logging.
+logLevel: "debug"
