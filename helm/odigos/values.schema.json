@@ -2069,6 +2069,40 @@
           "description": "uiRemoteUrl:\n - This flag sets the URL of the remote UI (e.g. https://my-odigos-ui.com).\n - If not set, the UI will default to the local UI.\n - This is useful when you are hosting the Odigos UI on a custom/remote URL, and require OIDC authentication.",
           "required": [],
           "title": "uiRemoteUrl"
+        },
+        "profiling": {
+          "additionalProperties": false,
+          "description": "Continuous profiling: expose OTLP Profiles gRPC on the UI Service, and set PROFILES_OTLP_ENDPOINT_UI on the autoscaler so the cluster gateway forwards profiles to the UI.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "When true, the UI listens for OTLP Profiles on otlpGrpcPort, and the autoscaler configures the gateway profiles pipeline to export to dns:///ui.<release-namespace>:<port>.",
+              "type": "boolean"
+            },
+            "maxSlots": {
+              "default": 10,
+              "description": "Max concurrent sources with profiling slots (PROFILES_MAX_SLOTS on the UI).",
+              "type": "integer"
+            },
+            "otlpGrpcPort": {
+              "default": 4318,
+              "description": "gRPC port for OTLP Profiles on the UI pod and Service (must match frontend receiver default).",
+              "type": "integer"
+            },
+            "slotMaxBytes": {
+              "default": 20971520,
+              "description": "Per-source rolling buffer cap in bytes (PROFILES_SLOT_MAX_BYTES on the UI).",
+              "type": "integer"
+            },
+            "slotTTLSeconds": {
+              "default": 600,
+              "description": "Slot idle TTL in seconds (PROFILES_SLOT_TTL_SECONDS on the UI). Polling GET refreshes the slot.",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "profiling",
+          "type": "object"
         }
       },
       "required": [],

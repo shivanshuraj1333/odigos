@@ -12,5 +12,11 @@ spec:
       port: 3000
     - name: otlp
       port: 4317
+    {{- $prof := .Values.ui.profiling | default dict }}
+    {{- if (default true $prof.enabled) }}
+    - name: otlp-profiles
+      port: {{ default 4318 $prof.otlpGrpcPort }}
+      targetPort: otlp-profiles
+    {{- end }}
   selector:
     app: odigos-ui

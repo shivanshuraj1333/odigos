@@ -623,6 +623,17 @@ ui:
   # @schema
   uiRemoteUrl: ''
 
+  # Continuous profiling: OTLP Profiles gRPC on the UI pod, cluster gateway forwards profiles to ui.<namespace>:<port>.
+  # @schema
+  # additionalProperties: false
+  # @schema
+  profiling:
+    enabled: true
+    otlpGrpcPort: 4318
+    slotTTLSeconds: 600
+    maxSlots: 10
+    slotMaxBytes: 20971520
+
   # @schema
   # description: |-
   #   oidcTenantUrl:
