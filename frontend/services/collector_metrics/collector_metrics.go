@@ -16,9 +16,11 @@ import (
 	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/xconsumer"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.opentelemetry.io/collector/receiver/receivertest"
+	"go.opentelemetry.io/collector/receiver/xreceiver"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"k8s.io/apimachinery/pkg/watch"
 )
@@ -188,8 +190,9 @@ func NewOdigosMetrics() *OdigosMetricsConsumer {
 	}
 }
 
-// Run starts the OTLP receiver and the notifications loop for receiving and processing the metrics from different Odigos collectors
-func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string) {
+// Run starts the OTLP receiver and the notifications loop for receiving and processing the metrics from different Odigos collectors.
+// When profilesConsumer is non-nil, OTLP Profiles are served on the same gRPC endpoint as metrics (default 4317) via the shared OTLP receiver.
+func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string, profilesConsumer xconsumer.Profiles) {
 	var closeWg sync.WaitGroup
 	// launch the notifications loop
 	closeWg.Add(1)
@@ -211,15 +214,12 @@ func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string) {
 		}
 	}()
 
-	// setup the OTLP receiver
+	// OTLP gRPC (4317): metrics + optional profiles share one receiver instance (same *otlpreceiver.Config pointer).
 	f := otlpreceiver.NewFactory()
-
 	cfg, ok := f.CreateDefaultConfig().(*otlpreceiver.Config)
 	if !ok {
 		panic("failed to cast default config to otlpreceiver.Config")
 	}
-
-	// Modify the gRPC listener address
 	cfg.GRPC = configoptional.Some(configgrpc.ServerConfig{
 		NetAddr: confignet.AddrConfig{
 			Endpoint:  "0.0.0.0:4317",
@@ -227,18 +227,40 @@ func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string) {
 		},
 	})
 
-	r, err := f.CreateMetrics(ctx, receivertest.NewNopSettings(f.Type()), cfg, c)
+	metricsRcvr, err := f.CreateMetrics(ctx, receivertest.NewNopSettings(f.Type()), cfg, c)
 	if err != nil {
-		panic("failed to create receiver")
+		panic("failed to create metrics receiver")
+	}
+	var profilesRcvr xreceiver.Profiles
+	if profilesConsumer != nil {
+		xFac, ok := f.(xreceiver.Factory)
+		if !ok {
+			panic("otlp receiver factory does not implement xreceiver.Factory")
+		}
+		profilesRcvr, err = xFac.CreateProfiles(ctx, receivertest.NewNopSettings(f.Type()), cfg, profilesConsumer)
+		if err != nil {
+			panic("failed to create profiles receiver")
+		}
 	}
 
-	if err := r.Start(ctx, componenttest.NewNopHost()); err != nil {
-		log.Printf("failed to start OTLP receiver: %v", err)
+	host := componenttest.NewNopHost()
+	if err := metricsRcvr.Start(ctx, host); err != nil {
+		log.Printf("failed to start OTLP metrics receiver: %v", err)
+	}
+	if profilesRcvr != nil {
+		if err := profilesRcvr.Start(ctx, host); err != nil {
+			log.Printf("failed to start OTLP profiles receiver: %v", err)
+		}
 	}
 
-	defer r.Shutdown(ctx)
+	defer func() {
+		_ = metricsRcvr.Shutdown(ctx)
+		if profilesRcvr != nil {
+			_ = profilesRcvr.Shutdown(ctx)
+		}
+	}()
 
-	log.Println("OTLP receiver is running")
+	log.Printf("OTLP receiver is running (gRPC :4317, profiles=%v)", profilesRcvr != nil)
 	<-ctx.Done()
 	closeWg.Wait()
 }
