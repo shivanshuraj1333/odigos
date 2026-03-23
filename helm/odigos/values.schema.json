@@ -2069,6 +2069,35 @@
           "description": "uiRemoteUrl:\n - This flag sets the URL of the remote UI (e.g. https://my-odigos-ui.com).\n - If not set, the UI will default to the local UI.\n - This is useful when you are hosting the Odigos UI on a custom/remote URL, and require OIDC authentication.",
           "required": [],
           "title": "uiRemoteUrl"
+        },
+        "profiling": {
+          "additionalProperties": false,
+          "description": "Continuous profiling: OTLP Profiles use the same UI OTLP gRPC port as collector metrics (4317). Autoscaler sets PROFILES_OTLP_ENDPOINT_UI so the gateway exports profiles to the UI.",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "When true, the UI registers an OTLP Profiles consumer on gRPC :4317 (shared with metrics), and the autoscaler sets PROFILES_OTLP_ENDPOINT_UI=dns:///ui.<release-namespace>:4317.",
+              "type": "boolean"
+            },
+            "maxSlots": {
+              "default": 10,
+              "description": "Max concurrent sources with profiling slots (PROFILES_MAX_SLOTS on the UI).",
+              "type": "integer"
+            },
+            "slotMaxBytes": {
+              "default": 20971520,
+              "description": "Per-source rolling buffer cap in bytes (PROFILES_SLOT_MAX_BYTES on the UI).",
+              "type": "integer"
+            },
+            "slotTTLSeconds": {
+              "default": 600,
+              "description": "Slot idle TTL in seconds (PROFILES_SLOT_TTL_SECONDS on the UI). Polling GET refreshes the slot.",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "profiling",
+          "type": "object"
         }
       },
       "required": [],

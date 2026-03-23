@@ -623,6 +623,16 @@ ui:
   # @schema
   uiRemoteUrl: ''
 
+  # Continuous profiling: OTLP Profiles share the UI OTLP gRPC port (4317) with collector metrics; gateway exports to ui.<namespace>:4317.
+  # @schema
+  # additionalProperties: false
+  # @schema
+  profiling:
+    enabled: true
+    slotTTLSeconds: 600
+    maxSlots: 10
+    slotMaxBytes: 20971520
+
   # @schema
   # description: |-
   #   oidcTenantUrl:

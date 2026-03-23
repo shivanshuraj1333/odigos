@@ -53,6 +53,17 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          {{- $prof := .Values.ui.profiling | default dict }}
+          {{- if (default true $prof.enabled) }}
+          - name: ENABLE_PROFILES_RECEIVER
+            value: "true"
+          - name: PROFILES_SLOT_TTL_SECONDS
+            value: {{ default 600 $prof.slotTTLSeconds | quote }}
+          - name: PROFILES_MAX_SLOTS
+            value: {{ default 10 $prof.maxSlots | quote }}
+          - name: PROFILES_SLOT_MAX_BYTES
+            value: {{ default 20971520 $prof.slotMaxBytes | quote }}
+          {{- end }}
           - name: ODIGOS_LOG_LEVEL
             value: {{ .Values.ui.logLevel | default .Values.logLevel | default "info" | quote }}
           {{- if .Values.ui.centralBackendURL }}
@@ -71,6 +82,8 @@ spec:
         ports:
           - containerPort: 3000
             name: ui
+          - containerPort: 4317
+            name: otlp
         livenessProbe:
           httpGet:
             path: /healthz
