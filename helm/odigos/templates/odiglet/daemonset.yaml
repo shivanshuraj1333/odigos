@@ -263,6 +263,8 @@ spec:
             - /odigosotelcol
           args:
             - --config=k8scm:{{ .Release.Namespace }}/odigos-data-collection/conf
+            # Required for profiles pipeline in merged node collector config (alpha in OTel v0.141.x).
+            - --feature-gates=service.profilesSupport
           securityContext:
             {{- if $privilegedRequired }}
             privileged: true
