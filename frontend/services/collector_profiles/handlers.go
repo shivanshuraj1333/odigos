@@ -2,7 +2,6 @@ package collectorprofiles
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -57,22 +56,16 @@ func RegisterProfilingRoutes(r *gin.RouterGroup, store ProfileStoreRef) {
 }
 
 func handleEnableProfiling(c *gin.Context, store ProfileStoreRef) {
-	id, err := sourceIDFromParams(c)
+	out, err := EnableProfilingForSource(store, c.Param("namespace"), c.Param("kind"), c.Param("name"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	key := SourceKeyFromSourceID(id)
-	store.StartViewing(key)
-	activeKeys, _ := store.DebugSlots()
-	maxSlots := store.MaxSlots()
-	log.Printf("[profiling] enable: sourceKey=%q namespace=%q kind=%q name=%q", key, id.Namespace, id.Kind, id.Name)
-	profilingDebugLog("[profiling] enable: sourceKey=%q (namespace=%q kind=%q name=%q)", key, id.Namespace, id.Kind, id.Name)
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "sourceKey": key, "maxSlots": maxSlots, "activeSlots": len(activeKeys)})
+	c.JSON(http.StatusOK, gin.H{"status": out.Status, "sourceKey": out.SourceKey, "maxSlots": out.MaxSlots, "activeSlots": out.ActiveSlots})
 }
 
 func handleGetProfilingChunkDebug(c *gin.Context, store ProfileStoreRef) {
-	id, err := sourceIDFromParams(c)
+	id, err := SourceIDFromStrings(c.Param("namespace"), c.Param("kind"), c.Param("name"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -93,56 +86,21 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("internal error: %v", r)})
 		}
 	}()
-	id, err := sourceIDFromParams(c)
+	wantDebug := c.Query("debug") == "1"
+	out, err := GetProfilingForSource(store, c.Param("namespace"), c.Param("kind"), c.Param("name"), wantDebug)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	key := SourceKeyFromSourceID(id)
-	store.StartViewing(key)
-	chunks := store.GetProfileData(key)
-	wantDebug := c.Query("debug") == "1"
-
-	if chunks == nil {
-		log.Printf("[profiling] get: sourceKey=%q chunks=0 (no slot or empty)", key)
-		profilingDebugLog("[profiling] get: sourceKey=%q chunks=0 (no slot or empty)", key)
-		payload := flamegraph.FlamebearerProfile{
-			Version: 1,
-			Flamebearer: flamegraph.Flamebearer{
-				Names:    []string{"total"},
-				Levels:   [][]int64{},
-				NumTicks: 0,
-				MaxSelf:  0,
-			},
-			Metadata: pyroscopeMetadata(0),
-		}
-		if wantDebug {
-			c.JSON(http.StatusOK, gin.H{"profile": payload, "debug": ProfileBuildDebug{
-				ChunkCount: 0,
-				NumTicks:  0,
-			}, "debugReason": "no_slot_or_empty"})
-		} else {
-			c.JSON(http.StatusOK, payload)
-		}
-		return
-	}
-	log.Printf("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
-	profilingDebugLog("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
-	profile, buildDebug := BuildPyroscopeProfileFromChunksWithDebug(chunks)
-	// Always log aggregation result so we can spot dictionary/parse/flamegraph issues.
-	log.Printf("[profiling] build: sourceKey=%q chunkCount=%d numTicks=%d parseErrors=%d chunksWithSamples=%d namesCount=%d",
-		key, buildDebug.ChunkCount, buildDebug.NumTicks, buildDebug.ParseErrors, buildDebug.ChunksWithSamples, len(profile.Flamebearer.Names))
-	if buildDebug.ParseErrors > 0 {
-		log.Printf("[profiling] build: sourceKey=%q parseErrors=%d (some chunks failed to parse)", key, buildDebug.ParseErrors)
-	}
-	if buildDebug.ChunkCount > 0 && buildDebug.ChunksWithSamples == 0 && buildDebug.NumTicks == 0 {
-		log.Printf("[profiling] build: sourceKey=%q chunks have no samples or all failed (chunkCount=%d)", key, buildDebug.ChunkCount)
-	}
 	if wantDebug {
-		c.JSON(http.StatusOK, gin.H{"profile": profile, "debug": buildDebug})
+		if out.EmptySlot {
+			c.JSON(http.StatusOK, gin.H{"profile": out.Profile, "debug": out.Debug, "debugReason": out.DebugReason})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"profile": out.Profile, "debug": out.Debug})
 		return
 	}
-	c.JSON(http.StatusOK, profile)
+	c.JSON(http.StatusOK, out.Profile)
 }
 
 // BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
@@ -403,7 +361,6 @@ func getKey(m map[string]interface{}, keys ...string) interface{} {
 	return nil
 }
 
-var errMissingParams = errors.New("missing namespace, kind, or name")
 
 func handleListProfileDumps(c *gin.Context) {
 	dir := GetProfileDumpDir()
@@ -482,12 +439,5 @@ func normalizeWorkloadKind(kindStr string) k8sconsts.WorkloadKind {
 }
 
 func sourceIDFromParams(c *gin.Context) (common.SourceID, error) {
-	namespace := c.Param("namespace")
-	kindStr := c.Param("kind")
-	name := c.Param("name")
-	if namespace == "" || kindStr == "" || name == "" {
-		return common.SourceID{}, errMissingParams
-	}
-	kind := normalizeWorkloadKind(kindStr)
-	return common.SourceID{Namespace: namespace, Kind: kind, Name: name}, nil
+	return SourceIDFromStrings(c.Param("namespace"), c.Param("kind"), c.Param("name"))
 }
