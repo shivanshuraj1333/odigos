@@ -214,6 +214,88 @@ push-collector:
 push-ui:
 	$(MAKE) push-image/ui DOCKERFILE=frontend/$(DOCKERFILE) SUMMARY="UI for Odigos" DESCRIPTION="UI provides the frontend webapp for managing an Odigos installation." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)
 
+# Multi-arch (linux/amd64 + linux/arm64) push to AWS **Public** ECR for profiler/EKS testing.
+# Uses one repository: odigos/core/profiler — tags are <component>-<8-char-sha>[-<extra>].
+# Example: public.ecr.aws/odigos/core/profiler:ui-6a838a56
+# Helm: set repository to public.ecr.aws/odigos/core/profiler and tag to ui-<sha> / autoscaler-<sha> / collector-<sha>.
+# Prereqs: docker buildx; AWS creds with ecr-public:GetAuthorizationToken; repo public.ecr.aws/odigos/core/profiler exists.
+# Run login once: make profiler-ecr-public-login
+# Then: make push-profiler-images-eks   (or push-profiler-ui / push-profiler-autoscaler / push-profiler-collector separately)
+PROFILER_ECR_IMAGE ?= public.ecr.aws/odigos/core/profiler
+PROFILER_SHA ?= $(shell git rev-parse --short=8 HEAD)
+# Optional suffix appended to tags (e.g. PROFILER_IMAGE_TAG=rc1 → ui-<sha>-rc1). Leave empty for ui-<sha> only.
+PROFILER_IMAGE_TAG ?=
+
+.PHONY: profiler-ecr-public-login
+profiler-ecr-public-login:
+	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+# expands to e.g. ui-6a838a56 or ui-6a838a56-rc1 when PROFILER_IMAGE_TAG is set
+profiler_tag = $(1)-$(PROFILER_SHA)$(if $(PROFILER_IMAGE_TAG),-$(PROFILER_IMAGE_TAG),)
+
+.PHONY: push-profiler-ui
+push-profiler-ui:
+	docker buildx build $(TARGET_FLAG) \
+		--platform linux/amd64,linux/arm64/v8 \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,ui) \
+		--push $(BUILD_DIR) -f frontend/$(DOCKERFILE) \
+		--build-arg SERVICE_NAME=ui \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="UI for Odigos" \
+		--build-arg DESCRIPTION="UI provides the frontend webapp for managing an Odigos installation." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
+.PHONY: push-profiler-autoscaler
+push-profiler-autoscaler:
+	docker buildx build $(TARGET_FLAG) \
+		--platform linux/amd64,linux/arm64/v8 \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,autoscaler) \
+		--push $(BUILD_DIR) -f $(DOCKERFILE) \
+		--build-arg SERVICE_NAME=autoscaler \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="Autoscaler for Odigos" \
+		--build-arg DESCRIPTION="Autoscaler manages the installation of Odigos components." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
+.PHONY: push-profiler-collector
+push-profiler-collector:
+	docker buildx build $(TARGET_FLAG) \
+		--platform linux/amd64,linux/arm64/v8 \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,collector) \
+		--push $(BUILD_DIR) -f collector/$(DOCKERFILE) \
+		--build-arg SERVICE_NAME=collector \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="Odigos Collector" \
+		--build-arg DESCRIPTION="The Odigos build of the OpenTelemetry Collector." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
+.PHONY: push-profiler-images-eks
+push-profiler-images-eks: push-profiler-ui push-profiler-autoscaler push-profiler-collector
+
+# Helm-rendered profiling block + gatewayFileExport (no cluster required).
+.PHONY: verify-profiling-helm
+verify-profiling-helm:
+	./scripts/verify-profiling-pipeline.sh --helm-only
+
+# Profiling plan: unit tests + helm template + JSONL parser sample (no cluster / no kubebuilder).
+.PHONY: verify-profiling-ci
+verify-profiling-ci:
+	./scripts/run-profiling-ci-tests.sh
+
+# kubectl: why profiling is missing on cluster (stock images, no profiling CM, etc.).
+.PHONY: profiling-diagnostics
+profiling-diagnostics:
+	./scripts/odigos-profiling-diagnostics.sh
+
 .PHONY: push-agents
 push-agents:
 	$(MAKE) push-image/agents DOCKERFILE=odiglet/$(DOCKERFILE) TARGET=agents SUMMARY="Init container for Odigos" DESCRIPTION="Init container for Odigos managing auto-instrumentation. This container requires a root user to run and manage eBPF programs." TAG=$(TAG) ORG=$(ORG) IMG_SUFFIX=$(IMG_SUFFIX)

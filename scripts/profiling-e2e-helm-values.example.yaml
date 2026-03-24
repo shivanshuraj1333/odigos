@@ -1,0 +1,29 @@
+# Example values for profiling E2E on EKS (copy to profiling-e2e-helm-values.yaml and set image SHAs).
+# Usage:
+#   helm upgrade --install odigos ./helm/odigos -n odigos-system --create-namespace \
+#     -f scripts/profiling-e2e-helm-values.yaml
+#
+# Build and push multi-arch images first (see root Makefile):
+#   make profiler-ecr-public-login push-profiler-images-eks \
+#     PROFILER_ECR_IMAGE=public.ecr.aws/odigos/core/profiler
+#
+# Then set image.tag to a placeholder or leave empty and use images.* full URIs:
+#   images:
+#     ui: public.ecr.aws/odigos/core/profiler:ui-<8-char-sha>
+#     autoscaler: public.ecr.aws/odigos/core/profiler:autoscaler-<8-char-sha>
+#     collector: public.ecr.aws/odigos/core/profiler:collector-<8-char-sha>
+
+profiling:
+  enabled: true
+  gatewayFileExport:
+    enabled: true
+    path: /var/odigos/profiles-export/profiles.jsonl
+  # ui.otlpGrpcPort defaults in chart; otlpUiEndpoint for gateway is set automatically when enabled.
+
+# Uncomment and set after building images:
+# image:
+#   tag: "latest"
+# images:
+#   ui: public.ecr.aws/odigos/core/profiler:ui-REPLACE_SHA
+#   autoscaler: public.ecr.aws/odigos/core/profiler:autoscaler-REPLACE_SHA
+#   collector: public.ecr.aws/odigos/core/profiler:collector-REPLACE_SHA

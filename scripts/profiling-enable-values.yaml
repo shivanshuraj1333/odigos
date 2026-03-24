@@ -1,0 +1,13 @@
+# Merge with helm upgrade to turn on profiling + gateway file export.
+# Example:
+#   helm upgrade odigos ./helm/odigos -n odigos-system --reuse-values \
+#     -f scripts/profiling-enable-values.yaml \
+#     --set images.ui=public.ecr.aws/odigos/core/profiler:ui-<8-sha> \
+#     --set images.autoscaler=public.ecr.aws/odigos/core/profiler:autoscaler-<8-sha> \
+#     --set images.collector=public.ecr.aws/odigos/core/profiler:collector-<8-sha>
+
+profiling:
+  enabled: true
+  gatewayFileExport:
+    enabled: true
+    path: /var/odigos/profiles-export/profiles.jsonl
