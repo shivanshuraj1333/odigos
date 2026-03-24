@@ -1,8 +1,9 @@
 .idea
-# Cursor IDE (keep local state ignored; exception below for one shared rule)
+# Cursor IDE (ignore local state; version only the profiling VM agent rule)
 .cursor/
 !.cursor/
 !.cursor/rules/
+.cursor/rules/*
 !.cursor/rules/profiling-ec2-eks-dev-vm.mdc
 dist/
 node_modules
