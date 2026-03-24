@@ -15,10 +15,11 @@
     {{- end -}}
   {{- end -}}
 {{- end -}}
-{{- $privilegedRequired := or $collectLogs $collectMetrics -}}
+{{- $profilingEnabled := and .Values.profiling .Values.profiling.enabled }}
+{{- $privilegedRequired := or $collectLogs $collectMetrics $profilingEnabled -}}
 {{- $k8sVersion := include "utils.cleanKubeVersion" . }}
 {{- if and $privilegedRequired .Values.odiglet.unPrivileged }}
-{{ fail "privileged mode is required when collecting logs or metrics, this is currently not supported in unprivileged mode" }}
+{{ fail "privileged mode is required when collecting logs or metrics, or when continuous profiling is enabled; unprivileged mode is not supported for these cases" }}
 {{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
@@ -349,6 +350,12 @@ spec:
             - name: hostfs
               mountPath: /hostfs
               readOnly: true
+            {{- end }}
+            {{- if $profilingEnabled }}
+            # eBPF continuous profiling needs tracefs/debugfs under /sys/kernel (host).
+            - name: sys-kernel
+              mountPath: /sys/kernel
+              mountPropagation: HostToContainer
             {{- end }}
             - name: exchange-dir
               mountPath: /var/exchange

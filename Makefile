@@ -229,6 +229,14 @@ PROFILER_SHA ?= $(shell git rev-parse --short=8 HEAD)
 PROFILER_IMAGE_TAG ?=
 # Parallel Make jobs for push-profiler-images-eks (one docker buildx per job). Default: CPU count.
 PROFILER_PUSH_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+# Use linux/amd64 only on small build VMs to save disk (EKS amd64 nodes).
+PROFILER_PLATFORMS ?= linux/amd64,linux/arm64/v8
+# Set PROFILER_NO_CACHE=true to pass --no-cache to docker buildx (clean rebuild).
+PROFILER_NO_CACHE ?=
+PROFILER_NO_CACHE_FLAG :=
+ifneq ($(filter true yes 1,$(PROFILER_NO_CACHE)),)
+  PROFILER_NO_CACHE_FLAG := --no-cache
+endif
 
 .PHONY: profiler-ecr-public-login
 profiler-ecr-public-login:
@@ -239,8 +247,8 @@ profiler_tag = $(1)-$(PROFILER_SHA)$(if $(PROFILER_IMAGE_TAG),-$(PROFILER_IMAGE_
 
 .PHONY: push-profiler-ui
 push-profiler-ui:
-	docker buildx build $(TARGET_FLAG) \
-		--platform linux/amd64,linux/arm64/v8 \
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) $(TARGET_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
 		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,ui) \
 		--push $(BUILD_DIR) -f frontend/$(DOCKERFILE) \
 		--build-arg SERVICE_NAME=ui \
@@ -254,8 +262,8 @@ push-profiler-ui:
 
 .PHONY: push-profiler-autoscaler
 push-profiler-autoscaler:
-	docker buildx build $(TARGET_FLAG) \
-		--platform linux/amd64,linux/arm64/v8 \
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) $(TARGET_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
 		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,autoscaler) \
 		--push $(BUILD_DIR) -f $(DOCKERFILE) \
 		--build-arg SERVICE_NAME=autoscaler \
@@ -269,8 +277,8 @@ push-profiler-autoscaler:
 
 .PHONY: push-profiler-collector
 push-profiler-collector:
-	docker buildx build $(TARGET_FLAG) \
-		--platform linux/amd64,linux/arm64/v8 \
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) $(TARGET_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
 		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,collector) \
 		--push $(BUILD_DIR) -f collector/$(DOCKERFILE) \
 		--build-arg SERVICE_NAME=collector \
@@ -285,8 +293,8 @@ push-profiler-collector:
 # Scheduler must match the profiling branch: it persists `profiling` into effective-config (autoscaler reads that CM).
 .PHONY: push-profiler-scheduler
 push-profiler-scheduler:
-	docker buildx build $(TARGET_FLAG) \
-		--platform linux/amd64,linux/arm64/v8 \
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) $(TARGET_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
 		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,scheduler) \
 		--push $(BUILD_DIR) -f $(DOCKERFILE) \
 		--build-arg SERVICE_NAME=scheduler \
@@ -301,6 +309,58 @@ push-profiler-scheduler:
 .PHONY: push-profiler-images-eks
 push-profiler-images-eks:
 	+$(MAKE) -j$(PROFILER_PUSH_JOBS) push-profiler-ui push-profiler-autoscaler push-profiler-collector push-profiler-scheduler
+
+# Full node + control plane path (odiglet data-collection, instrumentor, agents init).
+.PHONY: push-profiler-odiglet
+push-profiler-odiglet:
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) $(TARGET_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,odiglet) \
+		--push $(BUILD_DIR) -f odiglet/$(DOCKERFILE) \
+		--build-arg SERVICE_NAME=odiglet \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="Odiglet for Odigos" \
+		--build-arg DESCRIPTION="Odiglet is the core component of Odigos managing auto-instrumentation." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
+.PHONY: push-profiler-instrumentor
+push-profiler-instrumentor:
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) $(TARGET_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,instrumentor) \
+		--push $(BUILD_DIR) -f $(DOCKERFILE) \
+		--build-arg SERVICE_NAME=instrumentor \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="Instrumentor for Odigos" \
+		--build-arg DESCRIPTION="Instrumentor manages auto-instrumentation for workloads with Odigos." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
+.PHONY: push-profiler-agents
+push-profiler-agents:
+	docker buildx build $(PROFILER_NO_CACHE_FLAG) \
+		--platform $(PROFILER_PLATFORMS) \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,agents) \
+		--push $(BUILD_DIR) -f odiglet/$(DOCKERFILE) \
+		--target $(if $(filter true,$(RHEL)),agents-rhel,agents) \
+		--build-arg SERVICE_NAME=agents \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="Init container for Odigos" \
+		--build-arg DESCRIPTION="Init container for Odigos managing auto-instrumentation." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
+# All profiler-tagged images for EKS (parallel up to PROFILER_PUSH_JOBS; set PROFILER_PLATFORMS=linux/amd64 on small disks).
+.PHONY: push-profiler-images-eks-full
+push-profiler-images-eks-full:
+	+$(MAKE) -j$(PROFILER_PUSH_JOBS) push-profiler-ui push-profiler-autoscaler push-profiler-collector push-profiler-scheduler push-profiler-odiglet push-profiler-instrumentor push-profiler-agents
 
 # Helm-rendered profiling block + gatewayFileExport (no cluster required).
 .PHONY: verify-profiling-helm
