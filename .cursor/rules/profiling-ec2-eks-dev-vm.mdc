@@ -1,0 +1,56 @@
+---
+description: Profiling E2E on EC2/EKS or kind — env, kubeconfig, ECR, scripts, rollout order
+globs: scripts/profiling*,scripts/verify-ec2*,scripts/helm-upgrade-profiling*,scripts/aws-ecr-login*,docs/profiling*
+alwaysApply: false
+---
+
+# Odigos profiling dev VM / EKS (agent playbook)
+
+Use this when helping with **continuous profiling**, **ECR image pushes**, **EKS**, or **kind** E2E on a dedicated build/test VM.
+
+## Canonical doc
+
+Read **`docs/profiling-e2e-testing-kind-aws.md`** first. It lists scripts, Helm values, ConfigMap checks, and troubleshooting (node collector `service.profilesSupport`, scheduler → `effective-config`, etc.).
+
+## Environment (set on the VM shell or in the user’s profile)
+
+- **`KUBECONFIG`**: point at the EKS kubeconfig file for the target cluster (not assumed path; ask or use `$KUBECONFIG` if already set).
+- **AWS**: `aws sts get-caller-identity` must succeed for ECR login and EKS API.
+- **Profiler ECR prefix** (default in Makefile / scripts):  
+  `PROFILER_ECR_IMAGE=public.ecr.aws/odigos/odigos/core/profiler`  
+  Optional creds file (gitignored): `scripts/eks-vm-aws.env` — used by `scripts/aws-ecr-login-from-env.sh`.
+
+## Quick verification (agent should run these when testing connectivity)
+
+```bash
+./scripts/verify-ec2-aws-kube-ecr.sh
+# After images exist:
+PROFILER_PULL_TAG=ui-$(git rev-parse --short=8 HEAD) ./scripts/verify-ec2-aws-kube-ecr.sh
+```
+
+## Build / push / Helm (EKS)
+
+- Login: `make profiler-ecr-public-login`
+- Push: `make push-profiler-images-eks` (or per-component targets if disk is tight; see Makefile comments near `push-profiler-collector`).
+- Helm: `./scripts/helm-upgrade-profiling-eks.sh` with `PROFILER_SHA` / `PROFILER_ECR_IMAGE` as needed. For full node path, also set **`images.odiglet`** and **`images.instrumentor`** (see doc).
+
+## Rollout order (after Helm changes scheduler / effective-config)
+
+1. `odigos-scheduler` → wait Ready  
+2. `odigos-autoscaler`, `odigos-gateway`, `odigos-ui`  
+3. `daemonset/odiglet`
+
+## Demo app + Odigos prerequisites
+
+- At least one **Destination** (e.g. `tests/debug-exporter.yaml`) so node collector signals are non-empty.
+- **Source** CRs for workloads; for Online Boutique: `scripts/online-boutique-odigos-source.yaml` after applying the upstream microservices-demo manifests.
+
+## HTTP smoke
+
+- Port-forward: `kubectl port-forward -n odigos-system svc/ui 3000:3000`
+- `NS=… KIND=Deployment NAME=… ./scripts/profiling-test-and-dump.sh` (or `START_PORT_FORWARD=true`).
+
+## Do not
+
+- Hardcode on-prem tokens or long-lived secrets in repo files.
+- Assume `kind-kind` vs EKS — confirm `kubectl config current-context` before destructive commands.

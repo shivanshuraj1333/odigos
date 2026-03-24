@@ -1,5 +1,7 @@
 # Profiling E2E testing: kind cluster, EC2 checks, and AWS/EKS/ECR
 
+**Cursor agents on the profiling VM:** see repo root **`AGENTS.md`** and **`.cursor/rules/profiling-ec2-eks-dev-vm.mdc`** (enable the rule or open matching files so it applies).
+
 This guide covers:
 
 1. Running **end-to-end profiling validation** on a **local kind** cluster.
