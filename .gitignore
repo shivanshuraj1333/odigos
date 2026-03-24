@@ -1,4 +1,5 @@
 .idea
+.cursor/
 dist/
 node_modules
 .DS_Store
@@ -18,6 +19,8 @@ gha-creds-*.json
 artifacts/
 /preflight*
 .env
+# Local AWS creds for VM EKS / ECR (never commit)
+scripts/eks-vm-aws.env
 .yalc
 yalc.lock
 

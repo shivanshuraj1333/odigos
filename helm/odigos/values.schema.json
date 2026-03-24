@@ -1678,6 +1678,108 @@
       "required": [],
       "title": "psp"
     },
+    "profiling": {
+      "additionalProperties": false,
+      "description": "Cluster-wide continuous profiling settings merged into OdigosConfiguration (odigos-configuration ConfigMap). Default disabled. Prefer this over ui.profiling for config-driven behavior.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "When true, continuous profiling is enabled in OdigosConfiguration. Omitted or false means disabled.",
+          "type": "boolean"
+        },
+        "exporter": {
+          "additionalProperties": false,
+          "description": "Optional OTLP exporter timeout and retry for profiling export (same shape as collector OTLP exporter).",
+          "properties": {
+            "enableDataCompression": {
+              "type": "boolean"
+            },
+            "retryOnFailure": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "initialInterval": {
+                  "type": "string"
+                },
+                "maxElapsedTime": {
+                  "type": "string"
+                },
+                "maxInterval": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "title": "retryOnFailure",
+              "type": "object"
+            },
+            "timeout": {
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "exporter",
+          "type": "object"
+        },
+        "otlpUiEndpoint": {
+          "default": "",
+          "description": "OTLP/gRPC endpoint for profiles toward the UI (optional; e.g. dns:///ui.namespace.svc.cluster.local:4318).",
+          "type": "string"
+        },
+        "gatewayFileExport": {
+          "additionalProperties": false,
+          "description": "Gateway file exporter on the profiles pipeline (captures OTLP profile payloads for debugging).",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "path": {
+              "default": "",
+              "description": "Path inside the gateway pod (must match mount).",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "gatewayFileExport",
+          "type": "object"
+        },
+        "ui": {
+          "additionalProperties": false,
+          "description": "Optional UI limits when profiling is enabled (ports, slots, buffers).",
+          "properties": {
+            "maxSlots": {
+              "default": 10,
+              "type": "integer"
+            },
+            "otlpGrpcPort": {
+              "default": 4318,
+              "type": "integer"
+            },
+            "slotMaxBytes": {
+              "default": 20971520,
+              "type": "integer"
+            },
+            "slotTTLSeconds": {
+              "default": 600,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "ui",
+          "type": "object"
+        },
+        "verificationEndpoint": {
+          "default": "",
+          "description": "Optional HTTP URL for verification or health checks for the profiling path.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "profiling",
+      "type": "object"
+    },
     "rollout": {
       "additionalProperties": false,
       "description": "Odigos automatically triggers a one-time rollout for workloads when instrumenting or uninstrumenting, to apply changes.\nIf workload restarts are sensitive, this setting can be used to disable the automatic rollout.\nWhen disabled, users are responsible for manually triggering rollouts after adding or removing sources.\nAny new pods created after enabling or disabling the agent (via manual rollout, autoscaling, etc.)\nwill still have the agent injected, regardless of this setting.\nWhen set to true, all additional configurations related to automated rollouts or rollbacks are ignored.",
@@ -2072,7 +2174,7 @@
         },
         "profiling": {
           "additionalProperties": false,
-          "description": "Continuous profiling: expose OTLP Profiles gRPC on the UI Service, and set PROFILES_OTLP_ENDPOINT_UI on the autoscaler so the cluster gateway forwards profiles to the UI.",
+          "description": "Legacy deployment knobs for continuous profiling (UI Service port, autoscaler env). For OdigosConfiguration, prefer top-level `profiling` merged into odigos-configuration ConfigMap.",
           "properties": {
             "enabled": {
               "default": true,

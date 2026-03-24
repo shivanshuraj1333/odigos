@@ -66,6 +66,32 @@ clusterName: ''
 
 # @schema
 # description: |-
+#   Cluster-wide continuous profiling settings (written to OdigosConfiguration / odigos-configuration ConfigMap).
+#   Default is disabled; enable explicitly after rollout. Prefer this block over ui.profiling for configuration-driven behavior.
+# @schema
+profiling:
+  enabled: false
+  # OTLP endpoint for profiles toward the UI (optional; default dns:///ui.<ns>.svc.cluster.local:<port> when enabled)
+  otlpUiEndpoint: ''
+  # Optional HTTP verification or health URL for the profiling pipeline
+  verificationEndpoint: ''
+  # Write gateway profile payloads to a file inside the gateway pod (debug / golden fixtures).
+  gatewayFileExport:
+    enabled: false
+    path: /var/odigos/profiles-export/profiles.jsonl
+  # Optional exporter: enableDataCompression, timeout, retryOnFailure (same shape as collector OTLP exporter)
+  # exporter:
+  #   timeout: 30s
+  #   retryOnFailure:
+  #     enabled: true
+  ui:
+    otlpGrpcPort: 4318
+    slotTTLSeconds: 600
+    maxSlots: 10
+    slotMaxBytes: 20971520
+
+# @schema
+# description: |-
 #   Default log level for components when component-level logLevel is not set.
 #   Accepted values: debug, info, warn, error. Default: info.
 #   Set via ODIGOS_LOG_LEVEL env; change requires pod restart or rollout.
@@ -623,12 +649,15 @@ ui:
   # @schema
   uiRemoteUrl: ''
 
+  # Deprecated for OdigosConfiguration: use top-level `profiling` (merged into odigos-configuration ConfigMap).
+  # Deployment templates may still read this block until migrated to root `profiling`.
   # Continuous profiling: OTLP Profiles gRPC on the UI pod, cluster gateway forwards profiles to ui.<namespace>:<port>.
   # @schema
   # additionalProperties: false
   # @schema
+  # Deprecated: use top-level .Values.profiling (cluster OdigosConfiguration). Kept for one-release migration in templates.
   profiling:
-    enabled: true
+    enabled: false
     otlpGrpcPort: 4318
     slotTTLSeconds: 600
     maxSlots: 10

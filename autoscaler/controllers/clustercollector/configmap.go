@@ -221,9 +221,17 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 		gatewayOptions.TraceAggregationWaitDuration = gateway.Spec.TailSampling.TraceAggregationWaitDuration
 	}
 
+	odigosCfg, odigosErr := utils.GetCurrentOdigosConfiguration(ctx, c)
+	if odigosErr != nil {
+		logger.Error(odigosErr, "failed to read OdigosConfiguration; profiling defaults may be incomplete")
+	}
 	collectorLogLevel := string(odigoscommon.LogLevelInfo)
-	if odigosCfg, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil && odigosCfg.ComponentLogLevels != nil {
+	if odigosErr == nil && odigosCfg.ComponentLogLevels != nil {
 		collectorLogLevel = odigosCfg.ComponentLogLevels.Resolve("collector")
+	}
+	var odigosCfgPtr *odigoscommon.OdigosConfiguration
+	if odigosErr == nil {
+		odigosCfgPtr = &odigosCfg
 	}
 
 	desiredData, err, status, signals := pipelinegen.GetGatewayConfig(
@@ -244,16 +252,15 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 					}
 				}
 			}
-			// Profiles pipeline: gateway receives profiles from node collectors, forwards to configurable OTLP endpoint(s) (e.g. Pyroscope, frontend).
+			// Profiles pipeline: gateway receives profiles from node collectors, forwards to OTLP / file / debug (from OdigosConfiguration + legacy env).
 			// Do not use batch processor here: generic batch does not support the profiles signal.
-			verificationEp := os.Getenv("PROFILE_VERIFICATION_OTLP_ENDPOINT")
-			uiEp := os.Getenv("PROFILES_OTLP_ENDPOINT_UI")
-			if verificationEp != "" || uiEp != "" {
+			if shouldBuildGatewayProfilesPipeline(odigosCfgPtr) {
+				verificationEp := resolveVerificationEndpoint(odigosCfgPtr)
+				uiEp := resolveOtlpUiEndpoint(odigosCfgPtr)
 				if c.Exporters == nil {
 					c.Exporters = make(config.GenericMap)
 				}
-				// Timeout and retry from env (set by Helm); defaults for backward compatibility.
-				profileExporterCommon := getProfilesExporterConfigFromEnv()
+				profileExporterCommon := mergeProfilesExporterSettings(odigosCfgPtr)
 				var profileExporters []string
 				if verificationEp != "" {
 					const profilesVerificationExporter = "otlp/profiles-verification"
@@ -275,10 +282,14 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 					}
 					profileExporters = append(profileExporters, profilesUIExporter)
 				}
-				// Optional: debug exporter logs the same profile payload (including dictionary) to gateway stdout.
-				// Enable via Helm: autoscaler.profilesDebugExport: true (sets PROFILE_DEBUG_EXPORT on autoscaler).
-				// Capture: kubectl logs -f deployment/<gateway> -n <ns> > gateway-profiles-debug.log
-				if strings.ToLower(strings.TrimSpace(os.Getenv("PROFILE_DEBUG_EXPORT"))) == "true" {
+				if fileOn, filePath := gatewayFileExportPath(odigosCfgPtr); fileOn {
+					const profilesFileExporter = "file/gateway-profiles"
+					c.Exporters[profilesFileExporter] = config.GenericMap{
+						"path": filePath,
+					}
+					profileExporters = append(profileExporters, profilesFileExporter)
+				}
+				if profileDebugExportEnabled() {
 					const profilesDebugExporter = "debug/profiles-debug"
 					c.Exporters[profilesDebugExporter] = config.GenericMap{
 						"verbosity": "detailed",

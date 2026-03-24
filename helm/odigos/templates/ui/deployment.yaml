@@ -53,17 +53,7 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
-          {{- $prof := .Values.ui.profiling | default dict }}
-          {{- if (default true $prof.enabled) }}
-          - name: ENABLE_PROFILES_RECEIVER
-            value: "true"
-          - name: PROFILES_SLOT_TTL_SECONDS
-            value: {{ default 600 $prof.slotTTLSeconds | quote }}
-          - name: PROFILES_MAX_SLOTS
-            value: {{ default 10 $prof.maxSlots | quote }}
-          - name: PROFILES_SLOT_MAX_BYTES
-            value: {{ default 20971520 $prof.slotMaxBytes | quote }}
-          {{- end }}
+          {{- /* Profiling OTLP receiver and store limits come from effective-config (odigos-configuration); PROFILES_* / ENABLE_PROFILES_RECEIVER remain optional manual overrides. */}}
           - name: ODIGOS_LOG_LEVEL
             value: {{ .Values.ui.logLevel | default .Values.logLevel | default "info" | quote }}
           {{- if .Values.ui.centralBackendURL }}
@@ -82,9 +72,12 @@ spec:
         ports:
           - containerPort: 3000
             name: ui
-          {{- $prof := .Values.ui.profiling | default dict }}
-          {{- if (default true $prof.enabled) }}
-          - containerPort: {{ default 4318 $prof.otlpGrpcPort }}
+          {{- $prof := .Values.profiling | default dict }}
+          {{- $profUi := $prof.ui | default dict }}
+          {{- $legacyProf := .Values.ui.profiling | default dict }}
+          {{- $profOn := or (default false $prof.enabled) (default false $legacyProf.enabled) }}
+          {{- if $profOn }}
+          - containerPort: {{ default (default 4318 $legacyProf.otlpGrpcPort) $profUi.otlpGrpcPort }}
             name: otlp-profiles
           {{- end }}
         livenessProbe:

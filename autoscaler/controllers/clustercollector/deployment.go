@@ -3,6 +3,7 @@ package clustercollector
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -326,11 +327,31 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 			"--feature-gates=clickhouse.json",
 		)
 	}
-	// Enable profiles signal in OTLP receiver and pipelines for verification export.
-	desiredDeployment.Spec.Template.Spec.Containers[0].Args = append(
-		desiredDeployment.Spec.Template.Spec.Containers[0].Args,
-		"--feature-gates=service.profilesSupport",
-	)
+	odigosCfgForProf := odigosConfiguration
+	if shouldBuildGatewayProfilesPipeline(&odigosCfgForProf) {
+		desiredDeployment.Spec.Template.Spec.Containers[0].Args = append(
+			desiredDeployment.Spec.Template.Spec.Containers[0].Args,
+			"--feature-gates=service.profilesSupport",
+		)
+	}
+	if ok, filePath := gatewayFileExportPath(&odigosCfgForProf); ok {
+		dir := filepath.Dir(filePath)
+		vm := corev1.VolumeMount{
+			Name:      "odigos-gateway-profiles-file-export",
+			MountPath: dir,
+		}
+		vol := corev1.Volume{
+			Name: "odigos-gateway-profiles-file-export",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		}
+		desiredDeployment.Spec.Template.Spec.Volumes = append(desiredDeployment.Spec.Template.Spec.Volumes, vol)
+		desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+			desiredDeployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			vm,
+		)
+	}
 
 	err = ctrl.SetControllerReference(gateway, desiredDeployment, scheme)
 	if err != nil {

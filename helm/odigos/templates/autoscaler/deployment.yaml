@@ -70,11 +70,6 @@ spec:
                 name: odigos-deployment
           - name: ODIGOS_COLLECTOR_IMAGE
             value: '{{ template "utils.imageName" (dict "Values" .Values "Component" "collector" "Tag" $imageTag) }}'
-          {{- $prof := .Values.ui.profiling | default dict }}
-          {{- if (default true $prof.enabled) }}
-          - name: PROFILES_OTLP_ENDPOINT_UI
-            value: 'dns:///ui.{{ .Release.Namespace }}:{{ default 4318 $prof.otlpGrpcPort }}'
-          {{- end }}
           - name: GOMEMLIMIT
             value: {{ include "odigos.gomemlimitFromResources" (dict "Resources" .Values.autoscaler.resources) }}
         envFrom:

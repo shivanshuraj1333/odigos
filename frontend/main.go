@@ -345,13 +345,15 @@ func main() {
 		odigosMetrics.Run(ctx, flags.Namespace)
 	}()
 
-	// Profiles store and OTLP profiles receiver (port 4318, feature-gated by ENABLE_PROFILES_RECEIVER).
-	// Store limits are configurable via env (Helm: ui.profiling.*).
-	maxSlots, ttlSec, slotMaxBytes, cleanupInt := collectorprofiles.StoreConfigFromEnv()
+	// Profiles store and OTLP profiles receiver: enablement and limits from effective-config (profiling.*), env fallback.
+	recvOn, maxSlots, ttlSec, slotMaxBytes, cleanupInt, profCfgErr := services.ResolveProfilingFromEffectiveConfig(ctx, k8sCacheClient)
+	if profCfgErr != nil {
+		log.Info("profiling: could not load effective config; using env fallback if set", "err", profCfgErr)
+	}
 	profileStore := collectorprofiles.NewProfileStore(maxSlots, ttlSec, slotMaxBytes, cleanupInt)
 	profileStore.RunCleanup(ctx)
 	defer profileStore.StopCleanup()
-	profileStoreRef, profilesWg := collectorprofiles.RunWithStore(ctx, profileStore)
+	profileStoreRef, profilesWg := collectorprofiles.RunWithStore(ctx, profileStore, recvOn)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

@@ -489,6 +489,53 @@ type SamplingConfiguration struct {
 	K8sHealthProbesSampling *K8sHealthProbesSamplingConfiguration `json:"k8sHealthProbesSampling,omitempty"`
 }
 
+// +kubebuilder:object:generate=true
+// ProfilingUiConfiguration holds UI-side limits for continuous profiling when enabled.
+type ProfilingUiConfiguration struct {
+	// OtlpGrpcPort is the gRPC port for OTLP Profiles on the UI Service (optional override).
+	OtlpGrpcPort int `json:"otlpGrpcPort,omitempty" yaml:"otlpGrpcPort,omitempty"`
+	// SlotTTLSeconds is the idle TTL for profiling slots in seconds.
+	SlotTTLSeconds int `json:"slotTTLSeconds,omitempty" yaml:"slotTTLSeconds,omitempty"`
+	// MaxSlots caps concurrent sources with profiling slots.
+	MaxSlots int `json:"maxSlots,omitempty" yaml:"maxSlots,omitempty"`
+	// SlotMaxBytes is the per-source rolling buffer cap in bytes.
+	SlotMaxBytes int `json:"slotMaxBytes,omitempty" yaml:"slotMaxBytes,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+// ProfilingConfiguration holds cluster-wide continuous profiling settings (ConfigMap / OdigosConfiguration).
+type ProfilingConfiguration struct {
+	// Enabled turns continuous profiling on. Omitted or false in YAML means disabled (default-off).
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+
+	// OtlpUiEndpoint is the OTLP/gRPC endpoint the gateway uses to send profiles toward the UI (e.g. dns:///ui.namespace:4318).
+	OtlpUiEndpoint string `json:"otlpUiEndpoint,omitempty" yaml:"otlpUiEndpoint,omitempty"`
+
+	// VerificationEndpoint is an optional HTTP URL used for verification or health checks for the profiling path.
+	VerificationEndpoint string `json:"verificationEndpoint,omitempty" yaml:"verificationEndpoint,omitempty"`
+
+	// Exporter configures timeout and retry for profiling OTLP export (same shape as collector OTLP exporter settings).
+	Exporter *OtlpExporterConfiguration `json:"exporter,omitempty" yaml:"exporter,omitempty"`
+
+	// Ui holds optional UI limits (ports, slots, buffers).
+	Ui *ProfilingUiConfiguration `json:"ui,omitempty" yaml:"ui,omitempty"`
+
+	// GatewayFileExport appends a file exporter to the gateway profiles pipeline (debug / golden fixtures).
+	// Requires Profiling.Enabled and a writable path (see gateway Deployment volume).
+	GatewayFileExport *ProfilingGatewayFileExport `json:"gatewayFileExport,omitempty" yaml:"gatewayFileExport,omitempty"`
+}
+
+// ProfilingGatewayFileExport configures the cluster gateway file exporter on the profiles pipeline.
+type ProfilingGatewayFileExport struct {
+	Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Path    string `json:"path,omitempty" yaml:"path,omitempty"`
+}
+
+// ProfilingEnabled returns true when continuous profiling is explicitly enabled in configuration.
+func (o *OdigosConfiguration) ProfilingEnabled() bool {
+	return o != nil && o.Profiling != nil && o.Profiling.Enabled != nil && *o.Profiling.Enabled
+}
+
 // OdigosConfiguration defines the desired state of OdigosConfiguration
 type OdigosConfiguration struct {
 	ConfigVersion             int                            `json:"configVersion" yaml:"configVersion"`
@@ -551,4 +598,7 @@ type OdigosConfiguration struct {
 
 	// ComponentLogLevels: default = global level (e.g. from Helm); per-component overrides (e.g. from UI).
 	ComponentLogLevels *ComponentLogLevels `json:"componentLogLevels,omitempty" yaml:"componentLogLevels,omitempty"`
+
+	// Profiling is cluster-wide continuous profiling configuration (default off when omitted or enabled=false).
+	Profiling *ProfilingConfiguration `json:"profiling,omitempty" yaml:"profiling,omitempty"`
 }

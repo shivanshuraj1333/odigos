@@ -277,3 +277,53 @@ data:
         {{- end }}
       {{- end }}
     {{- end }}
+    {{- if .Values.profiling }}
+    profiling:
+      enabled: {{ .Values.profiling.enabled | default false }}
+      {{- if .Values.profiling.enabled }}
+      {{- if .Values.profiling.otlpUiEndpoint }}
+      otlpUiEndpoint: {{ .Values.profiling.otlpUiEndpoint | quote }}
+      {{- else }}
+      {{- $pui := .Values.profiling.ui | default dict }}
+      otlpUiEndpoint: {{ printf "dns:///ui.%s.svc.cluster.local:%v" .Release.Namespace (default 4318 $pui.otlpGrpcPort) | quote }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.profiling.verificationEndpoint }}
+      verificationEndpoint: {{ . | quote }}
+      {{- end }}
+      {{- if .Values.profiling.gatewayFileExport }}
+      gatewayFileExport:
+        enabled: {{ .Values.profiling.gatewayFileExport.enabled | default false }}
+        {{- with .Values.profiling.gatewayFileExport.path }}
+        path: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.profiling.exporter }}
+      exporter:
+        {{- if ne .Values.profiling.exporter.enableDataCompression nil }}
+        enableDataCompression: {{ .Values.profiling.exporter.enableDataCompression }}
+        {{- end }}
+        {{- with .Values.profiling.exporter.timeout }}
+        timeout: {{ . | quote }}
+        {{- end }}
+        {{- if .Values.profiling.exporter.retryOnFailure }}
+        retryOnFailure:
+          {{- if ne .Values.profiling.exporter.retryOnFailure.enabled nil }}
+          enabled: {{ .Values.profiling.exporter.retryOnFailure.enabled }}
+          {{- end }}
+          {{- with .Values.profiling.exporter.retryOnFailure.initialInterval }}
+          initialInterval: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.profiling.exporter.retryOnFailure.maxInterval }}
+          maxInterval: {{ . | quote }}
+          {{- end }}
+          {{- with .Values.profiling.exporter.retryOnFailure.maxElapsedTime }}
+          maxElapsedTime: {{ . | quote }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.profiling.ui }}
+      ui:
+{{- toYaml .Values.profiling.ui | nindent 8 }}
+      {{- end }}
+    {{- end }}
