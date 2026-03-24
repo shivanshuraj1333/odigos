@@ -15,6 +15,9 @@ data:
     configVersion: 1
     componentLogLevels:
       default: {{ .Values.logLevel | default "info" }}
+      {{- if and .Values.componentLogLevels .Values.componentLogLevels.collector }}
+      collector: {{ .Values.componentLogLevels.collector }}
+      {{- end }}
     {{- if .Values.clusterName }}
     clusterName: {{ .Values.clusterName }}
     {{- end }}

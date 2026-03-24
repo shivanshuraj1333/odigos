@@ -98,6 +98,10 @@ profiling:
 # @schema
 logLevel: "info"
 
+# Optional per-component overrides in odigos-configuration (effective-config).
+# Example: set collector to debug for k8sattributes / profiling pipeline troubleshooting.
+componentLogLevels: {}
+
 # @schema
 # description: Configuration for OpenTelemetry (OTEL) agents instrumentation environment variables.
 # @schema

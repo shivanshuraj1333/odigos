@@ -292,6 +292,21 @@
       "required": [],
       "title": "clusterName"
     },
+    "componentLogLevels": {
+      "additionalProperties": false,
+      "description": "Optional per-component log levels in odigos-configuration (and effective-config). Overrides top-level logLevel for specific components.",
+      "properties": {
+        "collector": {
+          "default": "",
+          "description": "Log level for OpenTelemetry collectors (cluster gateway and node collectors). Empty uses top-level logLevel.",
+          "required": [],
+          "title": "collector",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "componentLogLevels"
+    },
     "collectorGateway": {
       "additionalProperties": false,
       "description": "HYBRID CONFIGURATION APPROACH:\nBy default, all values below are automatically set based on the ResourceSizePreset above.\nUncomment and modify any value to override the automatic sizing for that specific parameter.\n\nIMPORTANT CONSTRAINTS:\n1. minReplicas must be less or equal to maxReplicas\n2. If you set limitMemoryMiB without requestMemoryMiB, request will equal limit\n3. If you set requestMemoryMiB without limitMemoryMiB, limit will equal request\n4. Same logic applies to CPU settings",

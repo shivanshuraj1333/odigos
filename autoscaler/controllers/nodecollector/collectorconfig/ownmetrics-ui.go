@@ -111,8 +111,9 @@ func serviceTelemetryConfigForOwnMetricsUi(ownMetricsPort int32) config.Telemetr
 
 	podNameFromEnv := "${POD_NAME}"
 	nodeNameFromEnv := "${NODE_NAME}"
+	// Do not set Logs.Level here: MergeConfigs would otherwise overwrite componentLogLevels.collector
+	// (collector_telemetry domain) with "info" depending on map iteration order.
 	return config.Telemetry{
-		Logs: config.LogsConfig{Level: "info"},
 		Metrics: config.MetricsConfig{
 			Level:   "detailed",
 			Readers: []config.GenericMap{reader},
