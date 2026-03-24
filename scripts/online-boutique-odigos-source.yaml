@@ -1,0 +1,12 @@
+# Namespace Source: instrument all workloads in online-boutique (Google microservices-demo).
+# Apply after a Destination exists in odigos-system so ReceiverSignals are non-empty.
+apiVersion: odigos.io/v1alpha1
+kind: Source
+metadata:
+  name: online-boutique
+  namespace: online-boutique
+spec:
+  workload:
+    kind: Namespace
+    name: online-boutique
+    namespace: online-boutique

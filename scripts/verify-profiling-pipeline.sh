@@ -60,7 +60,7 @@ kubectl_check() {
 
   note "Checking ConfigMap odigos-configuration..."
   local odc
-  odc="$(kubectl get cm odigos-configuration -n "$NS" -o jsonpath="{.data['config.yaml']}" 2>/dev/null || true)"
+  odc="$(kubectl get cm odigos-configuration -n "$NS" -o jsonpath='{.data.config\.yaml}' 2>/dev/null || true)"
   if [[ -z "$odc" ]]; then
     fail "odigos-configuration missing or empty data.config.yaml"
   else
@@ -105,7 +105,7 @@ kubectl_check() {
 
   note "Checking ConfigMap effective-config (UI receiver)..."
   local eff
-  eff="$(kubectl get cm effective-config -n "$NS" -o jsonpath="{.data['config.yaml']}" 2>/dev/null || true)"
+  eff="$(kubectl get cm effective-config -n "$NS" -o jsonpath='{.data.config\.yaml}' 2>/dev/null || true)"
   if [[ -z "$eff" ]]; then
     warn "effective-config missing — scheduler may not have reconciled yet"
   else

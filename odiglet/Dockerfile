@@ -113,12 +113,18 @@ COPY distros/ distros/
 WORKDIR /go/src/github.com/odigos-io/odigos/odiglet
 COPY odiglet/ .
 
+# bpf2go and other codegen in `make generate` must execute binaries built for the builder
+# (BUILDARCH). Cross-compiling with GOARCH=$TARGETARCH breaks arm64 image builds on amd64 CI.
 ARG TARGETARCH
+ARG BUILDARCH
 ARG LD_FLAGS
 ARG RHEL=false
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
-    GOOS=linux GOARCH=$TARGETARCH LD_FLAGS="${LD_FLAGS}" make build-odiglet
+    GOOS=linux GOARCH=$BUILDARCH make generate
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg \
+    GOOS=linux GOARCH=$TARGETARCH CGO_ENABLED=0 go build -ldflags="${LD_FLAGS}" -o odiglet cmd/main.go
 RUN if [ "$RHEL" = "true" ] ; then \
       make licenses ; \
     fi

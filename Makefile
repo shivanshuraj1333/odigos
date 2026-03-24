@@ -216,17 +216,19 @@ push-ui:
 
 # Multi-arch (linux/amd64 + linux/arm64) push to AWS **Public** ECR for profiler/EKS testing.
 # Uses one repository: odigos/core/profiler — tags are <component>-<8-char-sha>[-<extra>].
-# Example: public.ecr.aws/odigos/core/profiler:ui-6a838a56
-# Helm: set repository to public.ecr.aws/odigos/core/profiler and tag to ui-<sha> / autoscaler-<sha> / collector-<sha>.
-# Prereqs: docker buildx; AWS creds with ecr-public:GetAuthorizationToken; repo public.ecr.aws/odigos/core/profiler exists.
+# Example: public.ecr.aws/odigos/odigos/core/profiler:ui-6a838a56 (repo name odigos/core/profiler + alias odigos)
+# Helm: set repository to that prefix and tag to ui-<sha> / autoscaler-<sha> / collector-<sha>.
+# Prereqs: docker buildx; AWS creds; ECR Public repo odigos/core/profiler exists.
 # Credentials: export AWS_* or keep scripts/eks-vm-aws.env (gitignored) — make profiler-ecr-public-login sources it automatically.
 # If login fails with AccessDenied, attach IAM policy from scripts/iam-ecr-profiler-push.json to the IAM user/role.
 # Run login once: make profiler-ecr-public-login
-# Then: make push-profiler-images-eks   (or push-profiler-ui / push-profiler-autoscaler / push-profiler-collector separately)
-PROFILER_ECR_IMAGE ?= public.ecr.aws/odigos/core/profiler
+# Then: make push-profiler-images-eks   (builds ui, autoscaler, collector in parallel — override PROFILER_PUSH_JOBS=3 to cap)
+PROFILER_ECR_IMAGE ?= public.ecr.aws/odigos/odigos/core/profiler
 PROFILER_SHA ?= $(shell git rev-parse --short=8 HEAD)
 # Optional suffix appended to tags (e.g. PROFILER_IMAGE_TAG=rc1 → ui-<sha>-rc1). Leave empty for ui-<sha> only.
 PROFILER_IMAGE_TAG ?=
+# Parallel Make jobs for push-profiler-images-eks (one docker buildx per job). Default: CPU count.
+PROFILER_PUSH_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 .PHONY: profiler-ecr-public-login
 profiler-ecr-public-login:
@@ -280,8 +282,25 @@ push-profiler-collector:
 		--build-arg LD_FLAGS="$(LD_FLAGS)" \
 		--build-arg RHEL="$(RHEL)"
 
+# Scheduler must match the profiling branch: it persists `profiling` into effective-config (autoscaler reads that CM).
+.PHONY: push-profiler-scheduler
+push-profiler-scheduler:
+	docker buildx build $(TARGET_FLAG) \
+		--platform linux/amd64,linux/arm64/v8 \
+		-t $(PROFILER_ECR_IMAGE):$(call profiler_tag,scheduler) \
+		--push $(BUILD_DIR) -f $(DOCKERFILE) \
+		--build-arg SERVICE_NAME=scheduler \
+		--build-arg ODIGOS_VERSION=$(PROFILER_SHA) \
+		--build-arg VERSION=$(PROFILER_SHA) \
+		--build-arg RELEASE=$(PROFILER_SHA) \
+		--build-arg SUMMARY="Scheduler for Odigos" \
+		--build-arg DESCRIPTION="Scheduler manages the installation of OpenTelemetry Collectors with Odigos." \
+		--build-arg LD_FLAGS="$(LD_FLAGS)" \
+		--build-arg RHEL="$(RHEL)"
+
 .PHONY: push-profiler-images-eks
-push-profiler-images-eks: push-profiler-ui push-profiler-autoscaler push-profiler-collector
+push-profiler-images-eks:
+	+$(MAKE) -j$(PROFILER_PUSH_JOBS) push-profiler-ui push-profiler-autoscaler push-profiler-collector push-profiler-scheduler
 
 # Helm-rendered profiling block + gatewayFileExport (no cluster required).
 .PHONY: verify-profiling-helm

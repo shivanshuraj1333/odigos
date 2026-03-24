@@ -263,6 +263,9 @@ spec:
             - /odigosotelcol
           args:
             - --config=k8scm:{{ .Release.Namespace }}/odigos-data-collection/conf
+            {{- if and .Values.profiling .Values.profiling.enabled }}
+            - --feature-gates=service.profilesSupport
+            {{- end }}
           securityContext:
             {{- if $privilegedRequired }}
             privileged: true
