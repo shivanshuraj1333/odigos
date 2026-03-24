@@ -33,6 +33,9 @@ yalc.lock
 # Local UI profiling debug dumps (GET /debug/profile-dumps)
 frontend/services/collector_profiles/profile-dumps/
 
+# Local profiling / agent dump trees (EC2 or laptop)
+profiling-dumps/
+
 # CLI embedded Helm charts (generated during build)
 cli/pkg/helm/embedded/*.tgz
 

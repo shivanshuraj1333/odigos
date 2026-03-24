@@ -1,0 +1,12 @@
+# >>> odigos-eks-env-begin (managed by scripts/bootstrap-ec2-odigos-dev.sh)
+# Odigos / EKS deployer: AWS env for kubectl & helm (gitignored; see scripts/eks-vm-aws.env.example)
+_odigos_eks_env="__ODIGOS_ROOT__/scripts/eks-vm-aws.env"
+[[ -f "$_odigos_eks_env" ]] && { set -a; source "$_odigos_eks_env"; set +a; }
+unset _odigos_eks_env
+# Dedicated kubeconfig so Kind (~/.kube/config) and EKS do not share current-context
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/eks-ebpf-profiler.config}"
+mkdir -p "${KUBECONFIG%/*}"
+if [[ ! -s "$KUBECONFIG" ]] && command -v aws >/dev/null 2>&1 && [[ -n "${CLUSTER_NAME:-}" && -n "${AWS_REGION:-}" ]]; then
+  aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION" --kubeconfig "$KUBECONFIG" 2>/dev/null || true
+fi
+# <<< odigos-eks-env-end
