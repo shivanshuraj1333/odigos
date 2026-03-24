@@ -219,6 +219,8 @@ push-ui:
 # Example: public.ecr.aws/odigos/core/profiler:ui-6a838a56
 # Helm: set repository to public.ecr.aws/odigos/core/profiler and tag to ui-<sha> / autoscaler-<sha> / collector-<sha>.
 # Prereqs: docker buildx; AWS creds with ecr-public:GetAuthorizationToken; repo public.ecr.aws/odigos/core/profiler exists.
+# Credentials: export AWS_* or keep scripts/eks-vm-aws.env (gitignored) — make profiler-ecr-public-login sources it automatically.
+# If login fails with AccessDenied, attach IAM policy from scripts/iam-ecr-profiler-push.json to the IAM user/role.
 # Run login once: make profiler-ecr-public-login
 # Then: make push-profiler-images-eks   (or push-profiler-ui / push-profiler-autoscaler / push-profiler-collector separately)
 PROFILER_ECR_IMAGE ?= public.ecr.aws/odigos/core/profiler
@@ -228,7 +230,7 @@ PROFILER_IMAGE_TAG ?=
 
 .PHONY: profiler-ecr-public-login
 profiler-ecr-public-login:
-	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+	./scripts/aws-ecr-login-from-env.sh public
 
 # expands to e.g. ui-6a838a56 or ui-6a838a56-rc1 when PROFILER_IMAGE_TAG is set
 profiler_tag = $(1)-$(PROFILER_SHA)$(if $(PROFILER_IMAGE_TAG),-$(PROFILER_IMAGE_TAG),)
@@ -539,7 +541,7 @@ dev-backpressue-destination:
 
 .PHONY: push-workload-lifecycle-images
 push-workload-lifecycle-images:
-	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+	./scripts/aws-ecr-login-from-env.sh public
 	docker buildx build --push --platform linux/amd64,linux/arm64 -t public.ecr.aws/odigos/nodejs-unsupported-version:v0.0.1 -f tests/common/services/nodejs-http-server/unsupported-version.Dockerfile tests/common/services/nodejs-http-server
 	docker buildx build --push --platform linux/amd64,linux/arm64 -t public.ecr.aws/odigos/nodejs-very-old-version:v0.0.1 -f tests/common/services/nodejs-http-server/very-old-version.Dockerfile tests/common/services/nodejs-http-server
 	docker buildx build --push --platform linux/amd64,linux/arm64 -t public.ecr.aws/odigos/nodejs-minimum-version:v0.0.1 -f tests/common/services/nodejs-http-server/minimum-version.Dockerfile tests/common/services/nodejs-http-server
@@ -570,7 +572,7 @@ push-workload-lifecycle-images:
 
 .PHONY: ecr-login
 ecr-login:
-	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+	./scripts/aws-ecr-login-from-env.sh public
 
 build-tag-push-ecr-image/%:
 	docker build --platform linux/amd64 -t $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(BUILD_DIR) -f $(DOCKERFILE) \
