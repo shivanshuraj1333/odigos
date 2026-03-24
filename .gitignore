@@ -30,6 +30,8 @@ yalc.lock
 
 *.log
 *.logs
+# Local UI profiling debug dumps (GET /debug/profile-dumps)
+frontend/services/collector_profiles/profile-dumps/
 
 # CLI embedded Helm charts (generated during build)
 cli/pkg/helm/embedded/*.tgz
