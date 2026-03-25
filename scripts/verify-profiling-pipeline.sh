@@ -136,20 +136,24 @@ runtime_jsonl() {
   local py="$SCRIPT_DIR/parse_profiles_jsonl.py"
   [[ -f "$py" ]] || die "missing $py"
   note "Reading gateway profiles.jsonl (if present)..."
-  if ! kubectl exec -n "$NS" deploy/odigos-gateway -- test -f /var/odigos/profiles-export/profiles.jsonl 2>/dev/null; then
-    warn "profiles.jsonl not present yet — generate load and retry"
+  local tmp errf
+  tmp="$(mktemp)"
+  errf="$(mktemp)"
+  kubectl exec -n "$NS" deploy/odigos-gateway -- cat /var/odigos/profiles-export/profiles.jsonl 2>"$errf" >"$tmp" || true
+  if grep -qE 'executable file not found|not found in \$PATH' "$errf" 2>/dev/null; then
+    warn "gateway collector is distroless (no cat) — skip JSONL read; ConfigMap pipeline checks above are still valid"
+    rm -f "$tmp" "$errf"
     return 0
   fi
-  local sz
-  sz="$(kubectl exec -n "$NS" deploy/odigos-gateway -- wc -c /var/odigos/profiles-export/profiles.jsonl 2>/dev/null | awk '{print $1}' || echo 0)"
-  if [[ "${sz:-0}" -eq 0 ]]; then
-    warn "profiles.jsonl is empty — generate CPU load on workloads"
+  rm -f "$errf"
+  if [[ ! -s "$tmp" ]]; then
+    warn "profiles.jsonl not present yet or empty — generate CPU load on workloads"
+    rm -f "$tmp"
     return 0
   fi
-  kubectl exec -n "$NS" deploy/odigos-gateway -- cat /var/odigos/profiles-export/profiles.jsonl 2>/dev/null \
-    | head -n 100 \
-    | python3 "$py" --min-lines 1 --require-key service.name --require-key k8s.namespace.name \
+  head -n 100 "$tmp" | python3 "$py" --min-lines 1 --require-key service.name --require-key k8s.namespace.name \
     || fail "parse_profiles_jsonl could not validate JSONL resource attributes"
+  rm -f "$tmp"
   note "profiles.jsonl sample lines parsed OK (k8s + service.name)."
 }
 
@@ -164,22 +168,41 @@ runtime_jsonl_node() {
     return 0
   fi
   note "Reading node profiles.jsonl from $pod (data-collection) if present..."
-  if ! kubectl exec -n "$NS" "$pod" -c data-collection -- test -f /var/odigos/node-profiles-export/profiles.jsonl 2>/dev/null; then
-    warn "node profiles.jsonl not present — enable profiling.nodeFileExport and wait for samples"
+  local ntmp nerr
+  ntmp="$(mktemp)"
+  nerr="$(mktemp)"
+  kubectl exec -n "$NS" "$pod" -c data-collection -- cat /var/odigos/node-profiles-export/profiles.jsonl 2>"$nerr" >"$ntmp" || true
+  if grep -qE 'executable file not found|not found in \$PATH' "$nerr" 2>/dev/null; then
+    warn "data-collection is distroless (no cat) — skip node JSONL read"
+    rm -f "$ntmp" "$nerr"
     return 0
   fi
-  kubectl exec -n "$NS" "$pod" -c data-collection -- cat /var/odigos/node-profiles-export/profiles.jsonl 2>/dev/null \
-    | head -n 100 \
-    | python3 "$py" --min-lines 1 --audit-dictionary \
+  rm -f "$nerr"
+  if [[ ! -s "$ntmp" ]]; then
+    warn "node profiles.jsonl not present or empty — enable profiling.nodeFileExport and wait for samples"
+    rm -f "$ntmp"
+    return 0
+  fi
+  head -n 100 "$ntmp" | python3 "$py" --min-lines 1 --audit-dictionary \
     || fail "parse_profiles_jsonl could not read node JSONL"
+  rm -f "$ntmp"
   note "node profiles.jsonl sample parsed OK."
 }
 
 runtime_ui() {
   need_cmd kubectl
-  note "GET odigos-ui /api/debug/profiling-slots ..."
-  if ! kubectl exec -n "$NS" deploy/odigos-ui -- wget -qO- http://127.0.0.1:3000/api/debug/profiling-slots >/tmp/odigos-profiling-slots.json 2>/dev/null; then
-    warn "could not reach UI profiling debug endpoint (wget missing or UI not ready)"
+  command -v curl >/dev/null 2>&1 || { warn "curl missing — skip UI profiling debug endpoint"; return 0; }
+  note "GET odigos-ui /api/debug/profiling-slots (port-forward + curl)..."
+  local pf_port=$((31000 + RANDOM % 2000))
+  kubectl port-forward --address 127.0.0.1 -n "$NS" "svc/ui" "${pf_port}:3000" >/dev/null 2>&1 &
+  local pf=$!
+  sleep 3
+  local ok=0
+  curl -sS -m 8 "http://127.0.0.1:${pf_port}/api/debug/profiling-slots" -o /tmp/odigos-profiling-slots.json 2>/dev/null || ok=1
+  kill "$pf" 2>/dev/null || true
+  wait "$pf" 2>/dev/null || true
+  if [[ "$ok" -ne 0 ]]; then
+    warn "could not reach UI profiling debug endpoint (port-forward or curl failed)"
     return 0
   fi
   if ! grep -q "activeKeys" /tmp/odigos-profiling-slots.json 2>/dev/null; then

@@ -38,15 +38,22 @@ NODE_JSONL="${NODE_PROFILES_JSONL:-/var/odigos/node-profiles-export/profiles.jso
 fail() { echo "check-profiles-dictionary-e2e: FAIL: $*" >&2; exit 1; }
 note() { echo "check-profiles-dictionary-e2e: $*" >&2; }
 
-kubectl exec -n "$NS" deploy/odigos-gateway -- test -f "$GATEWAY_JSONL" 2>/dev/null || \
-  fail "gateway $GATEWAY_JSONL not found — enable profiling.gatewayFileExport and wait for samples"
-
 TMP="$(mktemp)"
 TMPN="$(mktemp)"
-trap 'rm -f "$TMP" "$TMPN"' EXIT
+ERRF="$(mktemp)"
+ERRN="$(mktemp)"
+trap 'rm -f "$TMP" "$TMPN" "$ERRF" "$ERRN"' EXIT
 
-kubectl exec -n "$NS" deploy/odigos-gateway -- cat "$GATEWAY_JSONL" 2>/dev/null | head -n "$MAX_LINES" >"$TMP" || true
-[[ -s "$TMP" ]] || fail "gateway jsonl empty — generate CPU load on workloads"
+# Odigos collector image is distroless: no `cat`/`sh`/`tar`, so kubectl exec cannot stream files.
+kubectl exec -n "$NS" deploy/odigos-gateway -- cat "$GATEWAY_JSONL" 2>"$ERRF" >"$TMP" || true
+if grep -qE 'executable file not found|not found in \$PATH' "$ERRF" 2>/dev/null; then
+  note "SKIP: gateway collector is distroless (no cat). Cannot read profiles.jsonl from outside the pod."
+  note "ConfigMap checks: use ./scripts/verify-profiling-pipeline.sh --skip-runtime. For payloads, port-forward UI and use /debug/* or pull profile dumps."
+  exit 0
+fi
+[[ -s "$TMP" ]] || fail "gateway $GATEWAY_JSONL missing or empty — enable profiling.gatewayFileExport and wait for samples"
+
+head -n "$MAX_LINES" "$TMP" >"${TMP}.h" && mv "${TMP}.h" "$TMP"
 
 note "gateway: checking dictionary on first $MAX_LINES lines..."
 python3 "$PY" --min-lines 1 --require-nonempty-dictionary --audit-dictionary "$TMP" >/dev/null || fail "gateway OTLP lines lack usable dictionary (UI will show frame_N)"
@@ -56,10 +63,14 @@ note "gateway: OK (dictionary present — matches what UI backend should receive
 if [[ "$CHECK_NODE" == true ]]; then
   POD="$(kubectl get pods -n "$NS" -l app.kubernetes.io/name=odiglet -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
   [[ -n "$POD" ]] || fail "no odiglet pod"
-  kubectl exec -n "$NS" "$POD" -c data-collection -- test -f "$NODE_JSONL" 2>/dev/null || \
-    fail "node $NODE_JSONL not found — enable profiling.nodeFileExport"
-  kubectl exec -n "$NS" "$POD" -c data-collection -- cat "$NODE_JSONL" 2>/dev/null | head -n "$MAX_LINES" >"$TMPN" || true
-  [[ -s "$TMPN" ]] || fail "node jsonl empty"
+  ERRN="$(mktemp)"
+  kubectl exec -n "$NS" "$POD" -c data-collection -- cat "$NODE_JSONL" 2>"$ERRN" >"$TMPN" || true
+  if grep -qE 'executable file not found|not found in \$PATH' "$ERRN" 2>/dev/null; then
+    note "SKIP: data-collection is distroless (no cat); cannot read node JSONL via kubectl exec."
+    exit 0
+  fi
+  [[ -s "$TMPN" ]] || fail "node $NODE_JSONL missing or empty — enable profiling.nodeFileExport and wait for samples"
+  head -n "$MAX_LINES" "$TMPN" >"${TMPN}.h" && mv "${TMPN}.h" "$TMPN"
   note "node (DC): checking dictionary..."
   python3 "$PY" --min-lines 1 --require-nonempty-dictionary --audit-dictionary "$TMPN" >/dev/null || \
     fail "node hop has no dictionary — issue is before gateway (profiler/collector)"
