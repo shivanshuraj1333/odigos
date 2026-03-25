@@ -13,47 +13,35 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
-// TestFlow_ParseOTLPChunk_ExtractsSamples runs the parser on real testdata and asserts
-// we get samples and symbol names (cross-check parse layer).
-func TestFlow_ParseOTLPChunk_ExtractsSamples(t *testing.T) {
+// TestFlow_SamplesFromOTLPChunk_ChunkWithSymbols asserts Pyroscope-path extraction on testdata (ConvertOtelToGoogle).
+func TestFlow_SamplesFromOTLPChunk_ChunkWithSymbols(t *testing.T) {
 	data, err := os.ReadFile("testdata/chunk-with-symbols.json")
 	if err != nil {
 		t.Skipf("testdata/chunk-with-symbols.json not found: %v", err)
 		return
 	}
-	parsed, err := flamegraph.ParseOTLPChunk(data)
-	if err != nil {
-		t.Fatalf("ParseOTLPChunk: %v", err)
+	samples, st := flamegraph.SamplesFromOTLPChunk(data)
+	if st.Route != flamegraph.RoutePyroscopeOTLP {
+		t.Fatalf("route=%s want %s reason=%q", st.Route, flamegraph.RoutePyroscopeOTLP, st.PyroscopeFailReason)
 	}
-	if len(parsed.Samples) == 0 {
+	if len(samples) == 0 {
 		t.Fatal("expected at least one sample from chunk-with-symbols")
 	}
 	var totalValue int64
-	for _, s := range parsed.Samples {
+	nameSet := make(map[string]bool)
+	for _, s := range samples {
 		totalValue += s.Value
+		for _, n := range s.Stack {
+			nameSet[n] = true
+		}
 	}
 	if totalValue <= 0 {
 		t.Errorf("sum of sample values should be > 0, got %d", totalValue)
 	}
-	// Dictionary has runtime.main, main.foo, main.bar
-	hasRuntimeMain := false
-	hasMainFoo := false
-	hasMainBar := false
-	for _, name := range parsed.Names {
-		if name == "runtime.main" {
-			hasRuntimeMain = true
-		}
-		if name == "main.foo" {
-			hasMainFoo = true
-		}
-		if name == "main.bar" {
-			hasMainBar = true
-		}
+	if !nameSet["runtime.main"] || !nameSet["main.foo"] || !nameSet["main.bar"] {
+		t.Errorf("expected symbols in stacks; stacks sample names=%v", nameSet)
 	}
-	if !hasRuntimeMain || !hasMainFoo || !hasMainBar {
-		t.Errorf("expected symbols from dictionary; names=%v", parsed.Names)
-	}
-	t.Logf("parsed: samples=%d totalValue=%d names=%v", len(parsed.Samples), totalValue, parsed.Names)
+	t.Logf("SamplesFromOTLPChunk: samples=%d totalValue=%d route=%s", len(samples), totalValue, st.Route)
 }
 
 // TestFlow_BuildProfile_FromChunkWithSymbols runs BuildPyroscopeProfileFromChunks on
@@ -146,27 +134,26 @@ func TestFlow_BuildProfile_FromAccountingMerged(t *testing.T) {
 		debug.ChunkCount, fb.NumTicks, len(fb.Names), len(fb.Levels), debug.ParseErrors)
 }
 
-// TestFlow_ParseThenBuild_Consistency cross-checks: sum of parsed sample values must equal
-// profile.Flamebearer.NumTicks (no samples lost in the pipeline).
-func TestFlow_ParseThenBuild_Consistency(t *testing.T) {
+// TestFlow_SamplesVsBuild_NumTicksConsistency cross-checks: sum of Pyroscope-path sample values equals flame NumTicks.
+func TestFlow_SamplesVsBuild_NumTicksConsistency(t *testing.T) {
 	data, err := os.ReadFile("testdata/chunk-with-symbols.json")
 	if err != nil {
 		t.Skipf("testdata/chunk-with-symbols.json not found: %v", err)
 		return
 	}
-	parsed, err := flamegraph.ParseOTLPChunk(data)
-	if err != nil {
-		t.Fatalf("ParseOTLPChunk: %v", err)
+	samples, st := flamegraph.SamplesFromOTLPChunk(data)
+	if st.Route != flamegraph.RoutePyroscopeOTLP {
+		t.Fatalf("route=%s reason=%q", st.Route, st.PyroscopeFailReason)
 	}
-	var parsedSum int64
-	for _, s := range parsed.Samples {
-		parsedSum += s.Value
+	var sum int64
+	for _, s := range samples {
+		sum += s.Value
 	}
 	profile := BuildPyroscopeProfileFromChunks([][]byte{data})
-	if profile.Flamebearer.NumTicks != parsedSum {
-		t.Errorf("NumTicks %d != sum of parsed sample values %d", profile.Flamebearer.NumTicks, parsedSum)
+	if profile.Flamebearer.NumTicks != sum {
+		t.Errorf("NumTicks %d != sum of sample values %d", profile.Flamebearer.NumTicks, sum)
 	}
-	t.Logf("consistency: parsed sum=%d NumTicks=%d", parsedSum, profile.Flamebearer.NumTicks)
+	t.Logf("consistency: sample sum=%d NumTicks=%d", sum, profile.Flamebearer.NumTicks)
 }
 
 // TestFlow_Consumer_StoreOne_Then_GetProfile runs the full ingest path: pprofile → consumer

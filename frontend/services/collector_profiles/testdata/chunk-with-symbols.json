@@ -1,26 +1,39 @@
 {
   "resourceProfiles": [
     {
-      "resource": { "attributes": [] },
       "scopeProfiles": [
         {
-          "scope": { "name": "test" },
           "profiles": [
             {
-              "sampleType": { "typeStrindex": 0, "unitStrindex": 1 },
-              "periodType": { "typeStrindex": 0, "unitStrindex": 1 },
-              "period": "1",
-              "timeUnixNano": "1000000000",
+              "sampleType": {
+                "typeStrindex": 1,
+                "unitStrindex": 2
+              },
               "samples": [
                 {
-                  "attributeIndices": [0, 1, 2],
-                  "timestampsUnixNano": ["1000000000"]
+                  "values": [
+                    "2"
+                  ],
+                  "attributeIndices": [
+                    0
+                  ]
                 },
                 {
-                  "attributeIndices": [0, 1],
-                  "timestampsUnixNano": ["1000000001"]
+                  "stackIndex": 1,
+                  "values": [
+                    "1"
+                  ],
+                  "attributeIndices": [
+                    0
+                  ]
                 }
-              ]
+              ],
+              "timeUnixNano": "1000000000",
+              "periodType": {
+                "typeStrindex": 3,
+                "unitStrindex": 4
+              },
+              "period": "1000000"
             }
           ]
         }
@@ -28,16 +41,87 @@
     }
   ],
   "dictionary": {
-    "stringTable": ["", "cpu", "samples", "runtime.main", "main.foo", "main.bar"],
-    "functionTable": [
-      { "nameStrindex": 3 },
-      { "nameStrindex": 4 },
-      { "nameStrindex": 5 }
+    "mappingTable": [
+      {
+        "memoryStart": "4096",
+        "memoryLimit": "8192",
+        "filenameStrindex": 10
+      }
     ],
     "locationTable": [
-      { "line": [{ "functionIndex": 0 }] },
-      { "line": [{ "functionIndex": 1 }] },
-      { "line": [{ "functionIndex": 2 }] }
+      {
+        "address": "4352",
+        "lines": [
+          {
+            "line": "1"
+          }
+        ]
+      },
+      {
+        "address": "4608",
+        "lines": [
+          {
+            "functionIndex": 1,
+            "line": "2"
+          }
+        ]
+      },
+      {
+        "address": "4864",
+        "lines": [
+          {
+            "functionIndex": 2,
+            "line": "3"
+          }
+        ]
+      }
+    ],
+    "functionTable": [
+      {
+        "nameStrindex": 7
+      },
+      {
+        "nameStrindex": 8
+      },
+      {
+        "nameStrindex": 9
+      }
+    ],
+    "stringTable": [
+      "",
+      "samples",
+      "count",
+      "cpu",
+      "nanoseconds",
+      "service.name",
+      "test-svc",
+      "runtime.main",
+      "main.foo",
+      "main.bar",
+      "lib.so"
+    ],
+    "attributeTable": [
+      {
+        "keyStrindex": 5,
+        "value": {
+          "stringValue": "test-svc"
+        }
+      }
+    ],
+    "stackTable": [
+      {
+        "locationIndices": [
+          2,
+          1,
+          0
+        ]
+      },
+      {
+        "locationIndices": [
+          1,
+          0
+        ]
+      }
     ]
   }
 }

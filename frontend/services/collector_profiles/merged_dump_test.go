@@ -74,7 +74,11 @@ func TestMergedDumpPyroscopeFormat(t *testing.T) {
 	if profile.Symbols != nil {
 		t.Error("symbols should be nil for strict Pyroscope response shape")
 	}
-	t.Logf("numTicks=%d names=%d levels=%d startTime=%d (Pyroscope-like)", fb.NumTicks, len(fb.Names), len(fb.Levels), profile.Timeline.StartTime)
+	var startSec int64
+	if profile.Timeline != nil {
+		startSec = profile.Timeline.StartTime
+	}
+	t.Logf("numTicks=%d names=%d levels=%d startTime=%d (Pyroscope-like)", fb.NumTicks, len(fb.Names), len(fb.Levels), startSec)
 
 	// Marshal to JSON and assert the serialized shape matches Pyroscope (same keys as reference).
 	gotJSON, err := json.Marshal(profile)
@@ -179,9 +183,9 @@ func TestChunkWithSymbols(t *testing.T) {
 	t.Logf("symbols parsed: numTicks=%d names=%v (Pyroscope-like)", fb.NumTicks, fb.Names)
 }
 
-// TestFallbackDictionary verifies that chunks with a real dictionary still contribute symbols when paired
-// with an earlier chunk that has an empty dictionary (names are not borrowed across chunks).
-func TestFallbackDictionary(t *testing.T) {
+// TestMergeSecondChunkWithDictionaryAfterEmptyFirst verifies that a chunk with a full OTLP dictionary
+// still contributes symbols when merged after a chunk that fails Pyroscope conversion (empty dictionary).
+func TestMergeSecondChunkWithDictionaryAfterEmptyFirst(t *testing.T) {
 	full, err := os.ReadFile("testdata/chunk-with-symbols.json")
 	if err != nil {
 		t.Skipf("testdata/chunk-with-symbols.json not found: %v", err)
@@ -209,9 +213,9 @@ func TestFallbackDictionary(t *testing.T) {
 		}
 	}
 	if !hasNames {
-		t.Errorf("fallback dictionary: expected symbols from chunk with dictionary; got names %v", fb.Names)
+		t.Errorf("merge: expected symbols from chunk with dictionary; got names %v", fb.Names)
 	}
-	t.Logf("fallback dictionary: numTicks=%d names=%v", fb.NumTicks, fb.Names)
+	t.Logf("merge empty+full dict chunks: numTicks=%d names=%v", fb.NumTicks, fb.Names)
 }
 
 // TestDcDumpRunsOnRealDumps runs BuildPyroscopeProfileFromChunks on all JSON files in dc-dump/

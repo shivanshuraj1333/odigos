@@ -75,8 +75,8 @@ func TestDryRunFlamegraphsFromCommittedTestdata(t *testing.T) {
 					t.Errorf("missing top-level key %q", k)
 				}
 			}
-			t.Logf("ticks=%d names=%d levels=%d pyroChunks=%d jsonFallbackChunks=%d parseErr=%d chunksWithSamples=%d",
-				fb.NumTicks, len(fb.Names), len(fb.Levels), dbg.ChunksViaPyroscope, dbg.ChunksViaJSONFallback, dbg.ParseErrors, dbg.ChunksWithSamples)
+			t.Logf("ticks=%d names=%d levels=%d pyroChunks=%d parseErr=%d chunksWithSamples=%d",
+				fb.NumTicks, len(fb.Names), len(fb.Levels), dbg.ChunksViaPyroscope, dbg.ParseErrors, dbg.ChunksWithSamples)
 		})
 	}
 }

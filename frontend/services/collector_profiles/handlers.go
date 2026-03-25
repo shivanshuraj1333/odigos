@@ -96,16 +96,15 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 
 // BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
 // merges samples into a tree, and returns a Pyroscope-compatible response (version, flamebearer, metadata, timeline).
-// Per-chunk transformation uses flamegraph.SamplesFromOTLPChunk (Pyroscope ConvertOtelToGoogle first, then JSON fallback).
+// Per-chunk transformation uses only flamegraph.SamplesFromOTLPChunk (Pyroscope ConvertOtelToGoogle, same as Grafana ingest).
 //
 // ProfileBuildDebug holds debug info from building a profile from chunks (for ?debug=1).
 type ProfileBuildDebug struct {
-	ChunkCount           int `json:"chunkCount"`
-	NumTicks             int64 `json:"numTicks"`
-	ParseErrors          int `json:"parseErrors"`
-	ChunksWithSamples    int `json:"chunksWithSamples"`
-	ChunksViaPyroscope   int `json:"chunksViaPyroscope"`
-	ChunksViaJSONFallback int `json:"chunksViaJSONFallback"`
+	ChunkCount         int `json:"chunkCount"`
+	NumTicks           int64 `json:"numTicks"`
+	ParseErrors        int `json:"parseErrors"`
+	ChunksWithSamples  int `json:"chunksWithSamples"`
+	ChunksViaPyroscope int `json:"chunksViaPyroscope"`
 }
 
 func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProfile {
@@ -122,12 +121,10 @@ func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.Flame
 		switch st.Route {
 		case flamegraph.RoutePyroscopeOTLP:
 			debug.ChunksViaPyroscope++
-		case flamegraph.RouteJSONFallback:
-			debug.ChunksViaJSONFallback++
 		case flamegraph.RouteError:
 			debug.ParseErrors++
-			bpInfof("build_profile: chunk[%d] transform_error bytes=%d pyroscope_reason=%q json_err=%v",
-				i, st.ByteLen, st.PyroscopeFailReason, st.JSONFallbackErr)
+			bpInfof("build_profile: chunk[%d] transform_error bytes=%d pyroscope_reason=%q",
+				i, st.ByteLen, st.PyroscopeFailReason)
 			continue
 		}
 		if len(samples) > 0 {
@@ -152,8 +149,8 @@ func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.Flame
 		b, _ := json.Marshal(debug)
 		bpInfof("build_profile: summary_json=%s", string(b))
 	}
-	bpInfof("build_profile: done num_ticks=%d names=%d levels=%d pyroscope_chunks=%d json_fallback_chunks=%d parse_errors=%d",
-		fb.NumTicks, len(fb.Names), len(fb.Levels), debug.ChunksViaPyroscope, debug.ChunksViaJSONFallback, debug.ParseErrors)
+	bpInfof("build_profile: done num_ticks=%d names=%d levels=%d pyroscope_chunks=%d parse_errors=%d",
+		fb.NumTicks, len(fb.Names), len(fb.Levels), debug.ChunksViaPyroscope, debug.ParseErrors)
 	return flamegraph.FlamebearerProfile{
 		Version:     1,
 		Flamebearer: fb,

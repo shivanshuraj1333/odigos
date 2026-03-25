@@ -82,8 +82,8 @@ func GetProfilingForSource(store ProfileStoreRef, namespace, kindStr, name strin
 	bpInfof("api_get: sourceKey=%q chunks=%d", key, len(chunks))
 	profilingDebugLog("api_get: sourceKey=%q chunks=%d", key, len(chunks))
 	profile, buildDebug := BuildPyroscopeProfileFromChunksWithDebug(chunks)
-	bpInfof("api_get: built sourceKey=%q chunkCount=%d numTicks=%d parseErrors=%d pyroChunks=%d jsonFallbackChunks=%d chunksWithSamples=%d namesCount=%d",
-		key, buildDebug.ChunkCount, buildDebug.NumTicks, buildDebug.ParseErrors, buildDebug.ChunksViaPyroscope, buildDebug.ChunksViaJSONFallback, buildDebug.ChunksWithSamples, len(profile.Flamebearer.Names))
+	bpInfof("api_get: built sourceKey=%q chunkCount=%d numTicks=%d parseErrors=%d pyroChunks=%d chunksWithSamples=%d namesCount=%d",
+		key, buildDebug.ChunkCount, buildDebug.NumTicks, buildDebug.ParseErrors, buildDebug.ChunksViaPyroscope, buildDebug.ChunksWithSamples, len(profile.Flamebearer.Names))
 	if buildDebug.ParseErrors > 0 {
 		bpInfof("api_get: sourceKey=%q parseErrors=%d (some chunks failed transform)", key, buildDebug.ParseErrors)
 	}

@@ -1,5 +1,5 @@
-// Pyroscope OTLP conversion uses github.com/grafana/pyroscope/pkg/ingester/otlp.ConvertOtelToGoogle
-// (same as Grafana Pyroscope ingest). See SamplesFromOTLPChunk for the public entry point.
+// Pyroscope OTLP conversion: github.com/grafana/pyroscope/pkg/ingester/otlp.ConvertOtelToGoogle
+// (same code path as Grafana Pyroscope ingest). Used only via SamplesFromOTLPChunk.
 package flamegraph
 
 import (
@@ -59,7 +59,8 @@ func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfil
 	}
 	var out []Sample
 	for _, cp := range converted {
-		p := extractGoogleProfile(cp)
+		cp := cp // local copy so &cp is addressable for unexported field reflection
+		p := extractGoogleProfile(&cp)
 		if p != nil {
 			out = append(out, googleProfileToSamples(p)...)
 		}
@@ -68,21 +69,30 @@ func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfil
 }
 
 // extractGoogleProfile reads the unexported .profile field from otlp.convertedProfile via reflection.
+// cp must be *convertedProfile (or a pointer to the struct value); map iteration yields non-addressable
+// copies, so callers must pass &cp from a local variable.
 func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 	v := reflect.ValueOf(cp)
-	if v.Kind() == reflect.Struct {
-		f := v.FieldByName("profile")
-		if f.IsValid() {
-			var p *googleProfile.Profile
-			if f.CanInterface() {
-				p, _ = f.Interface().(*googleProfile.Profile)
-			} else if f.CanAddr() {
-				p = *(**googleProfile.Profile)(unsafe.Pointer(f.Addr().UnsafePointer()))
-			}
-			return p
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
 		}
+		v = v.Elem()
 	}
-	return nil
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+	f := v.FieldByName("profile")
+	if !f.IsValid() {
+		return nil
+	}
+	var p *googleProfile.Profile
+	if f.CanInterface() {
+		p, _ = f.Interface().(*googleProfile.Profile)
+	} else if f.CanAddr() {
+		p = *(**googleProfile.Profile)(unsafe.Pointer(f.Addr().UnsafePointer()))
+	}
+	return p
 }
 
 // googleProfileToSamples converts a Google pprof Profile to our Sample format (root-first stack, value).
