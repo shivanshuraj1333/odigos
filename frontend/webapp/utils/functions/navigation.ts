@@ -22,6 +22,8 @@ export const getNavbarIcons = (router: AppRouterInstance, currentPath: string) =
     getPayloadForIcon(router, currentPath, ROUTES.INSTRUMENTATION_RULES, InstrumentationRuleIcon),
     getPayloadForIcon(router, currentPath, ROUTES.SERVICE_MAP, ServiceMapIcon),
     getPayloadForIcon(router, currentPath, ROUTES.PIPELINE_COLLECTORS, PipelineCollectorIcon),
+    // Profiling: reuse an existing icon until ui-kit adds a dedicated one (same as pipeline collectors).
+    getPayloadForIcon(router, currentPath, ROUTES.PROFILING, PipelineCollectorIcon),
   ];
 
   return navIcons;
