@@ -41,6 +41,9 @@ frontend/services/collector_profiles/profile-dumps/
 # Local profiling / agent dump trees (EC2 or laptop)
 profiling-dumps/
 
+# One-off GraphQL + UI log captures (profiling E2E)
+profiling-e2e-artifacts/
+
 # Ad-hoc vendored UI bits (do not commit local copies)
 vendor/ui-kit/
 
