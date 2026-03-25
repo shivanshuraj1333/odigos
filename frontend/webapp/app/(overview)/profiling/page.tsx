@@ -1,22 +1,17 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import styled from 'styled-components';
 import { Button, FlexColumn } from '@odigos/ui-kit/components';
-import { useProfilingHTTP } from '@/hooks/profiling';
+import { ProfilingFlamegraph } from '@/components/profiling/ProfilingFlamegraph';
+import { useProfilingAutoRefresh, useProfilingHTTP } from '@/hooks/profiling';
 import { TABLE_MAX_WIDTH } from '@/utils';
 
 const Muted = styled.p`
   font-size: 0.8125rem;
   margin: 0;
 `;
-
-const ProfilingFlamegraph = dynamic(() => import('@/components/profiling/ProfilingFlamegraph').then((m) => m.ProfilingFlamegraph), {
-  ssr: false,
-  loading: () => <Muted>Loading flame graph…</Muted>,
-});
 
 const Panel = styled(FlexColumn)`
   max-width: ${TABLE_MAX_WIDTH};
@@ -74,7 +69,9 @@ export default function ProfilingPage() {
 
   const { loading, error, profile, lastSourceKey, enableAndLoad, load, clear } = useProfilingHTTP();
 
-  const canSubmit = useMemo(() => namespace.trim() && kind.trim() && name.trim(), [namespace, kind, name]);
+  const canSubmit = useMemo(() => !!(namespace.trim() && kind.trim() && name.trim()), [namespace, kind, name]);
+
+  useProfilingAutoRefresh(load, namespace.trim(), kind.trim(), name.trim(), profile, { enabled: canSubmit });
 
   const onEnableAndLoad = async () => {
     if (!canSubmit) return;
@@ -160,7 +157,9 @@ export default function ProfilingPage() {
       )}
 
       {emptyProfile && !loading && !error && profile && (
-        <Help>No samples in buffer yet (numTicks=0). Generate traffic, wait a few seconds, then click Refresh.</Help>
+        <Help>
+          No samples yet — this page auto-refreshes until data appears. Keep traffic on the workload; first batches may lack Kubernetes labels and are dropped until the collector enriches them.
+        </Help>
       )}
 
       {profile && !emptyProfile && <ProfilingFlamegraph profile={profile} />}

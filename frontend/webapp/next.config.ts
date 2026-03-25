@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import path from 'path';
 
 // Bundle analyzer configuration
 const withBundleAnalyzer = require('@next/bundle-analyzer')({
@@ -6,7 +7,7 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 });
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@pyroscope/flamegraph', 'graphviz-react', 'true-myth'],
+  transpilePackages: ['graphviz-react', 'true-myth'],
   output: 'export',
   reactStrictMode: false,
   images: {
@@ -29,17 +30,26 @@ const nextConfig: NextConfig = {
       '@apollo/client',
       '@apollo/experimental-nextjs-app-support',
       'graphql',
-      'react',
-      'react-dom',
       'react-error-boundary',
       'styled-components',
       'zustand',
-      '@pyroscope/flamegraph',
     ],
   },
-  // Turbopack configuration (empty config silences the warning)
+  // Dedupe React for libraries that resolve a nested copy (Turbopack).
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      react: path.join(__dirname, 'node_modules/react'),
+      'react-dom': path.join(__dirname, 'node_modules/react-dom'),
+    };
+    return config;
+  },
+  // Pin Turbopack to this app — if a parent directory has another yarn.lock, Next may pick the wrong root and return 500 / broken chunks.
   turbopack: {
+    root: path.resolve(__dirname),
     resolveAlias: {
+      react: './node_modules/react',
+      'react-dom': './node_modules/react-dom',
       'styled-components': './node_modules/styled-components',
       zustand: './node_modules/zustand',
     },
