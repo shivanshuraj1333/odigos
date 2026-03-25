@@ -41,6 +41,9 @@ frontend/services/collector_profiles/profile-dumps/
 # Local profiling / agent dump trees (EC2 or laptop)
 profiling-dumps/
 
+# Ad-hoc vendored UI bits (do not commit local copies)
+vendor/ui-kit/
+
 # CLI embedded Helm charts (generated during build)
 cli/pkg/helm/embedded/*.tgz
 
