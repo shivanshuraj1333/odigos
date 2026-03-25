@@ -13,8 +13,8 @@ import (
 	commonconf "github.com/odigos-io/odigos/autoscaler/controllers/common"
 	"github.com/odigos-io/odigos/autoscaler/controllers/nodecollector/collectorconfig"
 	odigoscommon "github.com/odigos-io/odigos/common"
-	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/common/config"
+	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	"github.com/odigos-io/odigos/k8sutils/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
@@ -226,11 +226,16 @@ func calculateCollectorConfigDomains(
 	}
 
 	// profiles — configurable via ConfigMap (odigos-node-collector-profiles-config key "profiles") for k8sattributes keys (e.g. pod_association for pid/container id). Else use built-in default.
-	configDomains["profiles"] = getProfilesConfig(ctx, c, odigosNamespace, nodeCG)
+	// Optional: OdigosConfiguration.profiling.nodeFileExport appends a file exporter (DC-level capture vs gateway file export).
+	var odigosCfg *odigoscommon.OdigosConfiguration
+	if oc, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil {
+		odigosCfg = &oc
+	}
+	configDomains["profiles"] = getProfilesConfig(ctx, c, odigosNamespace, nodeCG, odigosCfg)
 
 	// Collector log level (e.g. debug for k8sattributes enrichment troubleshooting). Same key "collector" as gateway.
 	collectorLogLevel := string(odigoscommon.LogLevelInfo)
-	if odigosCfg, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil && odigosCfg.ComponentLogLevels != nil {
+	if odigosCfg != nil && odigosCfg.ComponentLogLevels != nil {
 		collectorLogLevel = odigosCfg.ComponentLogLevels.Resolve("collector")
 	}
 	configDomains["collector_telemetry"] = config.Config{
@@ -271,21 +276,24 @@ func getProfilesConfigMap(ctx context.Context, c client.Client, odigosNamespace 
 }
 
 // getProfilesConfig returns the profiles config domain: from ConfigMap odigos-node-collector-profiles-config key "profiles" if present and valid, otherwise the built-in default (so you can tune k8sattributes e.g. pod_association for pid/container id without rebuilding the image).
-func getProfilesConfig(ctx context.Context, c client.Client, odigosNamespace string, nodeCG *odigosv1.CollectorsGroup) config.Config {
+func getProfilesConfig(ctx context.Context, c client.Client, odigosNamespace string, nodeCG *odigosv1.CollectorsGroup, odigosCfg *odigoscommon.OdigosConfiguration) config.Config {
 	cm, err := getProfilesConfigMap(ctx, c, odigosNamespace)
+	var base config.Config
 	if err != nil {
-		return collectorconfig.ProfilesConfig(nodeCG)
+		base = collectorconfig.ProfilesConfig(nodeCG)
+		return mergeNodeProfilesFileExporter(odigosCfg, base)
 	}
 	raw, ok := cm.Data["profiles"]
 	if !ok || raw == "" {
-		return collectorconfig.ProfilesConfig(nodeCG)
+		base = collectorconfig.ProfilesConfig(nodeCG)
+		return mergeNodeProfilesFileExporter(odigosCfg, base)
 	}
-	var override config.Config
-	if err := yaml.Unmarshal([]byte(raw), &override); err != nil {
+	if err := yaml.Unmarshal([]byte(raw), &base); err != nil {
 		commonlogger.FromContext(ctx).Error(err, "failed to parse profiles override ConfigMap, using default")
-		return collectorconfig.ProfilesConfig(nodeCG)
+		base = collectorconfig.ProfilesConfig(nodeCG)
+		return mergeNodeProfilesFileExporter(odigosCfg, base)
 	}
-	return override
+	return mergeNodeProfilesFileExporter(odigosCfg, base)
 }
 
 func ownMetricsTelemetryConfig(ownMetricsConfig *odigosv1.OdigosOwnMetricsSettings, odigosNamespace string) (config.Config, error) {

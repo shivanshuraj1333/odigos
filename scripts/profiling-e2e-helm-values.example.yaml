@@ -18,6 +18,10 @@ profiling:
   gatewayFileExport:
     enabled: true
     path: /var/odigos/profiles-export/profiles.jsonl
+  # Optional: per-node profile JSONL before OTLP to gateway (DC-level capture).
+  # nodeFileExport:
+  #   enabled: true
+  #   path: /var/odigos/node-profiles-export/profiles.jsonl
   # ui.otlpGrpcPort defaults in chart; otlpUiEndpoint for gateway is set automatically when enabled.
 
 # Uncomment and set after building images:

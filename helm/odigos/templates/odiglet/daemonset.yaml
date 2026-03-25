@@ -16,6 +16,14 @@
   {{- end -}}
 {{- end -}}
 {{- $profilingEnabled := and .Values.profiling .Values.profiling.enabled }}
+{{- $nodeProfilesFileExport := false }}
+{{- $nodeProfilesFilePath := "/var/odigos/node-profiles-export/profiles.jsonl" }}
+{{- if and $profilingEnabled .Values.profiling .Values.profiling.nodeFileExport }}
+{{- $nodeProfilesFileExport = .Values.profiling.nodeFileExport.enabled | default false }}
+{{- if .Values.profiling.nodeFileExport.path }}
+{{- $nodeProfilesFilePath = .Values.profiling.nodeFileExport.path }}
+{{- end }}
+{{- end }}
 {{- $privilegedRequired := or $collectLogs $collectMetrics $profilingEnabled -}}
 {{- $k8sVersion := include "utils.cleanKubeVersion" . }}
 {{- if and $privilegedRequired .Values.odiglet.unPrivileged }}
@@ -357,6 +365,10 @@ spec:
               mountPath: /sys/kernel
               mountPropagation: HostToContainer
             {{- end }}
+            {{- if $nodeProfilesFileExport }}
+            - name: odigos-node-profiles-file-export
+              mountPath: {{ dir $nodeProfilesFilePath }}
+            {{- end }}
             - name: exchange-dir
               mountPath: /var/exchange
 # if hostMounts are not allowed we must use mountMethod of "k8s-init-container"
@@ -550,6 +562,10 @@ spec:
             name: odigos-go-offsets
         - name: exchange-dir
           emptyDir: {}
+        {{- if $nodeProfilesFileExport }}
+        - name: odigos-node-profiles-file-export
+          emptyDir: {}
+        {{- end }}
       {{ include "odigos.renderPullSecrets" . | nindent 6 }}
 {{- with .Values.odiglet }}
   {{- if .tolerations }}

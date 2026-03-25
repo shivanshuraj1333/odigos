@@ -18,6 +18,9 @@ data:
       {{- if and .Values.componentLogLevels .Values.componentLogLevels.collector }}
       collector: {{ .Values.componentLogLevels.collector }}
       {{- end }}
+      {{- if and .Values.componentLogLevels .Values.componentLogLevels.ui }}
+      ui: {{ .Values.componentLogLevels.ui }}
+      {{- end }}
     {{- if .Values.clusterName }}
     clusterName: {{ .Values.clusterName }}
     {{- end }}
@@ -298,6 +301,13 @@ data:
       gatewayFileExport:
         enabled: {{ .Values.profiling.gatewayFileExport.enabled | default false }}
         {{- with .Values.profiling.gatewayFileExport.path }}
+        path: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.profiling.nodeFileExport }}
+      nodeFileExport:
+        enabled: {{ .Values.profiling.nodeFileExport.enabled | default false }}
+        {{- with .Values.profiling.nodeFileExport.path }}
         path: {{ . | quote }}
         {{- end }}
       {{- end }}

@@ -49,8 +49,9 @@ helm_check() {
   # Avoid `echo "$out" | grep -q` — large YAML triggers SIGPIPE on echo when grep exits early (pipefail).
   grep -q "profiling:" <<<"$out" || fail "rendered manifests missing profiling block"
   grep -q "gatewayFileExport" <<<"$out" || fail "rendered manifests missing gatewayFileExport"
+  grep -q "nodeFileExport" <<<"$out" || fail "rendered manifests missing nodeFileExport (add profiling.nodeFileExport in values / chart defaults)"
   grep -A30 "profiling:" <<<"$out" | grep -q "enabled: true" || fail "expected profiling.enabled true under profiling block (check values file)"
-  note "Helm template checks passed (odigos-configuration includes profiling / gatewayFileExport)."
+  note "Helm template checks passed (odigos-configuration includes profiling / gatewayFileExport / nodeFileExport)."
 }
 
 kubectl_check() {
@@ -66,6 +67,7 @@ kubectl_check() {
   else
     echo "$odc" | grep -q "profiling:" || fail "odigos-configuration config.yaml missing profiling:"
     echo "$odc" | grep -q "gatewayFileExport" || fail "odigos-configuration missing gatewayFileExport"
+    echo "$odc" | grep -q "nodeFileExport" || fail "odigos-configuration missing nodeFileExport"
   fi
 
   note "Checking ConfigMap odigos-gateway (collector-conf)..."
@@ -90,6 +92,19 @@ kubectl_check() {
     echo "$dep" | grep -q "odigos-gateway-profiles-file-export" || fail "odigos-gateway missing profiles file export volume"
   fi
 
+  note "Checking DaemonSet odiglet (node profiles file export volume when enabled)..."
+  local odc_for_ds
+  odc_for_ds="$(kubectl get cm odigos-configuration -n "$NS" -o jsonpath='{.data.config\.yaml}' 2>/dev/null || true)"
+  local ds_odiglet
+  ds_odiglet="$(kubectl get ds odiglet -n "$NS" -o yaml 2>/dev/null || true)"
+  if [[ -n "$odc_for_ds" ]] && echo "$odc_for_ds" | grep -A15 "nodeFileExport:" | grep -q "enabled: true"; then
+    if [[ -z "$ds_odiglet" ]]; then
+      warn "DaemonSet odiglet not found (check odiglet.daemonsetName)"
+    else
+      echo "$ds_odiglet" | grep -q "odigos-node-profiles-file-export" || fail "odiglet DaemonSet missing odigos-node-profiles-file-export volume (nodeFileExport enabled)"
+    fi
+  fi
+
   note "Checking ConfigMap odigos-data-collection (merged node collector conf)..."
   local nc
   nc="$(kubectl get cm odigos-data-collection -n "$NS" -o jsonpath='{.data.conf}' 2>/dev/null || true)"
@@ -101,6 +116,9 @@ kubectl_check() {
     echo "$nc" | grep -q "resource/profiles-service-name" || fail "node collector conf missing resource/profiles-service-name"
     echo "$nc" | grep -q "profiling:" || fail "node collector conf missing profiling receiver block"
     echo "$nc" | grep -q "otlp/out-cluster-collector-profiles" || fail "node collector conf missing profiles OTLP exporter"
+    if echo "$odc_for_ds" | grep -A12 "nodeFileExport:" | grep -q "enabled: true"; then
+      echo "$nc" | grep -q "file/node-profiles" || fail "node collector conf missing file/node-profiles (nodeFileExport enabled in odigos-configuration)"
+    fi
   fi
 
   note "Checking ConfigMap effective-config (UI receiver)..."
@@ -133,6 +151,28 @@ runtime_jsonl() {
     | python3 "$py" --min-lines 1 --require-key service.name --require-key k8s.namespace.name \
     || fail "parse_profiles_jsonl could not validate JSONL resource attributes"
   note "profiles.jsonl sample lines parsed OK (k8s + service.name)."
+}
+
+runtime_jsonl_node() {
+  need_cmd kubectl
+  local py="$SCRIPT_DIR/parse_profiles_jsonl.py"
+  [[ -f "$py" ]] || die "missing $py"
+  local pod
+  pod="$(kubectl get pods -n "$NS" -l app.kubernetes.io/name=odiglet -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  if [[ -z "$pod" ]]; then
+    warn "no odiglet pod — skip node profiles.jsonl"
+    return 0
+  fi
+  note "Reading node profiles.jsonl from $pod (data-collection) if present..."
+  if ! kubectl exec -n "$NS" "$pod" -c data-collection -- test -f /var/odigos/node-profiles-export/profiles.jsonl 2>/dev/null; then
+    warn "node profiles.jsonl not present — enable profiling.nodeFileExport and wait for samples"
+    return 0
+  fi
+  kubectl exec -n "$NS" "$pod" -c data-collection -- cat /var/odigos/node-profiles-export/profiles.jsonl 2>/dev/null \
+    | head -n 100 \
+    | python3 "$py" --min-lines 1 --audit-dictionary \
+    || fail "parse_profiles_jsonl could not read node JSONL"
+  note "node profiles.jsonl sample parsed OK."
 }
 
 runtime_ui() {
@@ -168,6 +208,7 @@ kubectl_check
 
 if [[ "$SKIP_RUNTIME" != true ]]; then
   runtime_jsonl || true
+  runtime_jsonl_node || true
   runtime_ui || true
 fi
 node_arch

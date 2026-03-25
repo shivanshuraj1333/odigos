@@ -5,9 +5,24 @@
 #     --set images.ui=public.ecr.aws/odigos/core/profiler:ui-<8-sha> \
 #     --set images.autoscaler=public.ecr.aws/odigos/core/profiler:autoscaler-<8-sha> \
 #     --set images.collector=public.ecr.aws/odigos/core/profiler:collector-<8-sha>
+#
+# After rollout, from your laptop (kubeconfig → EKS):
+#   ./scripts/pull-profiling-artifacts-from-cluster.sh
+#   ./scripts/check-profiles-dictionary-e2e.sh
+#   ./scripts/check-profiles-dictionary-e2e.sh --check-node   # DC vs gateway
 
 profiling:
   enabled: true
+  # Gateway: profiles after aggregation / before UI (cluster gateway OTLP fan-out).
   gatewayFileExport:
     enabled: true
     path: /var/odigos/profiles-export/profiles.jsonl
+  # Node (data-collection): profiles on each node after k8sattributes, before OTLP to gateway.
+  # Enable for DC vs gateway comparison (dictionary / resource attrs at each hop).
+  nodeFileExport:
+    enabled: true
+    path: /var/odigos/node-profiles-export/profiles.jsonl
+
+# Richer gateway + node collector logs (OTLP / profiles pipeline)
+componentLogLevels:
+  collector: debug

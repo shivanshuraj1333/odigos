@@ -302,6 +302,13 @@
           "required": [],
           "title": "collector",
           "type": "string"
+        },
+        "ui": {
+          "default": "",
+          "description": "Log level for the Odigos UI (frontend). Empty uses top-level logLevel.",
+          "required": [],
+          "title": "ui",
+          "type": "string"
         }
       },
       "required": [],
@@ -1758,6 +1765,24 @@
           },
           "required": [],
           "title": "gatewayFileExport",
+          "type": "object"
+        },
+        "nodeFileExport": {
+          "additionalProperties": false,
+          "description": "Node (data-collection) file exporter on the profiles pipeline (captures payloads on each node before OTLP to gateway).",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "type": "boolean"
+            },
+            "path": {
+              "default": "",
+              "description": "Path inside the data-collection container (must match mount).",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "nodeFileExport",
           "type": "object"
         },
         "ui": {

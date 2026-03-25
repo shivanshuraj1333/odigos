@@ -523,10 +523,20 @@ type ProfilingConfiguration struct {
 	// GatewayFileExport appends a file exporter to the gateway profiles pipeline (debug / golden fixtures).
 	// Requires Profiling.Enabled and a writable path (see gateway Deployment volume).
 	GatewayFileExport *ProfilingGatewayFileExport `json:"gatewayFileExport,omitempty" yaml:"gatewayFileExport,omitempty"`
+
+	// NodeFileExport appends a file exporter to the node (data-collection) profiles pipeline (before OTLP to gateway).
+	// Requires Profiling.Enabled and a writable path (see odiglet DaemonSet volume for the data-collection container).
+	NodeFileExport *ProfilingNodeFileExport `json:"nodeFileExport,omitempty" yaml:"nodeFileExport,omitempty"`
 }
 
 // ProfilingGatewayFileExport configures the cluster gateway file exporter on the profiles pipeline.
 type ProfilingGatewayFileExport struct {
+	Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Path    string `json:"path,omitempty" yaml:"path,omitempty"`
+}
+
+// ProfilingNodeFileExport configures the node collector file exporter on the profiles pipeline.
+type ProfilingNodeFileExport struct {
 	Enabled bool   `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	Path    string `json:"path,omitempty" yaml:"path,omitempty"`
 }

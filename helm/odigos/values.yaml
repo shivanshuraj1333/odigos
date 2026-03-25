@@ -79,6 +79,10 @@ profiling:
   gatewayFileExport:
     enabled: false
     path: /var/odigos/profiles-export/profiles.jsonl
+  # Write node (data-collection) profile payloads to a file before OTLP export to the gateway (DC-level capture).
+  nodeFileExport:
+    enabled: false
+    path: /var/odigos/node-profiles-export/profiles.jsonl
   # Optional exporter: enableDataCompression, timeout, retryOnFailure (same shape as collector OTLP exporter)
   # exporter:
   #   timeout: 30s
