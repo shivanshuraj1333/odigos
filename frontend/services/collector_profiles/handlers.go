@@ -16,15 +16,6 @@ import (
 	"github.com/odigos-io/odigos/frontend/services/collector_profiles/flamegraph"
 )
 
-// defaultSymbolizer is used for backend symbolization when DEBUGINFOD_URLS is set.
-var defaultSymbolizer *flamegraph.Symbolizer
-
-func init() {
-	if u := os.Getenv("DEBUGINFOD_URLS"); u != "" {
-		defaultSymbolizer = flamegraph.NewSymbolizer(u)
-	}
-}
-
 // RegisterProfilingRoutes adds routes for "enable continuous profiling" and "get profile data".
 // namespace, kind, name are path params (e.g. /api/sources/:namespace/:kind/:name/profiling).
 func RegisterProfilingRoutes(r *gin.RouterGroup, store ProfileStoreRef) {
@@ -106,8 +97,7 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 // BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
 // merges samples into a tree, and returns a Pyroscope-compatible response (version, flamebearer, metadata, timeline).
 // Tries Pyroscope's OTLP→pprof conversion first when the chunk has a non-empty dictionary (for proper symbols);
-// otherwise falls back to ParseOTLPChunk. When dictionary names are missing, backend symbolization (DEBUGINFOD_URLS)
-// resolves mapping+address to function names via debuginfod+DWARF, like Pyroscope's read path.
+// otherwise falls back to ParseOTLPChunk. Names come only from each chunk's dictionary (same as Pyroscope in-band path).
 // Names are never taken from a different chunk's dictionary (unsafe across batches).
 //
 // ProfileBuildDebug holds debug info from building a profile from chunks (for ?debug=1).
@@ -127,8 +117,7 @@ func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProf
 func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.FlamebearerProfile, ProfileBuildDebug) {
 	debug := ProfileBuildDebug{ChunkCount: len(chunks)}
 	tree := flamegraph.NewTree()
-	// Resolve names per chunk only from that chunk's dictionary (plus DEBUGINFOD symbolizer).
-	// Do not reuse another chunk's dictionary: location indices are not stable across batches.
+	// Resolve names per chunk only from that chunk's dictionary. Do not reuse another chunk's dictionary.
 	for _, b := range chunks {
 		if samples, ok := flamegraph.ChunksFromPyroscopeOTLP(b); ok {
 			debug.ChunksViaPyroscope++
@@ -163,7 +152,7 @@ func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.Flame
 	startTimeSec := extractStartTimeFromChunks(chunks)
 	meta := pyroscopeMetadata(fb.NumTicks)
 	if allNamesArePlaceholders(fb.Names) {
-		meta.SymbolsHint = "Symbols unavailable. Set DEBUGINFOD_URLS on the backend to resolve addresses to names, or ensure the collector sends symbol tables."
+		meta.SymbolsHint = "Symbols unavailable. Ensure the collector sends full OTLP profile dictionaries (Pyroscope-shaped path)."
 	}
 	if os.Getenv("PROFILE_BUILD_SUMMARY") != "" {
 		b, _ := json.Marshal(debug)
@@ -197,8 +186,6 @@ func allNamesArePlaceholders(names []string) bool {
 	return true
 }
 
-// resolveStackNamesWithFallback returns location index -> display name. Uses parsed first; when a location has no name
-// and ref is non-nil (another chunk with dictionary), uses ref's names and ref's location/mapping for symbolizer.
 func resolveStackNamesWithFallback(parsed *flamegraph.ParsedChunk, ref *flamegraph.ParsedChunk) map[int]string {
 	out := make(map[int]string)
 	for idx, name := range parsed.Names {
@@ -206,7 +193,6 @@ func resolveStackNamesWithFallback(parsed *flamegraph.ParsedChunk, ref *flamegra
 			out[idx] = name
 		}
 	}
-	// Prefill from reference dictionary when current chunk has no name for an index (e.g. chunk had empty dictionary).
 	if ref != nil && ref != parsed {
 		for idx, name := range ref.Names {
 			if name != "" && out[idx] == "" {
@@ -214,42 +200,10 @@ func resolveStackNamesWithFallback(parsed *flamegraph.ParsedChunk, ref *flamegra
 			}
 		}
 	}
-	// Use symbolizer when we have location+mapping (from parsed or ref).
 	locInfos := parsed.LocationInfos
-	mapInfos := parsed.MappingInfos
-	if ref != nil && (locInfos == nil || mapInfos == nil) {
+	if ref != nil && locInfos == nil {
 		locInfos = ref.LocationInfos
-		mapInfos = ref.MappingInfos
 	}
-	if defaultSymbolizer != nil && locInfos != nil && mapInfos != nil {
-		for _, s := range parsed.Samples {
-			for _, locIdx := range s.LocIndices {
-				if out[locIdx] != "" && out[locIdx] != fmt.Sprintf("frame_%d", locIdx) {
-					continue
-				}
-				loc, ok := locInfos[locIdx]
-				if !ok {
-					if out[locIdx] == "" {
-						out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
-					}
-					continue
-				}
-				mapping, ok := mapInfos[loc.MappingIndex]
-				if !ok {
-					if out[locIdx] == "" {
-						out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
-					}
-					continue
-				}
-				if name := defaultSymbolizer.Resolve(mapping.BuildID, loc.Address); name != "" {
-					out[locIdx] = name
-				} else if out[locIdx] == "" {
-					out[locIdx] = fmt.Sprintf("0x%x", loc.Address)
-				}
-			}
-		}
-	}
-	// Fill any still-missing with address or frame_N.
 	for _, s := range parsed.Samples {
 		for _, locIdx := range s.LocIndices {
 			if out[locIdx] != "" {

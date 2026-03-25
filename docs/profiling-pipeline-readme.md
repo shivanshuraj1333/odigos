@@ -76,7 +76,6 @@ This document describes the **internal design** of the profiling feature in this
 | `PROFILES_SLOT_TTL_SECONDS` | Idle TTL for a slot (default 600). |
 | `PROFILES_SLOT_MAX_BYTES` | Max bytes of raw OTLP JSON chunks per slot (default 20 MiB). |
 | `PROFILES_CLEANUP_INTERVAL_SECONDS` | Background cleanup tick (default 15). |
-| `DEBUGINFOD_URLS` | Optional: symbolize addresses via debuginfod (backend). |
 | `PROFILING_DEBUG` | Verbose logs when not `0`/`false`. |
 | `PROFILE_DEBUG_DUMP_DIR` | If set, write raw chunks to disk under that dir (default dir name `profile-dumps` unless `off`). |
 
@@ -188,7 +187,7 @@ cd collector/odigosotelcol && go test -count=1 .
 ## 8. Known limitations / follow-ups
 
 - **eBPF profiler** requires a suitable Linux node and container capabilities (see odiglet `data-collection` securityContext).  
-- **Symbol resolution:** Prefer full OTLP dictionaries in each chunk; optional `DEBUGINFOD_URLS` on the UI for address resolution. Cross-chunk dictionary reuse was intentionally **not** used for name resolution (avoid wrong symbols across batches).  
+- **Symbol resolution:** Prefer full OTLP dictionaries in each chunk (Pyroscope in-band path). Cross-chunk dictionary reuse was intentionally **not** used for name resolution (avoid wrong symbols across batches).  
 - **Flame graph in browser:** This README covers the **backend** JSON; a separate UI can render `flamebearer` with a Pyroscope-compatible viewer.
 
 ---

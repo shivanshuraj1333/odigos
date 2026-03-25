@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// LocationInfo holds mapping index and address for a location (for backend symbolization).
+// LocationInfo holds mapping index and address for a location.
 type LocationInfo struct {
 	MappingIndex int
 	Address      uint64
 }
 
-// MappingInfo holds filename and build_id from the OTLP mapping table (for debuginfod lookup).
+// MappingInfo holds filename and build_id from the OTLP mapping table.
 type MappingInfo struct {
 	Filename string
 	BuildID  string
@@ -22,12 +22,12 @@ type MappingInfo struct {
 type ParsedChunk struct {
 	Names         map[int]string            // location index -> symbol name (from dictionary)
 	Samples       []Sample                  // each sample: stack (root-first) and value
-	LocationInfos map[int]LocationInfo      // location index -> (mappingIndex, address); for symbolization
+	LocationInfos map[int]LocationInfo      // location index -> (mappingIndex, address)
 	MappingInfos  map[int]MappingInfo       // mapping index -> (filename, build_id)
 }
 
 // Sample is one profile sample: stack of frame names (root first) and value (e.g. count).
-// LocIndices are the location table indices (root-first) so we can re-resolve names with a symbolizer.
+// LocIndices are the location table indices (root-first) for resolving names from the dictionary.
 type Sample struct {
 	Stack     []string
 	Value     int64
