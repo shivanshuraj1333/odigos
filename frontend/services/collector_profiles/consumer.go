@@ -112,7 +112,7 @@ func storeOne(store *ProfileStore, pd pprofile.Profiles, rps pprofile.ResourcePr
 	dictStats := dictionaryStatsFromChunkJSON(bytes)
 	log.Printf("[profiling] stored single chunk key=%q size=%d dictionary=%v %s", key, len(bytes), hasDict, dictStats)
 	if !hasDict {
-		profilingDebugLog("[profiling] receiver: chunk sourceKey=%q has no dictionary (symbols will show as frame_N); add backend symbolization or have exporter fill dictionary", key)
+		profilingDebugLog("[profiling] receiver: chunk sourceKey=%q has no dictionary (symbols will show as frame_N); ensure the node profiler OTLP export includes string/function/location tables", key)
 	}
 	store.AddProfileData(key, bytes)
 	profilingDebugLog("[profiling] receiver: stored chunk sourceKey=%q size=%d", key, len(bytes))

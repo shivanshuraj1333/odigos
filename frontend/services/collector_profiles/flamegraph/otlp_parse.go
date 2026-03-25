@@ -39,7 +39,8 @@ type stackTableMap map[int][]int
 
 // ParseOTLPChunk parses one OTLP/JSON profile chunk (as produced by pprofile.JSONMarshaler)
 // and returns samples with resolved stack names. Handles camelCase and snake_case keys.
-// Also extracts LocationInfos and MappingInfos for backend symbolization (mapping+address → name).
+// When the dictionary includes them, extracts LocationInfos and MappingInfos (mapping index, address, build_id)
+// to pair with function/string tables for resolving names already present in the payload.
 // Supports both OTEP (locations_start_index/locations_length) and v1development (stack_index → stack_table → location_indices) formats.
 func ParseOTLPChunk(data []byte) (*ParsedChunk, error) {
 	var raw map[string]interface{}
@@ -260,7 +261,7 @@ func extractNamesFromDictionary(m map[string]interface{}, names map[int]string) 
 }
 
 // extractLocationAndMappingTables fills locationInfos (location index -> mappingIndex, address) and
-// mappingInfos (mapping index -> filename, build_id) from the OTLP dictionary for backend symbolization.
+// mappingInfos (mapping index -> filename, build_id) from the OTLP dictionary when the exporter includes them.
 func extractLocationAndMappingTables(m map[string]interface{}, locationInfos map[int]LocationInfo, mappingInfos map[int]MappingInfo) {
 	stringTable := getStringTable(m)
 	// AttributeTable: index -> (key, value) via stringTable for build_id lookup on mappings.
