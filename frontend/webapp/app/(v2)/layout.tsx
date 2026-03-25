@@ -34,7 +34,7 @@ function OverviewLayout({ children }: PropsWithChildren) {
           <OverviewHeader v2 />
           <FlexRow $gap={0}>
             <Navbar height='calc(100vh - 60px)' icons={getNavbarIcons(router, pathname)} />
-            {children}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>{children}</div>
           </FlexRow>
         </FlexColumn>
 
