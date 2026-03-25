@@ -13,7 +13,6 @@ import (
 	"github.com/odigos-io/odigos/autoscaler/controllers/common"
 	odigoscommon "github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/config"
-	"github.com/odigos-io/odigos/common/consts"
 	odigosconsts "github.com/odigos-io/odigos/common/consts"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	pipelinegen "github.com/odigos-io/odigos/common/pipelinegen"
@@ -41,7 +40,7 @@ var (
 	errNoExportersConfigured = errors.New("no exporters were configured, cannot add self telemetry pipeline")
 )
 
-func addSelfTelemetryPipeline(c *config.Config, ownTelemetryPort int32, destinationPipelineNames []string, signalsRootPipelines []string) error {
+func addSelfTelemetryPipeline(c *config.Config, ownTelemetryPort int32, destinationPipelineNames []string, signalsRootPipelines []string, uiOtlpPort int) error {
 	if c.Service.Pipelines == nil {
 		return errNoPipelineConfigured
 	}
@@ -99,7 +98,7 @@ func addSelfTelemetryPipeline(c *config.Config, ownTelemetryPort int32, destinat
 	// In case of performance impact caused by this processor, we should modify this config to reduce the sampling ratio.
 	c.Processors["odigostrafficmetrics"] = struct{}{}
 	c.Exporters["otlp/odigos-own-telemetry-ui"] = config.GenericMap{
-		"endpoint": fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), odigosconsts.OTLPPort),
+		"endpoint": fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), uiOtlpPort),
 		"tls": config.GenericMap{
 			"insecure": true,
 		},
@@ -186,8 +185,14 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 	}
 
 	collectorLogLevel := string(odigoscommon.LogLevelInfo)
-	if odigosCfg, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil && odigosCfg.ComponentLogLevels != nil {
-		collectorLogLevel = odigosCfg.ComponentLogLevels.Resolve("collector")
+	var profilingCfg *odigoscommon.ProfilingConfiguration
+	uiOtlpPort := odigosconsts.OTLPPort
+	if odigosCfg, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil {
+		profilingCfg = odigosCfg.Profiling
+		uiOtlpPort = odigosCfg.UiOtlpGrpcPort()
+		if odigosCfg.ComponentLogLevels != nil {
+			collectorLogLevel = odigosCfg.ComponentLogLevels.Resolve("collector")
+		}
 	}
 
 	desiredData, err, status, signals := pipelinegen.GetGatewayConfig(
@@ -195,7 +200,10 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 		common.ToProcessorConfigurerArray(processors),
 		func(c *config.Config, destinationPipelineNames []string, signalsRootPipelines []string) error {
 			// Creating a metric pipeline (throughput metrics) for the gateway to be sent to the UI
-			if err := addSelfTelemetryPipeline(c, gateway.Spec.CollectorOwnMetricsPort, destinationPipelineNames, signalsRootPipelines); err != nil {
+			if err := addSelfTelemetryPipeline(c, gateway.Spec.CollectorOwnMetricsPort, destinationPipelineNames, signalsRootPipelines, uiOtlpPort); err != nil {
+				return err
+			}
+			if err := addProfilingGatewayPipeline(c, env.GetCurrentNamespace(), profilingCfg, uiOtlpPort); err != nil {
 				return err
 			}
 			c.Service.Telemetry.Logs = config.LogsConfig{Level: collectorLogLevel}
@@ -357,7 +365,7 @@ func calculateDataStreams(
 		// Otherwise, use the data streams specified in the source selector
 		dataStreams := []string{}
 		if dest.Spec.SourceSelector == nil {
-			dataStreams = append(dataStreams, consts.DefaultDataStream)
+			dataStreams = append(dataStreams, odigosconsts.DefaultDataStream)
 		} else {
 			dataStreams = dest.Spec.SourceSelector.DataStreams
 		}
@@ -417,7 +425,7 @@ func getSourcesForDataStream(
 
 	instrumentationConfigsList := &odigosv1.InstrumentationConfigList{}
 
-	if dataStream == consts.DefaultDataStream {
+	if dataStream == odigosconsts.DefaultDataStream {
 		var err error
 		instrumentationConfigsList, err = getSourcesForDefaultDataStream(ctx, kubeClient, dataStream)
 		if err != nil {

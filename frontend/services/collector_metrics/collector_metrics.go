@@ -16,9 +16,11 @@ import (
 	"go.opentelemetry.io/collector/config/confignet"
 	"go.opentelemetry.io/collector/config/configoptional"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/consumer/xconsumer"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver/otlpreceiver"
 	"go.opentelemetry.io/collector/receiver/receivertest"
+	"go.opentelemetry.io/collector/receiver/xreceiver"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"k8s.io/apimachinery/pkg/watch"
 )
@@ -188,8 +190,12 @@ func NewOdigosMetrics() *OdigosMetricsConsumer {
 	}
 }
 
-// Run starts the OTLP receiver and the notifications loop for receiving and processing the metrics from different Odigos collectors
-func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string) {
+// Run serves OTLP gRPC (metrics; profiles when profilingEnabled) on otlpGrpcPort, or consts.OTLPPort if unset.
+func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string, nextProfiles xconsumer.Profiles, profilingEnabled bool, otlpGrpcPort int) {
+	listenPort := otlpGrpcPort
+	if listenPort <= 0 {
+		listenPort = consts.OTLPPort
+	}
 	var closeWg sync.WaitGroup
 	// launch the notifications loop
 	closeWg.Add(1)
@@ -211,7 +217,6 @@ func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string) {
 		}
 	}()
 
-	// setup the OTLP receiver
 	f := otlpreceiver.NewFactory()
 
 	cfg, ok := f.CreateDefaultConfig().(*otlpreceiver.Config)
@@ -219,26 +224,51 @@ func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string) {
 		panic("failed to cast default config to otlpreceiver.Config")
 	}
 
-	// Modify the gRPC listener address
 	cfg.GRPC = configoptional.Some(configgrpc.ServerConfig{
 		NetAddr: confignet.AddrConfig{
-			Endpoint:  "0.0.0.0:4317",
+			Endpoint:  fmt.Sprintf("0.0.0.0:%d", listenPort),
 			Transport: confignet.TransportTypeTCP,
 		},
 	})
+	cfg.HTTP = configoptional.None[otlpreceiver.HTTPConfig]()
 
-	r, err := f.CreateMetrics(ctx, receivertest.NewNopSettings(f.Type()), cfg, c)
+	host := componenttest.NewNopHost()
+	set := receivertest.NewNopSettings(f.Type())
+
+	mr, err := f.CreateMetrics(ctx, set, cfg, c)
 	if err != nil {
-		panic("failed to create receiver")
+		panic("failed to create OTLP metrics receiver")
 	}
 
-	if err := r.Start(ctx, componenttest.NewNopHost()); err != nil {
-		log.Printf("failed to start OTLP receiver: %v", err)
+	var pr xreceiver.Profiles
+	if profilingEnabled && nextProfiles != nil {
+		xf, ok := f.(xreceiver.Factory)
+		if !ok {
+			panic("otlp receiver factory does not implement xreceiver.Factory")
+		}
+		pr, err = xf.CreateProfiles(ctx, set, cfg, nextProfiles)
+		if err != nil {
+			panic("failed to create OTLP profiles receiver")
+		}
 	}
 
-	defer r.Shutdown(ctx)
+	if err := mr.Start(ctx, host); err != nil {
+		log.Printf("failed to start OTLP metrics receiver: %v", err)
+	}
+	if pr != nil {
+		if err := pr.Start(ctx, host); err != nil {
+			log.Printf("failed to start OTLP profiles receiver: %v", err)
+		}
+	}
 
-	log.Println("OTLP receiver is running")
+	defer func() {
+		if pr != nil {
+			_ = pr.Shutdown(ctx)
+		}
+		_ = mr.Shutdown(ctx)
+	}()
+
+	log.Printf("OTLP gRPC receiver listening on 0.0.0.0:%d (metrics; profiles if enabled)", listenPort)
 	<-ctx.Done()
 	closeWg.Wait()
 }

@@ -148,6 +148,12 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 		gatewayReplicas = int32(*gateway.Spec.ResourcesSettings.MinReplicas)
 	}
 
+	odigosConfiguration, err := k8sutils.GetCurrentOdigosConfiguration(ctx, c)
+	if err != nil {
+		return nil, errors.Join(err, errors.New("failed to get current odigos configuration"))
+	}
+	uiOtlpPort := odigosConfiguration.UiOtlpGrpcPort()
+
 	extraEnvVars := []corev1.EnvVar{}
 	if gateway.Spec.HttpsProxyAddress != nil {
 		odigosNs := env.GetCurrentNamespace()
@@ -155,11 +161,9 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 			Name:  "HTTPS_PROXY",
 			Value: *gateway.Spec.HttpsProxyAddress,
 		}, corev1.EnvVar{
-			// prevent the own telemetry metrics from using the https proxy if set.
-			// gRPC uses the HTTPS_PROXY even for non tls connections
-			// since it's always uses HTTP CONNECT, so we need to blacklist the ui service.
+			// Own-telemetry gRPC to the UI must bypass HTTPS_PROXY; blacklist ui.<ns>:<otlp>.
 			Name:  "NO_PROXY",
-			Value: fmt.Sprintf("%s.%s:%d", k8sconsts.UIServiceName, odigosNs, odigosconsts.OTLPPort),
+			Value: fmt.Sprintf("%s.%s:%d", k8sconsts.UIServiceName, odigosNs, uiOtlpPort),
 		})
 	}
 
@@ -295,11 +299,6 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 				return nil, errors.Join(err, errors.New("failed to modify gateway collector deployment"))
 			}
 		}
-	}
-
-	odigosConfiguration, err := k8sutils.GetCurrentOdigosConfiguration(ctx, c)
-	if err != nil {
-		return nil, errors.Join(err, errors.New("failed to get current odigos configuration"))
 	}
 
 	if len(odigosConfiguration.ImagePullSecrets) > 0 {

@@ -33,18 +33,25 @@ download_builder:
 genodigoscol: download_builder
 	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml
 
+# Run tests on the builder host arch (GOHOST*). When `make build-odigoscol` is invoked with
+# GOOS=linux GOARCH=$TARGETARCH for cross-builds, `go test` would otherwise build test binaries
+# for the target arch and try to execute them on the build machine (exec format error).
 .PHONY: test-odigossamplingprocessor
 test-odigossamplingprocessor:
 	@echo "Running tests for odigossamplingprocessor at $(PROCESSOR_DIR)"
-	cd $(PROCESSOR_DIR) && GOOS=$(HOST_GOOS) GOARCH=$(HOST_GOARCH) $(GOCMD) test ./...
+	cd $(PROCESSOR_DIR) && GOOS="$$(go env GOHOSTOS)" GOARCH="$$(go env GOHOSTARCH)" $(GOCMD) test ./...
 
 .PHONY: test-odigostailsamplingprocessor
 test-odigostailsamplingprocessor:
 	@echo "Running tests for odigostailsamplingprocessor at $(TAILSAMPLING_PROCESSOR_DIR)"
-	cd $(TAILSAMPLING_PROCESSOR_DIR) && GOOS=$(HOST_GOOS) GOARCH=$(HOST_GOARCH) $(GOCMD) test ./...
+	cd $(TAILSAMPLING_PROCESSOR_DIR) && GOOS="$$(go env GOHOSTOS)" GOARCH="$$(go env GOHOSTARCH)" $(GOCMD) test ./...
+
+.PHONY: test-odigosotelcol
+test-odigosotelcol:
+	cd odigosotelcol && GOOS="$$(go env GOHOSTOS)" GOARCH="$$(go env GOHOSTARCH)" $(GOCMD) test --ldflags="-checklinkname=0" -count=1 ./...
 
 .PHONY: build-odigoscol
-build-odigoscol: download_builder test-odigossamplingprocessor test-odigostailsamplingprocessor
+build-odigoscol: download_builder test-odigossamplingprocessor test-odigostailsamplingprocessor test-odigosotelcol
 	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml --skip-generate --skip-get-modules
 
 .PHONY: install-tools
