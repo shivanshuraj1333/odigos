@@ -23,4 +23,8 @@ echo "== parse_profiles_jsonl sample =="
 python3 scripts/parse_profiles_jsonl.py --min-lines 1 --require-key service.name \
   scripts/testdata/profiles_jsonl_sample.jsonl >/dev/null
 
+echo "== parse_profiles_jsonl --require-nonempty-dictionary (fixture with stringTable) =="
+python3 scripts/parse_profiles_jsonl.py --min-lines 1 --require-nonempty-dictionary \
+  scripts/testdata/profiles_jsonl_with_dictionary.jsonl >/dev/null
+
 echo "All profiling CI tests passed."
