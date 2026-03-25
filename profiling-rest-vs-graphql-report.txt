@@ -1,0 +1,66 @@
+=== CORRECTED: K8s Deployment names (not IC object name) 2026-03-25T08:08:12Z ===
+
+=== online-boutique/Deployment/adservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/cartservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/checkoutservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/currencyservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/emailservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/frontend ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/loadgenerator ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/paymentservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/productcatalogservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/recommendationservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/redis-cart ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== online-boutique/Deployment/shippingservice ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
+
+=== odigos-system/Deployment/odigos-gateway ===
+  REST: {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  GQL:  {"chunkCount":0,"numTicks":0,"fbTicks":0,"nameCount":1,"reason":"no_slot_or_empty"}
+  compare: SAME
