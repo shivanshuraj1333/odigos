@@ -1,9 +1,9 @@
-// Pyroscope OTLP conversion: when chunk has non-empty dictionary we use
-// github.com/grafana/pyroscope/pkg/ingester/otlp.ConvertOtelToGoogle for symbol
-// resolution; otherwise fall back to ParseOTLPChunk (frame_N).
+// Pyroscope OTLP conversion uses github.com/grafana/pyroscope/pkg/ingester/otlp.ConvertOtelToGoogle
+// (same as Grafana Pyroscope ingest). See SamplesFromOTLPChunk for the public entry point.
 package flamegraph
 
 import (
+	"fmt"
 	"reflect"
 	"unsafe"
 
@@ -16,20 +16,20 @@ import (
 	googleProfile "github.com/grafana/pyroscope/api/gen/proto/go/google/v1"
 )
 
-// ChunksFromPyroscopeOTLP tries to parse chunk as OTLP ExportProfilesServiceRequest (proto JSON),
-// run Pyroscope's ConvertOtelToGoogle for each profile, and return samples with resolved symbols.
-// Returns (samples, true) on success; (nil, false) when proto unmarshal fails or dictionary is empty
-// (caller should fall back to ParseOTLPChunk).
-func ChunksFromPyroscopeOTLP(chunk []byte) ([]Sample, bool) {
+var protoJSONUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+// tryPyroscopeOTLP parses OTLP profile JSON as ExportProfilesServiceRequest and converts via
+// Pyroscope's ConvertOtelToGoogle. Returns ok=false with a short reason when this path cannot be used.
+func tryPyroscopeOTLP(chunk []byte) (samples []Sample, ok bool, failReason string) {
 	req := &pprofileotlp.ExportProfilesServiceRequest{}
-	if err := protojson.Unmarshal(chunk, req); err != nil {
-		return nil, false
+	if err := protoJSONUnmarshal.Unmarshal(chunk, req); err != nil {
+		return nil, false, fmt.Sprintf("protojson_unmarshal: %v", err)
 	}
 	if req.Dictionary == nil || len(req.Dictionary.StringTable) == 0 {
-		return nil, false
+		return nil, false, "missing_or_empty_dictionary_string_table"
 	}
-	if req.ResourceProfiles == nil {
-		return nil, false
+	if len(req.ResourceProfiles) == 0 {
+		return nil, false, "no_resource_profiles"
 	}
 	var out []Sample
 	for _, rp := range req.ResourceProfiles {
@@ -41,19 +41,17 @@ func ChunksFromPyroscopeOTLP(chunk []byte) ([]Sample, bool) {
 				continue
 			}
 			for _, p := range sp.Profiles {
-				samples := convertProfileViaPyroscope(p, req.Dictionary)
-				out = append(out, samples...)
+				out = append(out, convertProfileViaPyroscope(p, req.Dictionary)...)
 			}
 		}
 	}
 	if len(out) == 0 {
-		return nil, false
+		return nil, false, "convert_otel_to_google_yielded_no_samples"
 	}
-	return out, true
+	return out, true, ""
 }
 
 // convertProfileViaPyroscope runs Pyroscope's OTLP→pprof conversion and turns the result into our Sample slice.
-// Pyroscope returns map[string]convertedProfile (convertedProfile is unexported), so we use reflection to get .profile.
 func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfile.ProfilesDictionary) []Sample {
 	converted, err := otlp.ConvertOtelToGoogle(src, dictionary)
 	if err != nil {
@@ -70,7 +68,6 @@ func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfil
 }
 
 // extractGoogleProfile reads the unexported .profile field from otlp.convertedProfile via reflection.
-// cp may be an addressable or non-addressable value (e.g. range copy); only use UnsafeAddr when addressable.
 func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 	v := reflect.ValueOf(cp)
 	if v.Kind() == reflect.Struct {
@@ -80,7 +77,6 @@ func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 			if f.CanInterface() {
 				p, _ = f.Interface().(*googleProfile.Profile)
 			} else if f.CanAddr() {
-				// unexported field: read pointer via unsafe (only when addressable)
 				p = *(**googleProfile.Profile)(unsafe.Pointer(f.Addr().UnsafePointer()))
 			}
 			return p

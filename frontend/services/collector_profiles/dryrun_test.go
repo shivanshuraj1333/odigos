@@ -75,8 +75,8 @@ func TestDryRunFlamegraphsFromCommittedTestdata(t *testing.T) {
 					t.Errorf("missing top-level key %q", k)
 				}
 			}
-			t.Logf("ticks=%d names=%d levels=%d pyroChunks=%d parseErr=%d chunksWithSamples=%d",
-				fb.NumTicks, len(fb.Names), len(fb.Levels), dbg.ChunksViaPyroscope, dbg.ParseErrors, dbg.ChunksWithSamples)
+			t.Logf("ticks=%d names=%d levels=%d pyroChunks=%d jsonFallbackChunks=%d parseErr=%d chunksWithSamples=%d",
+				fb.NumTicks, len(fb.Names), len(fb.Levels), dbg.ChunksViaPyroscope, dbg.ChunksViaJSONFallback, dbg.ParseErrors, dbg.ChunksWithSamples)
 		})
 	}
 }
@@ -192,27 +192,9 @@ func TestTreeInsertMatchesFlamebearerTicks(t *testing.T) {
 	tr := flamegraph.NewTree()
 	chunks := [][]byte{data}
 	for _, b := range chunks {
-		if samples, ok := flamegraph.ChunksFromPyroscopeOTLP(b); ok {
-			for _, s := range samples {
-				tr.InsertStack(s.Value, s.Stack...)
-			}
-			continue
-		}
-		parsed, err := flamegraph.ParseOTLPChunk(b)
-		if err != nil {
-			t.Fatal(err)
-		}
-		stackNames := resolveStackNamesWithFallback(parsed, nil)
-		for _, s := range parsed.Samples {
-			if len(s.LocIndices) == 0 {
-				tr.InsertStack(s.Value, s.Stack...)
-				continue
-			}
-			stack := make([]string, 0, len(s.LocIndices))
-			for _, locIdx := range s.LocIndices {
-				stack = append(stack, stackNames[locIdx])
-			}
-			tr.InsertStack(s.Value, stack...)
+		samples, _ := flamegraph.SamplesFromOTLPChunk(b)
+		for _, s := range samples {
+			tr.InsertStack(s.Value, s.Stack...)
 		}
 	}
 	fb2 := flamegraph.TreeToFlamebearer(tr, 1024)

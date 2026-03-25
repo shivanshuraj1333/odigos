@@ -73,7 +73,7 @@ func handleGetProfilingChunkDebug(c *gin.Context, store ProfileStoreRef) {
 func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[profiling] GET panic: %v\n%s", r, debug.Stack())
+			log.Printf("[backend-profiling] GET panic: %v\n%s", r, debug.Stack())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("internal error: %v", r)})
 		}
 	}()
@@ -96,17 +96,16 @@ func handleGetProfileData(c *gin.Context, store ProfileStoreRef) {
 
 // BuildPyroscopeProfileFromChunks parses OTLP profile chunks (dump format: resourceProfiles + dictionary),
 // merges samples into a tree, and returns a Pyroscope-compatible response (version, flamebearer, metadata, timeline).
-// Tries Pyroscope's OTLP→pprof conversion first when the chunk has a non-empty dictionary (for proper symbols);
-// otherwise falls back to ParseOTLPChunk. Names come only from each chunk's dictionary (same as Pyroscope in-band path).
-// Names are never taken from a different chunk's dictionary (unsafe across batches).
+// Per-chunk transformation uses flamegraph.SamplesFromOTLPChunk (Pyroscope ConvertOtelToGoogle first, then JSON fallback).
 //
 // ProfileBuildDebug holds debug info from building a profile from chunks (for ?debug=1).
 type ProfileBuildDebug struct {
-	ChunkCount        int   `json:"chunkCount"`
-	NumTicks          int64 `json:"numTicks"`
-	ParseErrors       int   `json:"parseErrors"`
-	ChunksWithSamples int   `json:"chunksWithSamples"`
-	ChunksViaPyroscope int  `json:"chunksViaPyroscope"`
+	ChunkCount           int `json:"chunkCount"`
+	NumTicks             int64 `json:"numTicks"`
+	ParseErrors          int `json:"parseErrors"`
+	ChunksWithSamples    int `json:"chunksWithSamples"`
+	ChunksViaPyroscope   int `json:"chunksViaPyroscope"`
+	ChunksViaJSONFallback int `json:"chunksViaJSONFallback"`
 }
 
 func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProfile {
@@ -117,34 +116,29 @@ func BuildPyroscopeProfileFromChunks(chunks [][]byte) flamegraph.FlamebearerProf
 func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.FlamebearerProfile, ProfileBuildDebug) {
 	debug := ProfileBuildDebug{ChunkCount: len(chunks)}
 	tree := flamegraph.NewTree()
-	// Resolve names per chunk only from that chunk's dictionary. Do not reuse another chunk's dictionary.
-	for _, b := range chunks {
-		if samples, ok := flamegraph.ChunksFromPyroscopeOTLP(b); ok {
+	bpInfof("build_profile: start chunk_count=%d", len(chunks))
+	for i, b := range chunks {
+		samples, st := flamegraph.SamplesFromOTLPChunk(b)
+		switch st.Route {
+		case flamegraph.RoutePyroscopeOTLP:
 			debug.ChunksViaPyroscope++
-			for _, s := range samples {
-				tree.InsertStack(s.Value, s.Stack...)
-			}
-			continue
-		}
-		parsed, err := flamegraph.ParseOTLPChunk(b)
-		if err != nil {
+		case flamegraph.RouteJSONFallback:
+			debug.ChunksViaJSONFallback++
+		case flamegraph.RouteError:
 			debug.ParseErrors++
+			bpInfof("build_profile: chunk[%d] transform_error bytes=%d pyroscope_reason=%q json_err=%v",
+				i, st.ByteLen, st.PyroscopeFailReason, st.JSONFallbackErr)
 			continue
 		}
-		if len(parsed.Samples) > 0 {
+		if len(samples) > 0 {
 			debug.ChunksWithSamples++
 		}
-		stackNames := resolveStackNamesWithFallback(parsed, nil)
-		for _, s := range parsed.Samples {
-			if len(s.LocIndices) == 0 {
-				tree.InsertStack(s.Value, s.Stack...)
-				continue
-			}
-			stack := make([]string, 0, len(s.LocIndices))
-			for _, locIdx := range s.LocIndices {
-				stack = append(stack, stackNames[locIdx])
-			}
-			tree.InsertStack(s.Value, stack...)
+		if len(samples) == 0 {
+			bpInfof("build_profile: chunk[%d] no samples after transform route=%s bytes=%d", i, st.Route, st.ByteLen)
+			continue
+		}
+		for _, s := range samples {
+			tree.InsertStack(s.Value, s.Stack...)
 		}
 	}
 	fb := flamegraph.TreeToFlamebearer(tree, 1024)
@@ -156,8 +150,10 @@ func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.Flame
 	}
 	if os.Getenv("PROFILE_BUILD_SUMMARY") != "" {
 		b, _ := json.Marshal(debug)
-		log.Printf("[profiling] build_summary %s", string(b))
+		bpInfof("build_profile: summary_json=%s", string(b))
 	}
+	bpInfof("build_profile: done num_ticks=%d names=%d levels=%d pyroscope_chunks=%d json_fallback_chunks=%d parse_errors=%d",
+		fb.NumTicks, len(fb.Names), len(fb.Levels), debug.ChunksViaPyroscope, debug.ChunksViaJSONFallback, debug.ParseErrors)
 	return flamegraph.FlamebearerProfile{
 		Version:     1,
 		Flamebearer: fb,
@@ -184,41 +180,6 @@ func allNamesArePlaceholders(names []string) bool {
 		return false
 	}
 	return true
-}
-
-func resolveStackNamesWithFallback(parsed *flamegraph.ParsedChunk, ref *flamegraph.ParsedChunk) map[int]string {
-	out := make(map[int]string)
-	for idx, name := range parsed.Names {
-		if name != "" {
-			out[idx] = name
-		}
-	}
-	if ref != nil && ref != parsed {
-		for idx, name := range ref.Names {
-			if name != "" && out[idx] == "" {
-				out[idx] = name
-			}
-		}
-	}
-	locInfos := parsed.LocationInfos
-	if ref != nil && locInfos == nil {
-		locInfos = ref.LocationInfos
-	}
-	for _, s := range parsed.Samples {
-		for _, locIdx := range s.LocIndices {
-			if out[locIdx] != "" {
-				continue
-			}
-			if locInfos != nil {
-				if loc, ok := locInfos[locIdx]; ok && loc.Address != 0 {
-					out[locIdx] = fmt.Sprintf("0x%x", loc.Address)
-					continue
-				}
-			}
-			out[locIdx] = fmt.Sprintf("frame_%d", locIdx)
-		}
-	}
-	return out
 }
 
 // pyroscopeMetadata returns metadata in Pyroscope API shape (format, spyName, sampleRate, units, name).

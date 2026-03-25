@@ -3,7 +3,6 @@ package collectorprofiles
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -35,7 +34,7 @@ func init() {
 	}
 	if dumpDir != "" {
 		if err := os.MkdirAll(dumpDir, 0755); err != nil {
-			log.Printf("[profiling] profile dump mkdir %q: %v", dumpDir, err)
+			bpInfof("profile dump mkdir failed dir=%q err=%v", dumpDir, err)
 			dumpDir = ""
 		}
 	}
@@ -61,27 +60,27 @@ func NewProfilesConsumer(store *ProfileStore) (xconsumer.Profiles, error) {
 		if n == 0 {
 			return nil
 		}
-		log.Printf("[profiling] receiver: batch with %d resource profile(s)", n)
-		profilingDebugLog("[profiling] receiver: batch with %d resource profile(s)", n)
+		bpInfof("otlp_receiver: batch resource_profiles=%d", n)
+		profilingDebugLog("otlp_receiver: batch resource_profiles=%d", n)
 
 		storedAny := false
 		for i := 0; i < n; i++ {
 			rp := rps.At(i)
 			key, ok := SourceKeyFromResource(rp.Resource().Attributes())
 			if !ok {
-				profilingDebugLog("[profiling] receiver: dropped resource (no source key); have attributes: %s", attrsToDebugString(rp.Resource().Attributes()))
+				profilingDebugLog("otlp_receiver: dropped resource (no source key); attributes=%s", attrsToDebugString(rp.Resource().Attributes()))
 				continue
 			}
 			if !store.IsActive(key) {
-				profilingDebugLog("[profiling] receiver: dropped sourceKey=%q (not active/viewing)", key)
+				profilingDebugLog("otlp_receiver: dropped sourceKey=%q (not active/viewing)", key)
 				continue
 			}
 			storedAny = true
 			storeOne(store, pd, rps, i)
 		}
 		if !storedAny && n > 0 {
-			log.Printf("[profiling] dropped all %d resource profile(s) (no active slot or key extraction failed)", n)
-			profilingDebugLog("[profiling] receiver: dropped all %d resource profile(s) (no matching active slot or key extraction failed)", n)
+			bpInfof("otlp_receiver: dropped all %d resource_profiles (no active slot or no source key)", n)
+			profilingDebugLog("otlp_receiver: dropped all %d resource_profiles (no matching slot or key extraction failed)", n)
 		}
 		return nil
 	}, consumer.WithCapabilities(consumer.Capabilities{MutatesData: false}))
@@ -93,11 +92,11 @@ func storeOne(store *ProfileStore, pd pprofile.Profiles, rps pprofile.ResourcePr
 	attrs := rp.Resource().Attributes()
 	key, ok := SourceKeyFromResource(attrs)
 	if !ok {
-		profilingDebugLog("[profiling] receiver: dropped resource (no source key); have attributes: %s", attrsToDebugString(attrs))
+		profilingDebugLog("otlp_receiver: dropped resource (no source key); attributes=%s", attrsToDebugString(attrs))
 		return
 	}
 	if !store.IsActive(key) {
-		profilingDebugLog("[profiling] receiver: dropped sourceKey=%q (not active/viewing)", key)
+		profilingDebugLog("otlp_receiver: dropped sourceKey=%q (not active/viewing)", key)
 		return
 	}
 	newPd := pprofile.NewProfiles()
@@ -105,24 +104,24 @@ func storeOne(store *ProfileStore, pd pprofile.Profiles, rps pprofile.ResourcePr
 	rp.CopyTo(newPd.ResourceProfiles().AppendEmpty())
 	bytes, err := jsonMarshaler.MarshalProfiles(newPd)
 	if err != nil {
-		log.Printf("[profiling] marshal error for source %q: %v", key, err)
+		bpInfof("store_chunk: marshal error sourceKey=%q err=%v", key, err)
 		return
 	}
 	hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
 	dictStats := dictionaryStatsFromChunkJSON(bytes)
-	log.Printf("[profiling] stored single chunk key=%q size=%d dictionary=%v %s", key, len(bytes), hasDict, dictStats)
+	bpInfof("store_chunk: sourceKey=%q bytes=%d has_dict_tables=%v %s", key, len(bytes), hasDict, dictStats)
 	if !hasDict {
-		profilingDebugLog("[profiling] receiver: chunk sourceKey=%q has no dictionary (symbols will show as frame_N); ensure the node profiler OTLP export includes string/function/location tables", key)
+		profilingDebugLog("store_chunk: sourceKey=%q missing dictionary tables (names may show as frame_N); check node profiler OTLP export", key)
 	}
 	store.AddProfileData(key, bytes)
-	profilingDebugLog("[profiling] receiver: stored chunk sourceKey=%q size=%d", key, len(bytes))
+	profilingDebugLog("store_chunk: buffered sourceKey=%q bytes=%d", key, len(bytes))
 	if dumpDir != "" {
 		writeRawProfileDump(key, bytes)
 	}
 }
 
 // writeRawProfileDump writes profile JSON (post gRPC unmarshal, same as store) to dumpDir.
-// Use the file with ParseOTLPChunk(dumpBytes) locally to iterate on parser and Pyroscope-format output.
+// Use the file with flamegraph.SamplesFromOTLPChunk(dumpBytes) locally to iterate on transforms.
 // Filename: {sanitizedSourceKey}_{unixNano}_{seq}.json
 func writeRawProfileDump(sourceKey string, rawJSON []byte) {
 	sanitized := strings.ReplaceAll(sourceKey, "/", "_")
@@ -131,10 +130,10 @@ func writeRawProfileDump(sourceKey string, rawJSON []byte) {
 	name := sanitized + "_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + strconv.FormatUint(seq, 10) + ".json"
 	path := filepath.Join(dumpDir, name)
 	if err := os.WriteFile(path, rawJSON, 0644); err != nil {
-		log.Printf("[profiling] dump write failed: %v", err)
+		bpInfof("profile_dump: write failed err=%v", err)
 		return
 	}
-	profilingDebugLog("[profiling] dump wrote %s (%d bytes)", path, len(rawJSON))
+	profilingDebugLog("profile_dump: wrote path=%s bytes=%d", path, len(rawJSON))
 }
 
 // attrsToDebugString returns a short string of attribute keys for debug logs (e.g. "k8s.namespace.name,k8s.pod.name").

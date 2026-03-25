@@ -2,7 +2,6 @@ package collectorprofiles
 
 import (
 	"errors"
-	"log"
 
 	"github.com/odigos-io/odigos/frontend/services/common"
 	"github.com/odigos-io/odigos/frontend/services/collector_profiles/flamegraph"
@@ -37,8 +36,8 @@ func EnableProfilingForSource(store ProfileStoreRef, namespace, kindStr, name st
 	key := SourceKeyFromSourceID(id)
 	store.StartViewing(key)
 	activeKeys, _ := store.DebugSlots()
-	log.Printf("[profiling] enable: sourceKey=%q namespace=%q kind=%q name=%q", key, id.Namespace, id.Kind, id.Name)
-	profilingDebugLog("[profiling] enable: sourceKey=%q (namespace=%q kind=%q name=%q)", key, id.Namespace, id.Kind, id.Name)
+	bpInfof("api_enable: sourceKey=%q namespace=%q kind=%q name=%q", key, id.Namespace, id.Kind, id.Name)
+	profilingDebugLog("api_enable: sourceKey=%q namespace=%q kind=%q name=%q", key, id.Namespace, id.Kind, id.Name)
 	return &EnableProfilingOutput{
 		Status:      "ok",
 		SourceKey:   key,
@@ -66,8 +65,8 @@ func GetProfilingForSource(store ProfileStoreRef, namespace, kindStr, name strin
 	chunks := store.GetProfileData(key)
 
 	if chunks == nil {
-		log.Printf("[profiling] get: sourceKey=%q chunks=0 (no slot or empty)", key)
-		profilingDebugLog("[profiling] get: sourceKey=%q chunks=0 (no slot or empty)", key)
+		bpInfof("api_get: sourceKey=%q chunks=0 (no slot or empty buffer)", key)
+		profilingDebugLog("api_get: sourceKey=%q chunks=0 (no slot or empty buffer)", key)
 		out := &GetProfilingOutput{
 			Profile: emptyFlamebearerProfile(),
 			EmptySlot: true,
@@ -80,16 +79,16 @@ func GetProfilingForSource(store ProfileStoreRef, namespace, kindStr, name strin
 		return out, nil
 	}
 
-	log.Printf("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
-	profilingDebugLog("[profiling] get: sourceKey=%q chunks=%d", key, len(chunks))
+	bpInfof("api_get: sourceKey=%q chunks=%d", key, len(chunks))
+	profilingDebugLog("api_get: sourceKey=%q chunks=%d", key, len(chunks))
 	profile, buildDebug := BuildPyroscopeProfileFromChunksWithDebug(chunks)
-	log.Printf("[profiling] build: sourceKey=%q chunkCount=%d numTicks=%d parseErrors=%d chunksWithSamples=%d namesCount=%d",
-		key, buildDebug.ChunkCount, buildDebug.NumTicks, buildDebug.ParseErrors, buildDebug.ChunksWithSamples, len(profile.Flamebearer.Names))
+	bpInfof("api_get: built sourceKey=%q chunkCount=%d numTicks=%d parseErrors=%d pyroChunks=%d jsonFallbackChunks=%d chunksWithSamples=%d namesCount=%d",
+		key, buildDebug.ChunkCount, buildDebug.NumTicks, buildDebug.ParseErrors, buildDebug.ChunksViaPyroscope, buildDebug.ChunksViaJSONFallback, buildDebug.ChunksWithSamples, len(profile.Flamebearer.Names))
 	if buildDebug.ParseErrors > 0 {
-		log.Printf("[profiling] build: sourceKey=%q parseErrors=%d (some chunks failed to parse)", key, buildDebug.ParseErrors)
+		bpInfof("api_get: sourceKey=%q parseErrors=%d (some chunks failed transform)", key, buildDebug.ParseErrors)
 	}
 	if buildDebug.ChunkCount > 0 && buildDebug.ChunksWithSamples == 0 && buildDebug.NumTicks == 0 {
-		log.Printf("[profiling] build: sourceKey=%q chunks have no samples or all failed (chunkCount=%d)", key, buildDebug.ChunkCount)
+		bpInfof("api_get: sourceKey=%q no ticks after merge chunkCount=%d", key, buildDebug.ChunkCount)
 	}
 	out := &GetProfilingOutput{Profile: profile, EmptySlot: false}
 	if wantDebug {

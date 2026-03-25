@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/odigos-io/odigos/frontend/graph/model"
 	collectorprofiles "github.com/odigos-io/odigos/frontend/services/collector_profiles"
@@ -19,6 +20,7 @@ func (r *mutationResolver) EnableSourceProfiling(ctx context.Context, namespace 
 	if r.ProfileStore == nil {
 		return nil, fmt.Errorf("profiling is not available")
 	}
+	log.Printf("[backend-profiling] graphql: enableSourceProfiling ns=%q kind=%q name=%q", namespace, kind, name)
 	out, err := collectorprofiles.EnableProfilingForSource(r.ProfileStore, namespace, kind, name)
 	if err != nil {
 		if errors.Is(err, collectorprofiles.ErrMissingProfilingParams) {
@@ -49,6 +51,7 @@ func (r *queryResolver) SourceProfiling(ctx context.Context, namespace string, k
 		return nil, fmt.Errorf("profiling is not available")
 	}
 	wantDebug := debug != nil && *debug
+	log.Printf("[backend-profiling] graphql: sourceProfiling ns=%q kind=%q name=%q debug=%v", namespace, kind, name, wantDebug)
 	out, err := collectorprofiles.GetProfilingForSource(r.ProfileStore, namespace, kind, name, wantDebug)
 	if err != nil {
 		if errors.Is(err, collectorprofiles.ErrMissingProfilingParams) {

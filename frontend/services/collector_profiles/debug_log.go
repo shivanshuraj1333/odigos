@@ -16,5 +16,5 @@ func profilingDebugLog(format string, args ...interface{}) {
 	if !profilingLogEnabled() {
 		return
 	}
-	log.Printf(format, args...)
+	log.Printf("[backend-profiling] debug "+format, args...)
 }

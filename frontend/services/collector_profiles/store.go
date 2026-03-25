@@ -2,7 +2,6 @@ package collectorprofiles
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 )
@@ -67,11 +66,11 @@ func (s *ProfileStore) StartViewing(sourceKey string) {
 
 	if slot, ok := s.slots[sourceKey]; ok {
 		slot.LastRequestAt = now
-		profilingDebugLog("[profiling] store: refresh slot sourceKey=%q", sourceKey)
+		profilingDebugLog("store: refresh slot sourceKey=%q", sourceKey)
 		return
 	}
-	log.Printf("[profiling] store: new slot sourceKey=%q activeSlots=%d", sourceKey, len(s.slots)+1)
-	profilingDebugLog("[profiling] store: new slot sourceKey=%q (active=%d)", sourceKey, len(s.slots)+1)
+	bpInfof("store: new slot sourceKey=%q active_slots=%d", sourceKey, len(s.slots)+1)
+	profilingDebugLog("store: new slot sourceKey=%q active_slots=%d", sourceKey, len(s.slots)+1)
 
 	if len(s.slots) >= s.maxSlots {
 		var oldestKey string
@@ -86,6 +85,8 @@ func (s *ProfileStore) StartViewing(sourceKey string) {
 		}
 		if oldestKey != "" {
 			delete(s.slots, oldestKey)
+			bpInfof("store: evicted oldest slot (max_slots) removed=%q for new=%q", oldestKey, sourceKey)
+			profilingDebugLog("store: evicted oldest slot removed=%q for new=%q", oldestKey, sourceKey)
 		}
 	}
 
@@ -177,7 +178,8 @@ func (s *ProfileStore) cleanupExpired() {
 	for k, slot := range s.slots {
 		if slot.LastRequestAt.Before(cutoff) {
 			delete(s.slots, k)
-			profilingDebugLog("[profiling] store: evicted slot sourceKey=%q (TTL)", k)
+			bpInfof("store: evicted slot sourceKey=%q (TTL)", k)
+			profilingDebugLog("store: evicted slot sourceKey=%q (TTL)", k)
 		}
 	}
 }
