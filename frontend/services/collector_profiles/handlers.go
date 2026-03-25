@@ -165,6 +165,10 @@ func BuildPyroscopeProfileFromChunksWithDebug(chunks [][]byte) (flamegraph.Flame
 	if allNamesArePlaceholders(fb.Names) {
 		meta.SymbolsHint = "Symbols unavailable. Set DEBUGINFOD_URLS on the backend to resolve addresses to names, or ensure the collector sends symbol tables."
 	}
+	if os.Getenv("PROFILE_BUILD_SUMMARY") != "" {
+		b, _ := json.Marshal(debug)
+		log.Printf("[profiling] build_summary %s", string(b))
+	}
 	return flamegraph.FlamebearerProfile{
 		Version:     1,
 		Flamebearer: fb,

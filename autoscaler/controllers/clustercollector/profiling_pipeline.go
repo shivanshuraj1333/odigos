@@ -64,6 +64,26 @@ func shouldBuildGatewayProfilesPipeline(odigosCfg *odigoscommon.OdigosConfigurat
 }
 
 // mergeProfilesExporterSettings merges Helm/env defaults with OdigosConfiguration.profiling.exporter.
+func GatewayProfilesExporterComponentNames(odigosCfg *odigoscommon.OdigosConfiguration) []string {
+	if !shouldBuildGatewayProfilesPipeline(odigosCfg) {
+		return nil
+	}
+	var names []string
+	if resolveVerificationEndpoint(odigosCfg) != "" {
+		names = append(names, "otlp/profiles-verification")
+	}
+	if resolveOtlpUiEndpoint(odigosCfg) != "" {
+		names = append(names, "otlp/profiles-ui")
+	}
+	if fileOn, _ := gatewayFileExportPath(odigosCfg); fileOn {
+		names = append(names, "file/gateway-profiles")
+	}
+	if profileDebugExportEnabled() {
+		names = append(names, "debug/profiles-debug")
+	}
+	return names
+}
+
 func mergeProfilesExporterSettings(odigosCfg *odigoscommon.OdigosConfiguration) config.GenericMap {
 	base := getProfilesExporterConfigFromEnv()
 	if odigosCfg == nil || odigosCfg.Profiling == nil || odigosCfg.Profiling.Exporter == nil {
