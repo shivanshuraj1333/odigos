@@ -69,17 +69,19 @@ spec:
           - name: ODIGOS_SEQUENTIAL_CACHE_LOAD
             value: "true"
           {{- end }}
-        ports:
-          - containerPort: 3000
-            name: ui
           {{- $prof := .Values.profiling | default dict }}
           {{- $profUi := $prof.ui | default dict }}
           {{- $legacyProf := .Values.ui.profiling | default dict }}
           {{- $profOn := or (default false $prof.enabled) (default false $legacyProf.enabled) }}
           {{- if $profOn }}
-          # Raw OTLP profile JSON per chunk (same as in-memory store) for E2E dictionary debugging; pull via kubectl cp.
+          # Raw OTLP profile JSON per chunk (same as in-memory store) for E2E dictionary debugging; pull via kubectl.
           - name: PROFILE_DEBUG_DUMP_DIR
             value: "/data/profile-dumps"
+          {{- end }}
+        ports:
+          - containerPort: 3000
+            name: ui
+          {{- if $profOn }}
           - containerPort: {{ default (default 4318 $legacyProf.otlpGrpcPort) $profUi.otlpGrpcPort }}
             name: otlp-profiles
           {{- end }}
