@@ -207,7 +207,7 @@ func startHTTPServer(ctx context.Context, flags *Flags, logger logr.Logger, odig
 			Logger:          logger,
 			PromAPI:         promAPI,
 			K8sCacheClient:  k8sCacheClient,
-			ProfileStore:    profileStoreRef,
+			ProfileStore:    profileStore,
 		},
 	})
 	gqlExecutor := executor.New(gqlExecutableSchema)
