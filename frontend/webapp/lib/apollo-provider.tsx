@@ -85,7 +85,11 @@ const ApolloProvider: FC<PropsWithChildren> = ({ children }) => {
     );
   }
 
-  return <ApolloNextAppProvider makeClient={() => makeClient(token)}>{children}</ApolloNextAppProvider>;
+  return (
+    <ApolloNextAppProvider key={token ?? ''} makeClient={() => makeClient(token)}>
+      {children}
+    </ApolloNextAppProvider>
+  );
 };
 
 export default ApolloProvider;
