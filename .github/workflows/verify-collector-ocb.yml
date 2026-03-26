@@ -24,3 +24,6 @@ jobs:
             echo "odigos collector distribution module is not in sync with builder config. Please run 'make genodigoscol generate' in 'collector' directory and commit the changes."
             exit 1
           fi
+      - name: Test k8sattributesprocessor
+        working-directory: ./collector/processors/k8sattributesprocessor
+        run: go test -count=1 -short ./...

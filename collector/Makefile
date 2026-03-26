@@ -4,7 +4,7 @@ SRC_ROOT := $(shell git rev-parse --show-toplevel)/collector
 TOOLS_BIN_DIR    := $(SRC_ROOT)/.tools
 
 # Define the tool version
-BUILDER_VERSION = 0.141.0
+BUILDER_VERSION = 0.148.0
 BUILDER := $(TOOLS_BIN_DIR)/builder_$(BUILDER_VERSION)
 
 # Determine the current operating system and architecture
@@ -20,6 +20,8 @@ MDATAGENCMD?= mdatagen
 
 PROCESSOR_DIR := processors/odigossamplingprocessor
 TAILSAMPLING_PROCESSOR_DIR := processors/odigostailsamplingprocessor
+# processors/k8sattributesprocessor: fork of contrib at BUILDER_VERSION; on OTel bumps run
+# `go test ./...` in that module and re-apply Odigos deltas (see internal/kube client.go, processor.go).
 
 .PHONY: download_builder
 download_builder:
@@ -33,18 +35,25 @@ download_builder:
 genodigoscol: download_builder
 	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml
 
+# Run tests on the builder host arch (GOHOST*). When `make build-odigoscol` is invoked with
+# GOOS=linux GOARCH=$TARGETARCH for cross-builds, `go test` would otherwise build test binaries
+# for the target arch and try to execute them on the build machine (exec format error).
 .PHONY: test-odigossamplingprocessor
 test-odigossamplingprocessor:
 	@echo "Running tests for odigossamplingprocessor at $(PROCESSOR_DIR)"
-	cd $(PROCESSOR_DIR) && GOOS=$(HOST_GOOS) GOARCH=$(HOST_GOARCH) $(GOCMD) test ./...
+	cd $(PROCESSOR_DIR) && GOOS="$$(go env GOHOSTOS)" GOARCH="$$(go env GOHOSTARCH)" $(GOCMD) test ./...
 
 .PHONY: test-odigostailsamplingprocessor
 test-odigostailsamplingprocessor:
 	@echo "Running tests for odigostailsamplingprocessor at $(TAILSAMPLING_PROCESSOR_DIR)"
-	cd $(TAILSAMPLING_PROCESSOR_DIR) && GOOS=$(HOST_GOOS) GOARCH=$(HOST_GOARCH) $(GOCMD) test ./...
+	cd $(TAILSAMPLING_PROCESSOR_DIR) && GOOS="$$(go env GOHOSTOS)" GOARCH="$$(go env GOHOSTARCH)" $(GOCMD) test ./...
+
+.PHONY: test-odigosotelcol
+test-odigosotelcol:
+	cd odigosotelcol && GOOS="$$(go env GOHOSTOS)" GOARCH="$$(go env GOHOSTARCH)" $(GOCMD) test --ldflags="-checklinkname=0" -count=1 ./...
 
 .PHONY: build-odigoscol
-build-odigoscol: download_builder test-odigossamplingprocessor test-odigostailsamplingprocessor
+build-odigoscol: download_builder test-odigossamplingprocessor test-odigostailsamplingprocessor test-odigosotelcol
 	$(BUILDER) --ldflags="-checklinkname=0" --config builder-config.yaml --skip-generate --skip-get-modules
 
 .PHONY: install-tools
