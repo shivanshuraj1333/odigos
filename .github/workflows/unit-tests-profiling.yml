@@ -1,0 +1,57 @@
+name: unit tests (profiling)
+
+on:
+  pull_request:
+    paths:
+      - "autoscaler/controllers/common/**"
+      - "autoscaler/controllers/clustercollector/profiling_pipeline*.go"
+      - "autoscaler/controllers/nodecollector/collectorconfig/profiles*.go"
+      - "common/**"
+      - "collector/processors/k8sattributesprocessor/**"
+      - "frontend/services/collector_profiles/**"
+      - "frontend/services/profiling_startup.go"
+      - "frontend/services/collector_metrics/collector_metrics.go"
+      - "frontend/graph/profiling*"
+      - ".github/workflows/unit-tests-profiling.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.1"
+          cache: true
+          cache-dependency-path: |
+            common/go.sum
+            autoscaler/go.sum
+            frontend/go.sum
+            collector/processors/k8sattributesprocessor/go.sum
+
+      - name: common
+        working-directory: common
+        run: go test -count=1 -short ./...
+
+      - name: autoscaler controller helpers (profiling OTLP)
+        working-directory: autoscaler
+        run: go test -count=1 -short ./controllers/common/...
+
+      - name: autoscaler gateway profiling pipeline
+        working-directory: autoscaler
+        run: go test -count=1 -short -run '^TestAddProfilingGatewayPipeline' ./controllers/clustercollector/
+
+      - name: autoscaler node collector profiles pipeline
+        working-directory: autoscaler
+        run: go test -count=1 -short -run '^TestProfilingPipelineConfig' ./controllers/nodecollector/collectorconfig/
+
+      - name: k8sattributesprocessor (profiles resource attrs)
+        working-directory: collector/processors/k8sattributesprocessor
+        run: go test -count=1 -short ./...
+
+      - name: frontend collector_profiles store
+        working-directory: frontend
+        run: go test -count=1 -short ./services/collector_profiles/...
