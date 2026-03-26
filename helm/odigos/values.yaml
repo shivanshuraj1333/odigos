@@ -73,6 +73,13 @@ clusterName: ''
 logLevel: "info"
 
 # @schema
+# description: |-
+#   Continuous profiling (off by default). When enabled, profiles flow node → gateway → UI OTLP.
+# @schema
+profiling:
+  enabled: false
+
+# @schema
 # description: Configuration for OpenTelemetry (OTEL) agents instrumentation environment variables.
 # @schema
 userInstrumentationEnvs:
