@@ -22,7 +22,7 @@ func ResolveProfilingFromEffectiveConfig(ctx context.Context, c client.Client) (
 	if cfg == nil {
 		return false, otlpGrpcPort, maxSlots, ttlSec, slotMaxBytes, cleanup, nil
 	}
-	otlpGrpcPort = cfg.UiOtlpGrpcPort()
+	otlpGrpcPort = odigosconsts.OTLPPort
 
 	if cfg.ProfilingEnabled() {
 		applyProfilingUiOverrides(cfg, &maxSlots, &ttlSec, &slotMaxBytes)

@@ -40,7 +40,7 @@ var (
 	errNoExportersConfigured = errors.New("no exporters were configured, cannot add self telemetry pipeline")
 )
 
-func addSelfTelemetryPipeline(c *config.Config, ownTelemetryPort int32, destinationPipelineNames []string, signalsRootPipelines []string, uiOtlpPort int) error {
+func addSelfTelemetryPipeline(c *config.Config, ownTelemetryPort int32, destinationPipelineNames []string, signalsRootPipelines []string) error {
 	if c.Service.Pipelines == nil {
 		return errNoPipelineConfigured
 	}
@@ -98,7 +98,7 @@ func addSelfTelemetryPipeline(c *config.Config, ownTelemetryPort int32, destinat
 	// In case of performance impact caused by this processor, we should modify this config to reduce the sampling ratio.
 	c.Processors["odigostrafficmetrics"] = struct{}{}
 	c.Exporters["otlp/odigos-own-telemetry-ui"] = config.GenericMap{
-		"endpoint": fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), uiOtlpPort),
+		"endpoint": fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), odigosconsts.OTLPPort),
 		"tls": config.GenericMap{
 			"insecure": true,
 		},
@@ -186,10 +186,8 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 
 	collectorLogLevel := string(odigoscommon.LogLevelInfo)
 	var profilingCfg *odigoscommon.ProfilingConfiguration
-	uiOtlpPort := odigosconsts.OTLPPort
 	if odigosCfg, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil {
 		profilingCfg = odigosCfg.Profiling
-		uiOtlpPort = odigosCfg.UiOtlpGrpcPort()
 		if odigosCfg.ComponentLogLevels != nil {
 			collectorLogLevel = odigosCfg.ComponentLogLevels.Resolve("collector")
 		}
@@ -200,10 +198,10 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 		common.ToProcessorConfigurerArray(processors),
 		func(c *config.Config, destinationPipelineNames []string, signalsRootPipelines []string) error {
 			// Creating a metric pipeline (throughput metrics) for the gateway to be sent to the UI
-			if err := addSelfTelemetryPipeline(c, gateway.Spec.CollectorOwnMetricsPort, destinationPipelineNames, signalsRootPipelines, uiOtlpPort); err != nil {
+			if err := addSelfTelemetryPipeline(c, gateway.Spec.CollectorOwnMetricsPort, destinationPipelineNames, signalsRootPipelines); err != nil {
 				return err
 			}
-			if err := addProfilingGatewayPipeline(c, env.GetCurrentNamespace(), profilingCfg, uiOtlpPort); err != nil {
+			if err := addProfilingGatewayPipeline(c, env.GetCurrentNamespace(), profilingCfg); err != nil {
 				return err
 			}
 			c.Service.Telemetry.Logs = config.LogsConfig{Level: collectorLogLevel}

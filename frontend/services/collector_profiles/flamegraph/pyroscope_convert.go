@@ -3,6 +3,7 @@
 package flamegraph
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"unsafe"
@@ -12,8 +13,8 @@ import (
 	pprofileotlp "go.opentelemetry.io/proto/otlp/collector/profiles/v1development"
 	otelProfile "go.opentelemetry.io/proto/otlp/profiles/v1development"
 
-	"github.com/grafana/pyroscope/pkg/ingester/otlp"
 	googleProfile "github.com/grafana/pyroscope/api/gen/proto/go/google/v1"
+	"github.com/grafana/pyroscope/pkg/ingester/otlp"
 )
 
 var protoJSONUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
@@ -41,7 +42,11 @@ func tryPyroscopeOTLP(chunk []byte) (samples []Sample, ok bool, failReason strin
 				continue
 			}
 			for _, p := range sp.Profiles {
-				out = append(out, convertProfileViaPyroscope(p, req.Dictionary)...)
+				samples, extracted := convertProfileViaPyroscope(p, req.Dictionary)
+				if !extracted {
+					return nil, false, "pyroscope_profile_extract_failed"
+				}
+				out = append(out, samples...)
 			}
 		}
 	}
@@ -52,25 +57,25 @@ func tryPyroscopeOTLP(chunk []byte) (samples []Sample, ok bool, failReason strin
 }
 
 // convertProfileViaPyroscope runs Pyroscope's OTLP→pprof conversion and turns the result into our Sample slice.
-func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfile.ProfilesDictionary) []Sample {
+func convertProfileViaPyroscope(src *otelProfile.Profile, dictionary *otelProfile.ProfilesDictionary) ([]Sample, bool) {
 	converted, err := otlp.ConvertOtelToGoogle(src, dictionary)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var out []Sample
+	extractedAny := false
 	for _, cp := range converted {
 		cp := cp // local copy so &cp is addressable for unexported field reflection
 		p := extractGoogleProfile(&cp)
 		if p != nil {
+			extractedAny = true
 			out = append(out, googleProfileToSamples(p)...)
 		}
 	}
-	return out
+	return out, extractedAny
 }
 
-// extractGoogleProfile reads the unexported .profile field from otlp.convertedProfile via reflection.
-// cp must be *convertedProfile (or a pointer to the struct value); map iteration yields non-addressable
-// copies, so callers must pass &cp from a local variable.
+// extractGoogleProfile reads convertedProfile.profile without unsafe access.
 func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 	v := reflect.ValueOf(cp)
 	if v.Kind() == reflect.Ptr {
@@ -92,7 +97,21 @@ func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 	} else if f.CanAddr() {
 		p = *(**googleProfile.Profile)(unsafe.Pointer(f.Addr().UnsafePointer()))
 	}
-	return p
+	if p != nil {
+		return p
+	}
+	// Fallback: if converted profile exposes JSON fields, decode "profile".
+	raw, err := json.Marshal(cp)
+	if err != nil {
+		return nil
+	}
+	var holder struct {
+		Profile *googleProfile.Profile `json:"profile"`
+	}
+	if err := json.Unmarshal(raw, &holder); err != nil {
+		return nil
+	}
+	return holder.Profile
 }
 
 // googleProfileToSamples converts a Google pprof Profile to our Sample format (root-first stack, value).

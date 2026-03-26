@@ -11,31 +11,31 @@ type Flamebearer struct {
 
 // FlamebearerProfile is the full response (Pyroscope-compatible: version, flamebearer, metadata, timeline; plus symbols for Odigos).
 type FlamebearerProfile struct {
-	Version      int                  `json:"version"`
-	Flamebearer  Flamebearer         `json:"flamebearer"`
-	Metadata     FlamebearerMetadata  `json:"metadata"`
-	Timeline     *FlamebearerTimeline `json:"timeline,omitempty"`
-	Groups       interface{}          `json:"groups"` // null for single profile (Pyroscope shape)
-	Heatmap      interface{}          `json:"heatmap"`
-	Symbols      []SymbolStats        `json:"symbols,omitempty"`
+	Version     int                  `json:"version"`
+	Flamebearer Flamebearer          `json:"flamebearer"`
+	Metadata    FlamebearerMetadata  `json:"metadata"`
+	Timeline    *FlamebearerTimeline `json:"timeline,omitempty"`
+	Groups      interface{}          `json:"groups"` // null for single profile (Pyroscope shape)
+	Heatmap     interface{}          `json:"heatmap"`
+	Symbols     []SymbolStats        `json:"symbols,omitempty"`
 }
 
 // FlamebearerMetadata describes the profile (Pyroscope metadata shape).
 type FlamebearerMetadata struct {
-	Format       string `json:"format"`       // "single"
-	SpyName      string `json:"spyName"`      // e.g. "ebpf" or ""
-	SampleRate   int    `json:"sampleRate"`   // e.g. 1000000000 (Hz) or 0
-	Units        string `json:"units"`        // e.g. "samples"
-	Name         string `json:"name"`         // e.g. "cpu"
-	SymbolsHint  string `json:"symbolsHint,omitempty"`  // Shown in UI when symbols are placeholders (frame_N)
+	Format      string `json:"format"`                // "single"
+	SpyName     string `json:"spyName"`               // e.g. "ebpf" or ""
+	SampleRate  int    `json:"sampleRate"`            // e.g. 1000000000 (Hz) or 0
+	Units       string `json:"units"`                 // e.g. "samples"
+	Name        string `json:"name"`                  // e.g. "cpu"
+	SymbolsHint string `json:"symbolsHint,omitempty"` // Shown in UI when symbols are placeholders (frame_N)
 }
 
 // FlamebearerTimeline is optional timeline data (Pyroscope shape); when nil omitted from JSON.
 type FlamebearerTimeline struct {
-	StartTime      int64   `json:"startTime"`
-	Samples        []int64 `json:"samples"`
-	DurationDelta  int     `json:"durationDelta"`
-	Watermarks     *[]int  `json:"watermarks"` // null for single profile (Pyroscope shape)
+	StartTime     int64   `json:"startTime"`
+	Samples       []int64 `json:"samples"`
+	DurationDelta int     `json:"durationDelta"`
+	Watermarks    *[]int  `json:"watermarks"` // null for single profile (Pyroscope shape)
 }
 
 const (

@@ -1,7 +1,6 @@
 package collectorprofiles
 
 import (
-	"bytes"
 	"sync"
 )
 
@@ -10,10 +9,10 @@ const defaultSlotMaxBytes = 20 * 1024 * 1024 // 20 MB per slot
 // BoundedBuffer keeps a size-bounded list of profile data chunks (raw bytes).
 // Oldest chunks are dropped when total size exceeds maxBytes.
 type BoundedBuffer struct {
-	mu       sync.Mutex
-	chunks   [][]byte
+	mu         sync.Mutex
+	chunks     [][]byte
 	totalBytes int
-	maxBytes  int
+	maxBytes   int
 }
 
 // NewBoundedBuffer creates a buffer with the given max size in bytes.
@@ -26,8 +25,6 @@ func NewBoundedBuffer(maxBytes int) *BoundedBuffer {
 }
 
 // Add appends a chunk and trims until total size is at most maxBytes.
-// When over budget, eviction prefers the oldest chunk that likely has no OTLP profile dictionary
-// (so chunks that still carry symbol tables are kept longer).
 func (b *BoundedBuffer) Add(chunk []byte) {
 	if len(chunk) == 0 {
 		return
@@ -39,32 +36,10 @@ func (b *BoundedBuffer) Add(chunk []byte) {
 	b.trimToMaxLocked()
 }
 
-func chunkLikelyHasOTLPProfileDictionary(chunk []byte) bool {
-	if len(chunk) == 0 {
-		return false
-	}
-	return bytes.Contains(chunk, []byte(`"stringTable"`)) ||
-		bytes.Contains(chunk, []byte(`"StringTable"`)) ||
-		bytes.Contains(chunk, []byte(`"functionTable"`)) ||
-		bytes.Contains(chunk, []byte(`"FunctionTable"`)) ||
-		bytes.Contains(chunk, []byte(`"locationTable"`)) ||
-		bytes.Contains(chunk, []byte(`"LocationTable"`))
-}
-
 func (b *BoundedBuffer) trimToMaxLocked() {
 	for len(b.chunks) > 0 && b.totalBytes > b.maxBytes {
-		idx := -1
-		for i := 0; i < len(b.chunks); i++ {
-			if !chunkLikelyHasOTLPProfileDictionary(b.chunks[i]) {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			idx = 0
-		}
-		old := b.chunks[idx]
-		b.chunks = append(b.chunks[:idx], b.chunks[idx+1:]...)
+		old := b.chunks[0]
+		b.chunks = b.chunks[1:]
 		b.totalBytes -= len(old)
 	}
 }

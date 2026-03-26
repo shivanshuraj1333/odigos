@@ -152,7 +152,6 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 	if err != nil {
 		return nil, errors.Join(err, errors.New("failed to get current odigos configuration"))
 	}
-	uiOtlpPort := odigosConfiguration.UiOtlpGrpcPort()
 
 	extraEnvVars := []corev1.EnvVar{}
 	if gateway.Spec.HttpsProxyAddress != nil {
@@ -163,7 +162,7 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 		}, corev1.EnvVar{
 			// Own-telemetry gRPC to the UI must bypass HTTPS_PROXY; blacklist ui.<ns>:<otlp>.
 			Name:  "NO_PROXY",
-			Value: fmt.Sprintf("%s.%s:%d", k8sconsts.UIServiceName, odigosNs, uiOtlpPort),
+			Value: fmt.Sprintf("%s.%s:%d", k8sconsts.UIServiceName, odigosNs, odigosconsts.OTLPPort),
 		})
 	}
 
@@ -319,12 +318,14 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 		desiredDeployment.Spec.Template.Spec.TopologySpreadConstraints = adjusted
 	}
 
+	featureGates := "service.profilesSupport"
 	if odigosConfiguration.ClickhouseJsonTypeEnabledProperty != nil && *odigosConfiguration.ClickhouseJsonTypeEnabledProperty {
-		desiredDeployment.Spec.Template.Spec.Containers[0].Args = append(
-			desiredDeployment.Spec.Template.Spec.Containers[0].Args,
-			"--feature-gates=clickhouse.json",
-		)
+		featureGates += ",clickhouse.json"
 	}
+	desiredDeployment.Spec.Template.Spec.Containers[0].Args = append(
+		desiredDeployment.Spec.Template.Spec.Containers[0].Args,
+		fmt.Sprintf("--feature-gates=%s", featureGates),
+	)
 
 	err = ctrl.SetControllerReference(gateway, desiredDeployment, scheme)
 	if err != nil {

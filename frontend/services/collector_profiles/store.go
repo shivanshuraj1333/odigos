@@ -9,9 +9,9 @@ import (
 const (
 	// defaultMaxSlots: max number of services that can have profiling enabled at once (configurable via PROFILES_MAX_SLOTS).
 	// With default 20MB per slot, 15 slots caps total RAM at ~300MB for profile buffers.
-	defaultMaxSlots           = 15
-	defaultSlotTTLSeconds     = 600 // 10 minutes (overridable via PROFILES_SLOT_TTL_SECONDS)
-	defaultCleanupInt         = 15 * time.Second
+	defaultMaxSlots       = 15
+	defaultSlotTTLSeconds = 600 // 10 minutes (overridable via PROFILES_SLOT_TTL_SECONDS)
+	defaultCleanupInt     = 15 * time.Second
 )
 
 // Slot holds profile data for one source and last-request time for TTL.
@@ -24,13 +24,13 @@ type Slot struct {
 // Eviction: when full, the slot with the oldest LastRequestAt is removed.
 // TTL: slots with no request in the last ttlSeconds are removed by a background goroutine.
 type ProfileStore struct {
-	mu               sync.RWMutex
-	slots            map[string]*Slot
-	maxSlots         int
-	ttlSeconds       int
-	slotMaxBytes     int
-	cleanupInterval  time.Duration
-	stopCleanup      func()
+	mu              sync.RWMutex
+	slots           map[string]*Slot
+	maxSlots        int
+	ttlSeconds      int
+	slotMaxBytes    int
+	cleanupInterval time.Duration
+	stopCleanup     func()
 }
 
 // NewProfileStore creates a store with the given limits.

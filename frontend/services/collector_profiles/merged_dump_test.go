@@ -402,7 +402,13 @@ func TestVerifyLiveCapture(t *testing.T) {
 		t.Skipf("no .json chunk files in %q", dir)
 		return
 	}
-	t.Logf("found %d source(s), %d total files in %q", len(bySource), func() int { n := 0; for _, f := range bySource { n += len(f) }; return n }(), dir)
+	t.Logf("found %d source(s), %d total files in %q", len(bySource), func() int {
+		n := 0
+		for _, f := range bySource {
+			n += len(f)
+		}
+		return n
+	}(), dir)
 
 	allPass := true
 	for sourceKey, files := range bySource {
@@ -478,7 +484,7 @@ func TestMockFlameGraphResponse(t *testing.T) {
 	fb := flamegraph.TreeToFlamebearer(tree, 1024)
 	// 3. Full response (same shape as GET /api/.../profiling).
 	profile := flamegraph.FlamebearerProfile{
-		Version: 1,
+		Version:     1,
 		Flamebearer: fb,
 		Metadata: flamegraph.FlamebearerMetadata{
 			Format:     "single",

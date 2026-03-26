@@ -14,7 +14,6 @@ import (
 	"github.com/odigos-io/odigos/autoscaler/controllers/nodecollector/collectorconfig"
 	odigoscommon "github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/config"
-	odigosconsts "github.com/odigos-io/odigos/common/consts"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	"github.com/odigos-io/odigos/k8sutils/pkg/utils"
@@ -51,13 +50,11 @@ func (b *nodeCollectorBaseReconciler) SyncConfigMap(ctx context.Context, sources
 	}
 
 	var profilingCfg *odigoscommon.ProfilingConfiguration
-	uiOtlpPort := odigosconsts.OTLPPort
 	if cfg, err := utils.GetCurrentOdigosConfiguration(ctx, b.Client); err == nil {
 		profilingCfg = cfg.Profiling
-		uiOtlpPort = cfg.UiOtlpGrpcPort()
 	}
 
-	configDomains, configAsYamlText, err := calculateCollectorConfigDomains(ctx, b.odigosNamespace, datacollection, sources, clusterCollectorGroup.Status.ReceiverSignals, processors, commonconf.ControllerConfig.OnGKE, tracingLoadBalancingNeeded, profilingCfg, uiOtlpPort)
+	configDomains, configAsYamlText, err := calculateCollectorConfigDomains(ctx, b.odigosNamespace, datacollection, sources, clusterCollectorGroup.Status.ReceiverSignals, processors, commonconf.ControllerConfig.OnGKE, tracingLoadBalancingNeeded, profilingCfg)
 	if err != nil {
 		return errors.Join(err, errors.New("failed to calculate collector config domains"))
 	}
@@ -148,8 +145,7 @@ func calculateCollectorConfigDomains(
 	processors []*odigosv1.Processor,
 	onGKE bool,
 	loadBalancingNeeded bool,
-	profiling *odigoscommon.ProfilingConfiguration,
-	uiOtlpPort int) (map[string]config.Config, string, error) {
+	profiling *odigoscommon.ProfilingConfiguration) (map[string]config.Config, string, error) {
 
 	logger := commonlogger.FromContext(ctx)
 
@@ -159,7 +155,7 @@ func calculateCollectorConfigDomains(
 	}
 
 	ownMetricsPort := k8sconsts.OdigosNodeCollectorOwnTelemetryPortDefault
-	configDomains["own_metrics_ui"] = collectorconfig.OwnMetricsConfigUi(ownMetricsPort, uiOtlpPort)
+	configDomains["own_metrics_ui"] = collectorconfig.OwnMetricsConfigUi(ownMetricsPort)
 
 	// all the rest of the config is only evaluated if the node collector group is not nil
 	// node collector group is nil before any sources are added in odigos or cluster collector is not yet ready.

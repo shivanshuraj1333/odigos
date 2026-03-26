@@ -8,38 +8,28 @@ import (
 	"strings"
 )
 
-// attrLineRe matches gateway debug-exporter attribute lines: "     -> k8s.namespace.name: Str(odigos-system)"
 var attrLineRe = regexp.MustCompile(`^\s+->\s+(.+?):\s+Str\((.*)\)`)
 
-// GwDumpParsed holds data extracted from gw-profiles-dump.logs (gateway debug exporter text log).
 type GwDumpParsed struct {
-	StringTable []string              // From "String table:" section (index 0 = "")
-	Resources   []GwDumpResource      // From each "ResourceProfiles #N" block
-	StackLines  []string              // Resolved stack frame lines (between string table and ResourceProfiles)
+	StringTable []string
+	Resources   []GwDumpResource
+	StackLines  []string
 }
 
-// GwDumpResource is one ResourceProfiles block: attributes and sample count.
 type GwDumpResource struct {
-	Attributes map[string]string // e.g. "k8s.namespace.name" -> "odigos-system"
-	SampleCount int              // Number of "Sample #N" in this block
+	Attributes  map[string]string
+	SampleCount int
 }
 
-// ParseGwProfilesDump reads gw-profiles-dump.logs and extracts string table, resources, and stack lines.
-// The log format: "String table:" then lines "    <string>", then resolved stack frames (one per line),
-// then "ResourceProfiles #N", "Resource attributes:", "     -> key: Str(value)", "Sample #M", etc.
 func ParseGwProfilesDump(path string) (*GwDumpParsed, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	out := &GwDumpParsed{
-		StringTable: []string{""},
-		Resources:   nil,
-		StackLines:  nil,
-	}
+
+	out := &GwDumpParsed{StringTable: []string{""}}
 	scanner := bufio.NewScanner(f)
-	// We don't know max line length; use a large buffer for long lines.
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 
@@ -58,9 +48,7 @@ func ParseGwProfilesDump(path string) (*GwDumpParsed, error) {
 		if inStringTable {
 			if strings.HasPrefix(line, "ResourceProfiles #") {
 				inStringTable = false
-				// Fall through to handle ResourceProfiles
 			} else if strings.HasPrefix(line, "    ") && trimmed != "" {
-				// String table entry (4-space indent)
 				out.StringTable = append(out.StringTable, strings.TrimSpace(line))
 				continue
 			} else if trimmed != "" && !strings.HasPrefix(line, "    ") {
@@ -90,7 +78,6 @@ func ParseGwProfilesDump(path string) (*GwDumpParsed, error) {
 				continue
 			}
 			if strings.HasPrefix(line, "ResourceProfiles #") || (trimmed != "" && !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "ScopeProfiles") && !strings.HasPrefix(line, "Profile #") && !strings.HasPrefix(line, "InstrumentationScope") && trimmed != "Resource attributes:") {
-				// End of this resource block (e.g. next section)
 				if currentResource != nil && len(currentResource.Attributes) > 0 {
 					out.Resources = append(out.Resources, *currentResource)
 					currentResource = nil
@@ -100,8 +87,7 @@ func ParseGwProfilesDump(path string) (*GwDumpParsed, error) {
 			continue
 		}
 
-		// Between string table and first ResourceProfiles: resolved stack lines (4-space indent, look like symbols)
-		if inStringTable == false && len(out.Resources) == 0 && strings.HasPrefix(line, "    ") && trimmed != "" {
+		if !inStringTable && len(out.Resources) == 0 && strings.HasPrefix(line, "    ") && trimmed != "" {
 			if !strings.HasPrefix(trimmed, "->") && !strings.HasPrefix(trimmed, "Resource") {
 				out.StackLines = append(out.StackLines, strings.TrimSpace(line))
 			}
@@ -113,19 +99,12 @@ func ParseGwProfilesDump(path string) (*GwDumpParsed, error) {
 	return out, scanner.Err()
 }
 
-// ToOTLPJSON builds a minimal OTLP profile JSON chunk from parsed gw dump so we can run it through
-// BuildPyroscopeProfileFromChunks. Uses string table from the log; adds minimal dictionary (stack_table,
-// location_table, function_table) so one sample with stackIndex 0 resolves; uses first resource's
-// attributes and creates one sample per StackLine (or a single synthetic sample if no stack lines).
 func (p *GwDumpParsed) ToOTLPJSON(useFirstResource bool, maxSamples int) ([]byte, error) {
 	if len(p.StringTable) == 0 {
 		p.StringTable = []string{""}
 	}
-	// Build minimal dictionary: stringTable, one function (index 1 = first symbol), one location, one stack.
-	// So stack_table[0] = location_indices [0], location_table[0] = line with function 0, function_table[0] = name 1.
 	nameIdx := 1
 	if len(p.StringTable) > 1 {
-		// Use first non-empty string as sample type / symbol
 		for i := 1; i < len(p.StringTable); i++ {
 			if p.StringTable[i] != "" && !strings.HasPrefix(p.StringTable[i], "thread.") {
 				nameIdx = i
@@ -133,28 +112,19 @@ func (p *GwDumpParsed) ToOTLPJSON(useFirstResource bool, maxSamples int) ([]byte
 			}
 		}
 	}
-	// stack_table: one stack with one location (location index 0)
-	// location_table: one location with one line, function_index 0
-	// function_table: one function with name_strindex = nameIdx
-	stackTable := []map[string]interface{}{
-		{"locationIndices": []int{0}},
-	}
-	locationTable := []map[string]interface{}{
-		{"mappingIndex": 0, "address": 0, "lines": []map[string]interface{}{{"functionIndex": 0}}},
-	}
-	functionTable := []map[string]interface{}{
-		{"nameStrindex": nameIdx, "systemNameStrindex": 0, "filenameStrindex": 0, "startLine": 0},
-	}
+	stackTable := []map[string]interface{}{{"locationIndices": []int{0}}}
+	locationTable := []map[string]interface{}{{"mappingIndex": 0, "address": 0, "lines": []map[string]interface{}{{"functionIndex": 0}}}}
+	functionTable := []map[string]interface{}{{"nameStrindex": nameIdx, "systemNameStrindex": 0, "filenameStrindex": 0, "startLine": 0}}
+
 	samples := []map[string]interface{}{}
 	n := maxSamples
 	if n <= 0 {
 		n = 1
 	}
-	// Use stack lines as samples: each stack line becomes one sample with value 1, all using stack 0 (single frame)
 	for i := 0; i < n; i++ {
 		samples = append(samples, map[string]interface{}{
-			"stackIndex":        0,
-			"values":            []int64{1},
+			"stackIndex":         0,
+			"values":             []int64{1},
 			"timestampsUnixNano": []string{"1000000000000000000"},
 		})
 	}
@@ -180,13 +150,13 @@ func (p *GwDumpParsed) ToOTLPJSON(useFirstResource bool, maxSamples int) ([]byte
 				"resource": resource,
 				"scopeProfiles": []map[string]interface{}{
 					{
-						"scope":   map[string]interface{}{"name": "go.opentelemetry.io/ebpf-profiler"},
+						"scope": map[string]interface{}{"name": "go.opentelemetry.io/ebpf-profiler"},
 						"profiles": []map[string]interface{}{
 							{
-								"sampleType":    map[string]interface{}{"typeStrindex": 0, "unitStrindex": 1},
-								"timeUnixNano":  "1000000000000000000",
-								"periodType":    map[string]interface{}{"typeStrindex": 0, "unitStrindex": 1},
-								"period":        "1",
+								"sampleType":   map[string]interface{}{"typeStrindex": 0, "unitStrindex": 1},
+								"timeUnixNano": "1000000000000000000",
+								"periodType":   map[string]interface{}{"typeStrindex": 0, "unitStrindex": 1},
+								"period":       "1",
 								"samples":      samples,
 							},
 						},
@@ -195,11 +165,11 @@ func (p *GwDumpParsed) ToOTLPJSON(useFirstResource bool, maxSamples int) ([]byte
 			},
 		},
 		"dictionary": map[string]interface{}{
-			"stringTable":    p.StringTable,
-			"stackTable":     stackTable,
-			"locationTable":  locationTable,
-			"functionTable":  functionTable,
-			"mappingTable":   []map[string]interface{}{{"memoryStart": 0, "memoryLimit": 0, "fileOffset": 0, "filenameStrindex": 0}},
+			"stringTable":   p.StringTable,
+			"stackTable":    stackTable,
+			"locationTable": locationTable,
+			"functionTable": functionTable,
+			"mappingTable":  []map[string]interface{}{{"memoryStart": 0, "memoryLimit": 0, "fileOffset": 0, "filenameStrindex": 0}},
 		},
 	}
 	return json.Marshal(root)

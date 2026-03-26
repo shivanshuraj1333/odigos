@@ -6,10 +6,14 @@ import (
 	"strings"
 )
 
-// profilingLogEnabled is true unless PROFILING_DEBUG=0 or false (profiling logs on by default for debugging deploy issues).
+// profilingLogEnabled is true when PROFILE_DEBUG_LOG / PROFILING_DEBUG is enabled.
 func profilingLogEnabled() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("PROFILING_DEBUG")))
-	return v != "0" && v != "false" && v != "off"
+	v := strings.TrimSpace(os.Getenv("PROFILE_DEBUG_LOG"))
+	if v == "" {
+		v = strings.TrimSpace(os.Getenv("PROFILING_DEBUG"))
+	}
+	v = strings.ToLower(v)
+	return v == "1" || v == "true" || v == "on" || v == "yes"
 }
 
 func profilingDebugLog(format string, args ...interface{}) {

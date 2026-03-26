@@ -1,6 +1,8 @@
 package collectorprofiles
 
 import (
+	"strings"
+
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	"github.com/odigos-io/odigos/frontend/services/common"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -21,6 +23,32 @@ const (
 // Format: "namespace/kind/name" so it matches keys derived from profile resource attributes.
 func SourceKeyFromSourceID(id common.SourceID) string {
 	return id.Namespace + "/" + string(id.Kind) + "/" + id.Name
+}
+
+// NormalizeWorkloadKind returns canonical PascalCase kinds used in source keys.
+func NormalizeWorkloadKind(kindStr string) k8sconsts.WorkloadKind {
+	switch strings.ToLower(kindStr) {
+	case "deployment":
+		return k8sconsts.WorkloadKindDeployment
+	case "daemonset":
+		return k8sconsts.WorkloadKindDaemonSet
+	case "statefulset":
+		return k8sconsts.WorkloadKindStatefulSet
+	case "cronjob":
+		return k8sconsts.WorkloadKindCronJob
+	case "job":
+		return k8sconsts.WorkloadKindJob
+	case "deploymentconfig":
+		return k8sconsts.WorkloadKindDeploymentConfig
+	case "rollout":
+		return k8sconsts.WorkloadKindArgoRollout
+	case "namespace":
+		return k8sconsts.WorkloadKindNamespace
+	case "staticpod":
+		return k8sconsts.WorkloadKindStaticPod
+	default:
+		return k8sconsts.WorkloadKind(kindStr)
+	}
 }
 
 // SourceKeyFromResource extracts namespace, kind and name from resource attributes
@@ -51,11 +79,6 @@ func SourceKeyFromResource(attrs pcommon.Map) (string, bool) {
 		kind = k8sconsts.WorkloadKindArgoRollout
 	}
 	if !found || name == "" {
-		// Fallback: some pipelines set service.name but not k8s.deployment.name (e.g. from a different processor order).
-		// Use namespace/Deployment/service.name so gateway data still matches the UI slot (UI uses Deployment for workloads).
-		if svcName, ok := getStr(attrs, "service.name"); ok && svcName != "" {
-			return namespace + "/" + string(k8sconsts.WorkloadKindDeployment) + "/" + svcName, true
-		}
 		return "", false
 	}
 

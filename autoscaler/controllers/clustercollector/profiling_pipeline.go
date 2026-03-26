@@ -6,6 +6,7 @@ import (
 	commonconf "github.com/odigos-io/odigos/autoscaler/controllers/common"
 	"github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/config"
+	odigosconsts "github.com/odigos-io/odigos/common/consts"
 )
 
 const (
@@ -13,7 +14,7 @@ const (
 	otlpProfilesToUIExporterName          = "otlp/profiles-to-ui"
 )
 
-func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *common.ProfilingConfiguration, uiOtlpPort int) error {
+func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *common.ProfilingConfiguration) error {
 	if profiling == nil || profiling.Enabled == nil || !*profiling.Enabled {
 		return nil
 	}
@@ -27,7 +28,7 @@ func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *c
 		c.Service.Pipelines = map[string]config.Pipeline{}
 	}
 
-	endpoint := fmt.Sprintf("ui.%s:%d", odigosNs, uiOtlpPort)
+	endpoint := fmt.Sprintf("ui.%s:%d", odigosNs, odigosconsts.OTLPPort)
 
 	exp := commonconf.MergeProfilingOtlpExporter(config.GenericMap{
 		"endpoint":    endpoint,

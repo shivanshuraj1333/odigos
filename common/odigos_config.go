@@ -2,7 +2,6 @@ package common
 
 import (
 	"github.com/odigos-io/odigos/common/api/sampling"
-	odigosconsts "github.com/odigos-io/odigos/common/consts"
 )
 
 type ProfileName string
@@ -486,8 +485,6 @@ type SamplingConfiguration struct {
 // +kubebuilder:object:generate=true
 // ProfilingUiConfiguration holds optional UI resource limits and OTLP listen overrides for profiling.
 type ProfilingUiConfiguration struct {
-	// OtlpGrpcPort, if positive, overrides the UI OTLP gRPC listen port (default consts.OTLPPort).
-	OtlpGrpcPort   int `json:"otlpGrpcPort,omitempty" yaml:"otlpGrpcPort,omitempty"`
 	SlotTTLSeconds int `json:"slotTTLSeconds,omitempty" yaml:"slotTTLSeconds,omitempty"`
 	MaxSlots       int `json:"maxSlots,omitempty" yaml:"maxSlots,omitempty"`
 	SlotMaxBytes   int `json:"slotMaxBytes,omitempty" yaml:"slotMaxBytes,omitempty"`
@@ -496,22 +493,14 @@ type ProfilingUiConfiguration struct {
 // +kubebuilder:object:generate=true
 // ProfilingConfiguration is cluster-wide continuous profiling; disabled unless Enabled is set.
 type ProfilingConfiguration struct {
-	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Enabled  *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	Exporter *OtlpExporterConfiguration `json:"exporter,omitempty" yaml:"exporter,omitempty"`
-	Ui       *ProfilingUiConfiguration `json:"ui,omitempty" yaml:"ui,omitempty"`
+	Ui       *ProfilingUiConfiguration  `json:"ui,omitempty" yaml:"ui,omitempty"`
 }
 
 // ProfilingEnabled reports whether profiling is explicitly enabled.
 func (o *OdigosConfiguration) ProfilingEnabled() bool {
 	return o != nil && o.Profiling != nil && o.Profiling.Enabled != nil && *o.Profiling.Enabled
-}
-
-// UiOtlpGrpcPort returns profiling.ui.otlpGrpcPort when set, else the default OTLP gRPC port.
-func (o *OdigosConfiguration) UiOtlpGrpcPort() int {
-	if o != nil && o.Profiling != nil && o.Profiling.Ui != nil && o.Profiling.Ui.OtlpGrpcPort > 0 {
-		return o.Profiling.Ui.OtlpGrpcPort
-	}
-	return odigosconsts.OTLPPort
 }
 
 // OdigosConfiguration defines the desired state of OdigosConfiguration

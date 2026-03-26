@@ -3,8 +3,8 @@ package collectorprofiles
 import (
 	"errors"
 
-	"github.com/odigos-io/odigos/frontend/services/common"
 	"github.com/odigos-io/odigos/frontend/services/collector_profiles/flamegraph"
+	"github.com/odigos-io/odigos/frontend/services/common"
 )
 
 // ErrMissingProfilingParams is returned when namespace, kind, or name is empty.
@@ -15,7 +15,7 @@ func SourceIDFromStrings(namespace, kindStr, name string) (common.SourceID, erro
 	if namespace == "" || kindStr == "" || name == "" {
 		return common.SourceID{}, ErrMissingProfilingParams
 	}
-	kind := normalizeWorkloadKind(kindStr)
+	kind := NormalizeWorkloadKind(kindStr)
 	return common.SourceID{Namespace: namespace, Kind: kind, Name: name}, nil
 }
 
@@ -68,7 +68,7 @@ func GetProfilingForSource(store ProfileStoreRef, namespace, kindStr, name strin
 		bpInfof("api_get: sourceKey=%q chunks=0 (no slot or empty buffer)", key)
 		profilingDebugLog("api_get: sourceKey=%q chunks=0 (no slot or empty buffer)", key)
 		out := &GetProfilingOutput{
-			Profile: emptyFlamebearerProfile(),
+			Profile:   emptyFlamebearerProfile(),
 			EmptySlot: true,
 		}
 		if wantDebug {

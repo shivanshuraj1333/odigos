@@ -12,11 +12,11 @@ import (
 
 const (
 	odigosTrafficMetricsProcessorName = "odigostrafficmetrics"
-	podNameProcessorName               = "resource/pod-name"
-	collectorRoleProcessorName         = "resource/odigos-collector-role"
-	ownMetricsUiExporterName           = "otlp/odigos-own-telemetry-ui"
-	ownMetricsUiReceiverName           = "prometheus/self-metrics-ui"
-	ownMetricsUiPipelineName           = "metrics/own-metrics-ui"
+	podNameProcessorName              = "resource/pod-name"
+	collectorRoleProcessorName        = "resource/odigos-collector-role"
+	ownMetricsUiExporterName          = "otlp/odigos-own-telemetry-ui"
+	ownMetricsUiReceiverName          = "prometheus/self-metrics-ui"
+	ownMetricsUiPipelineName          = "metrics/own-metrics-ui"
 )
 
 var staticOwnMetricsUiProcessors config.GenericMap
@@ -104,7 +104,7 @@ func serviceTelemetryConfigForOwnMetricsUi(ownMetricsPort int32) config.Telemetr
 			Readers: []config.GenericMap{reader},
 		},
 		Resource: map[string]*string{
-			string(semconv.ServiceNameKey): nil,
+			string(semconv.ServiceNameKey):    nil,
 			string(semconv.ServiceVersionKey): nil,
 			string(semconv.K8SPodNameKey):     &podNameFromEnv,
 			string(semconv.K8SNodeNameKey):    &nodeNameFromEnv,
@@ -137,11 +137,8 @@ func ownMetricsPipelinesUi() map[string]config.Pipeline {
 }
 
 // OwnMetricsConfigUi configures the node collector pipeline that sends own metrics to the UI OTLP endpoint.
-func OwnMetricsConfigUi(ownMetricsPort int32, uiOtlpPort int) config.Config {
-	if uiOtlpPort <= 0 {
-		uiOtlpPort = consts.OTLPPort
-	}
-	uiOtlpEndpoint := fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), uiOtlpPort)
+func OwnMetricsConfigUi(ownMetricsPort int32) config.Config {
+	uiOtlpEndpoint := fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), consts.OTLPPort)
 
 	return config.Config{
 		Receivers:  receiversConfigForOwnMetricsUi(ownMetricsPort),

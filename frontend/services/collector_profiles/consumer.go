@@ -2,7 +2,6 @@ package collectorprofiles
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -103,12 +102,7 @@ func storeOne(store *ProfileStore, pd pprofile.Profiles, rps pprofile.ResourcePr
 		bpInfof("store_chunk: marshal error sourceKey=%q err=%v", key, err)
 		return
 	}
-	hasDict := len(bytes) > 0 && (strings.Contains(string(bytes), "stringTable") || strings.Contains(string(bytes), "functionTable") || strings.Contains(string(bytes), "locationTable"))
-	dictStats := dictionaryStatsFromChunkJSON(bytes)
-	bpInfof("store_chunk: sourceKey=%q bytes=%d has_dict_tables=%v %s", key, len(bytes), hasDict, dictStats)
-	if !hasDict {
-		profilingDebugLog("store_chunk: sourceKey=%q missing dictionary tables (names may show as frame_N); check node profiler OTLP export", key)
-	}
+	bpInfof("store_chunk: sourceKey=%q bytes=%d", key, len(bytes))
 	store.AddProfileData(key, bytes)
 	profilingDebugLog("store_chunk: buffered sourceKey=%q bytes=%d", key, len(bytes))
 	if dumpDir != "" {
@@ -140,36 +134,4 @@ func attrsToDebugString(attrs pcommon.Map) string {
 		return len(keys) <= 15
 	})
 	return strings.Join(keys, ",")
-}
-
-// dictionaryStatsFromChunkJSON parses the stored chunk JSON and returns a one-line summary of
-// dictionary table lengths so we can see in UI logs whether we received symbols (stringTable,
-// locationTable, mappingTable). Example: "stringTable=0 locationTable=0 mappingTable=0" or
-// "stringTable=42 locationTable=100 mappingTable=2".
-func dictionaryStatsFromChunkJSON(chunkJSON []byte) string {
-	var root map[string]interface{}
-	if err := json.Unmarshal(chunkJSON, &root); err != nil {
-		return "dictionary=parse_error"
-	}
-	dict, _ := root["dictionary"].(map[string]interface{})
-	if dict == nil {
-		if d, _ := root["Dictionary"].(map[string]interface{}); d != nil {
-			dict = d
-		}
-	}
-	if dict == nil {
-		return "dictionary=empty"
-	}
-	length := func(keys ...string) int {
-		for _, k := range keys {
-			if v, ok := dict[k].([]interface{}); ok {
-				return len(v)
-			}
-		}
-		return 0
-	}
-	st := length("stringTable", "StringTable")
-	lt := length("locationTable", "LocationTable")
-	mt := length("mappingTable", "MappingTable")
-	return "stringTable=" + strconv.Itoa(st) + " locationTable=" + strconv.Itoa(lt) + " mappingTable=" + strconv.Itoa(mt)
 }
