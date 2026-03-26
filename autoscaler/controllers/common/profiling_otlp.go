@@ -51,12 +51,18 @@ func K8sAttributesProfilesProcessorConfig() config.GenericMap {
 				"k8s.deployment.name",
 				"k8s.statefulset.name",
 				"k8s.daemonset.name",
+				"container.id",
 			},
 		},
 		"pod_association": []config.GenericMap{
 			{
 				"sources": []config.GenericMap{
 					{"from": "resource_attribute", "name": "k8s.pod.ip"},
+				},
+			},
+			{
+				"sources": []config.GenericMap{
+					{"from": "resource_attribute", "name": "container.id"},
 				},
 			},
 		},
