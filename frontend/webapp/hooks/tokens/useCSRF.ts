@@ -24,10 +24,18 @@ export const getCSRFTokenFromCookie = (): {
       error: 'document is undefined',
     };
 
-  const cookieValue = document.cookie
-    .split('; ')
-    .find((row) => row.startsWith('csrf_token='))
-    ?.split('=')[1];
+  // Only split on the first '='; token is base64 and may contain '=' padding.
+  const prefix = 'csrf_token=';
+  const entry = document.cookie.split('; ').find((row) => row.startsWith(prefix));
+  const raw = entry ? entry.slice(prefix.length) : null;
+  let cookieValue: string | null = raw || null;
+  if (cookieValue) {
+    try {
+      cookieValue = decodeURIComponent(cookieValue);
+    } catch {
+      /* use raw */
+    }
+  }
 
   return {
     token: cookieValue || null,

@@ -8,6 +8,7 @@ import { ApolloLink, HttpLink } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 import { CenterThis, FadeLoader } from '@odigos/ui-kit/components';
 import { ApolloNextAppProvider, InMemoryCache, ApolloClient, SSRMultipartLink } from '@apollo/client-integration-nextjs';
+import { getCSRFTokenFromCookie } from '@/hooks/tokens/useCSRF';
 
 const makeClient = (csrfToken: string | null) => {
   const httpLink = new HttpLink({
@@ -20,13 +21,16 @@ const makeClient = (csrfToken: string | null) => {
     if (networkError) console.warn(`[Network error]: ${networkError}`);
   });
 
-  // Add CSRF token to headers for mutations
+  // Prefer token from document.cookie so X-CSRF-Token always matches the cookie the browser sends
+  // (avoids drift from React state; cookie values can include '=' padding — never parse with split('=')[1]).
   const authLink = setContext((_, ctx) => {
     const headers = {
       ...ctx.headers,
     };
-    if (csrfToken) {
-      headers['X-CSRF-Token'] = csrfToken;
+    const fromCookie = typeof document !== 'undefined' ? getCSRFTokenFromCookie().token : null;
+    const t = fromCookie ?? csrfToken;
+    if (t) {
+      headers['X-CSRF-Token'] = t;
     }
 
     return { headers };
