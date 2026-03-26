@@ -5,6 +5,8 @@ export const ROUTES = {
   CHOOSE_DESTINATION: '/choose-destination',
   SETUP_SUMMARY: '/setup-summary',
   OVERVIEW: '/overview',
+  /** Continuous profiling overview (requires authenticated session like other overview routes). */
+  PROFILING: '/profiling',
 };
 
 export const CRD_NAMES = {
