@@ -88,18 +88,11 @@ export const createCSRFHeaders = (token: string | null): Record<string, string> 
  */
 export const useCSRF = (): UseCSRF => {
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCSRFToken = useCallback(async () => {
     setError(null);
-
-    // const cookieToken = getCSRFTokenFromCookie();
-    // if (cookieToken.token) {
-    //   setToken(cookieToken.token);
-    //   return;
-    // }
-
     setIsLoading(true);
 
     const serverToken = await getCSRFTokenFromServer();
@@ -110,18 +103,15 @@ export const useCSRF = (): UseCSRF => {
   }, []);
 
   useEffect(() => {
-    if (IS_LOCAL) {
+    void fetchCSRFToken();
+  }, [fetchCSRFToken]);
+
+  useEffect(() => {
+    if (IS_LOCAL || !token) {
       return;
     }
 
-    // Fetch token on mount
-    if (!token) {
-      fetchCSRFToken();
-      return;
-    }
-
-    // Refresh token every 23 hours (before 24h expiry)
-    const refreshInterval = setInterval(() => fetchCSRFToken(), 23 * 60 * 60 * 1000);
+    const refreshInterval = setInterval(() => void fetchCSRFToken(), 23 * 60 * 60 * 1000);
     return () => clearInterval(refreshInterval);
   }, [token, fetchCSRFToken]);
 

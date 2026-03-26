@@ -64,12 +64,23 @@ const makeClient = (csrfToken: string | null) => {
 };
 
 const ApolloProvider: FC<PropsWithChildren> = ({ children }) => {
-  const { token } = useCSRF();
+  const { token, isLoading, error } = useCSRF();
 
-  if (!token && !IS_LOCAL) {
+  if (isLoading) {
     return (
       <CenterThis style={{ height: '100%' }}>
         <FadeLoader scale={2} />
+      </CenterThis>
+    );
+  }
+
+  if (!token && error) {
+    return (
+      <CenterThis style={{ height: '100%', padding: 24, textAlign: 'center' }}>
+        Could not load security token (CSRF). Try refreshing the page or clearing cookies for this host.
+        {IS_LOCAL
+          ? ' Dev: run kubectl port-forward svc/ui -n odigos-system 3000:3000 when using Next on :3001.'
+          : ''}
       </CenterThis>
     );
   }
