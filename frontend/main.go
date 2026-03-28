@@ -188,6 +188,10 @@ func startHTTPServer(ctx context.Context, flags *Flags, logger logr.Logger, odig
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready"})
 			return
 		}
+		if !odigosMetrics.OTLPGRPCReady() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready", "reason": "otlp_grpc_not_listening"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/healthz", func(c *gin.Context) {
@@ -273,6 +277,33 @@ func startHTTPServer(ctx context.Context, flags *Flags, logger logr.Logger, odig
 
 	// Diagnose download endpoint (used by GraphQL diagnose query)
 	r.GET("/diagnose/download", services.DiagnoseDownload)
+
+	// Dev-only: inject synthetic OTLP profile chunk (testdata) so Profiler shows a flame graph without live ebpf.
+	// Enable with ODIGOS_PROFILE_DEBUG_INJECT=true on the UI pod; POST JSON {"namespace","kind","name"}.
+	if v := os.Getenv("ODIGOS_PROFILE_DEBUG_INJECT"); v == "true" || v == "1" {
+		if ps, ok := profileStore.(*collectorprofiles.ProfileStore); ok {
+			r.POST("/api/debug/profiling/inject-sample", func(c *gin.Context) {
+				var req struct {
+					Namespace string `json:"namespace"`
+					Kind      string `json:"kind"`
+					Name      string `json:"name"`
+				}
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+				if req.Namespace == "" || req.Kind == "" || req.Name == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "namespace, kind, and name are required"})
+					return
+				}
+				if err := ps.InjectDebugSample(req.Namespace, req.Kind, req.Name); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"ok": true, "message": "debug profile chunk stored"})
+			})
+		}
+	}
 
 	return r, nil
 }

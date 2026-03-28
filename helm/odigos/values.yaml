@@ -559,6 +559,11 @@ ui:
   logLevel: "info"
 
   # @schema
+  # description: When true, enables POST /api/debug/profiling/inject-sample on the UI (dev/local only).
+  # @schema
+  profilingDebugInject: false
+
+  # @schema
   # description: Override the global nodeSelector (values.nodeSelector) for this component
   # @schema
   # nodeSelector:

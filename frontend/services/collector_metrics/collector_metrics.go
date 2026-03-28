@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/odigos-io/odigos/api/k8sconsts"
@@ -74,6 +75,14 @@ type OdigosMetricsConsumer struct {
 	sources                 sourcesMetrics
 	clusterCollectorMetrics clusterCollectorMetrics
 	deletedChan             chan notification
+	// otlpGrpcReady is set after OTLP gRPC metrics (and profiles, when configured) receivers start successfully.
+	otlpGrpcReady atomic.Bool
+}
+
+// OTLPGRPCReady reports whether the OTLP gRPC server has finished starting. Used by /readyz so Kubernetes
+// does not route odigos-gateway profile traffic to a UI pod that is still starting or failed to register ProfilesService.
+func (c *OdigosMetricsConsumer) OTLPGRPCReady() bool {
+	return c.otlpGrpcReady.Load()
 }
 
 var (
@@ -238,14 +247,8 @@ func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string, nextPr
 	host := componenttest.NewNopHost()
 	set := receivertest.NewNopSettings(f.Type())
 
-	mr, err := f.CreateMetrics(ctx, set, cfg, c)
-	if err != nil {
-		log.Printf("failed to create OTLP metrics receiver: %v", err)
-		<-ctx.Done()
-		closeWg.Wait()
-		return
-	}
-
+	// Register profiles on the shared OTLP receiver before metrics so the same otlpReceiver
+	// instance has nextProfiles set before CreateMetrics; both must be registered before Start.
 	var pr xreceiver.Profiles
 	if profilingEnabled && nextProfiles != nil {
 		xf, xok := f.(xreceiver.Factory)
@@ -260,13 +263,31 @@ func (c *OdigosMetricsConsumer) Run(ctx context.Context, odigosNS string, nextPr
 		}
 	}
 
-	if err := mr.Start(ctx, host); err != nil {
-		log.Printf("failed to start OTLP metrics receiver: %v", err)
+	mr, err := f.CreateMetrics(ctx, set, cfg, c)
+	if err != nil {
+		log.Printf("failed to create OTLP metrics receiver: %v", err)
+		<-ctx.Done()
+		closeWg.Wait()
+		return
 	}
+
+	mrErr := mr.Start(ctx, host)
+	if mrErr != nil {
+		log.Printf("failed to start OTLP metrics receiver: %v", mrErr)
+	} else {
+		// Metrics OTLP shares the same gRPC server as profiles when configured; signal readiness so
+		// Kubernetes does not send odigos-gateway traffic to ui:4317 before Listen/Serve is up.
+		c.otlpGrpcReady.Store(true)
+	}
+	var prErr error
 	if pr != nil {
-		if err := pr.Start(ctx, host); err != nil {
-			log.Printf("failed to start OTLP profiles receiver: %v", err)
+		prErr = pr.Start(ctx, host)
+		if prErr != nil {
+			log.Printf("failed to start OTLP profiles receiver: %v", prErr)
 		}
+	}
+	if profilingEnabled && nextProfiles != nil && pr == nil {
+		log.Printf("OTLP profiles receiver was not created; profiling ingestion disabled until fixed (gateway may log Unimplemented on ProfilesService)")
 	}
 
 	defer func() {
