@@ -73,6 +73,14 @@ clusterName: ''
 logLevel: "info"
 
 # @schema
+# description: |-
+#   Continuous profiling (off by default): node collector → gateway → UI over OTLP gRPC. UI buffers only workloads
+#   with an open Profiler tab / enableSourceProfiling; scrape ui:3000/metrics for odigos_ui_profiling_* when enabled.
+# @schema
+profiling:
+  enabled: false
+
+# @schema
 # description: Configuration for OpenTelemetry (OTEL) agents instrumentation environment variables.
 # @schema
 userInstrumentationEnvs:
