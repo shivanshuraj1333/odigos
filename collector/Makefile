@@ -4,7 +4,7 @@ SRC_ROOT := $(shell git rev-parse --show-toplevel)/collector
 TOOLS_BIN_DIR    := $(SRC_ROOT)/.tools
 
 # Define the tool version
-BUILDER_VERSION = 0.141.0
+BUILDER_VERSION = 0.148.0
 BUILDER := $(TOOLS_BIN_DIR)/builder_$(BUILDER_VERSION)
 
 # Determine the current operating system and architecture
@@ -63,14 +63,23 @@ install-tools:
 
 .PHONY: generate
 generate: install-tools
-	@find . -type f -name 'metadata.yaml' -print0 | xargs -0 -I {} sh -c 'cd $$(dirname {}); $(GOBIN)/mdatagen metadata.yaml'
+	@set -e; \
+	repo_root=$$(git rev-parse --show-toplevel); \
+	stub="$$repo_root/.go.mod.mdatagen-stub"; \
+	if [ ! -f "$$repo_root/go.mod" ]; then \
+		printf '%s\n%s\n' 'module github.com/odigos-io/odigos' 'go 1.26.1' > "$$repo_root/go.mod"; \
+		touch "$$stub"; \
+	fi; \
+	trap 'if [ -f "$$stub" ]; then rm -f "$$repo_root/go.mod" "$$stub"; fi' EXIT INT TERM HUP; \
+	find . -type f -name 'metadata.yaml' -print0 | xargs -0 -I {} sh -c 'cd $$(dirname {}); "$(GOBIN)"/mdatagen metadata.yaml'; \
 	$(MAKE) fmt
 
-ALL_GO_MOD_DIRS := $(shell find . -type f -name 'go.mod' -exec dirname {} \; | sort | grep -E '^./' | grep -v "licenses")
+# OCB-generated module: goimports normalizes imports and fights builder output.
+ALL_GO_MOD_DIRS := $(shell find . -type f -name 'go.mod' -exec dirname {} \; | sort | grep -E '^./' | grep -v "licenses" | grep -v '^\./odigosotelcol$$')
 .PHONY: fmt
 fmt: $(ALL_GO_MOD_DIRS:%=fmt/%)
 fmt/%: install-tools
-	cd $* && goimports -w -local github.com/odigos-io ./
+	cd $* && $(GOBIN)/goimports -w -local github.com/odigos-io ./
 
 ALL_GO_MODS := $(shell find . -type f -name 'go.mod' ! -path './exporters/googlecloudstorageexporter/*' ! -path './exporters/azureblobstorageexporter/*' ! -path './internal/tools/*' ! -path './odigosotelcol/*' | sort | grep -v "LICENSES")
 GO_MODS_TO_TEST := $(ALL_GO_MODS:%=test/%)

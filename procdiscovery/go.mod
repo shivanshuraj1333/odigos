@@ -4,7 +4,7 @@ go 1.26.1
 
 require github.com/odigos-io/odigos/common v0.0.0
 
-require github.com/hashicorp/go-version v1.7.0 // indirect
+require github.com/hashicorp/go-version v1.8.0 // indirect
 
 require (
 	github.com/go-logr/logr v1.4.3 // indirect
