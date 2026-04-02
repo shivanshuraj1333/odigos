@@ -28,13 +28,10 @@ func TestAddProfilingGatewayPipeline_Enabled(t *testing.T) {
 	err := addProfilingGatewayPipeline(&c, "odigos-system", &common.ProfilingConfiguration{Enabled: &on})
 	require.NoError(t, err)
 
-	require.Contains(t, c.Processors, filterProfilesGatewayProcessor)
-	filterCfg, ok := c.Processors[filterProfilesGatewayProcessor].(config.GenericMap)
-	require.True(t, ok)
-	assert.Equal(t, commonconf.ProfilingFilterProcessorConfig(), filterCfg)
+	assert.Nil(t, c.Processors)
 
 	pl := c.Service.Pipelines["profiles"]
 	assert.Equal(t, []string{"otlp"}, pl.Receivers)
-	assert.Equal(t, []string{filterProfilesGatewayProcessor, k8sAttributesProfilesGatewayProcessor}, pl.Processors)
-	assert.Equal(t, []string{otlpProfilesToUIExporterName}, pl.Exporters)
+	assert.Empty(t, pl.Processors)
+	assert.Equal(t, []string{commonconf.ProfilingGatewayToUIExporter}, pl.Exporters)
 }

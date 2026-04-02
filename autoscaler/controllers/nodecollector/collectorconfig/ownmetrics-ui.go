@@ -10,18 +10,26 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.5.0"
 )
 
+// internal, not meant to be used outside of this service
 const (
+
+	// this processor should be added to any user telemetry pipeline to track the amount of data being exported by each source
 	odigosTrafficMetricsProcessorName = "odigostrafficmetrics"
-	podNameProcessorName              = "resource/pod-name"
-	collectorRoleProcessorName        = "resource/odigos-collector-role"
-	ownMetricsUiExporterName          = "otlp/odigos-own-telemetry-ui"
-	ownMetricsUiReceiverName          = "prometheus/self-metrics-ui"
-	ownMetricsUiPipelineName          = "metrics/own-metrics-ui"
+
+	podNameProcessorName       = "resource/pod-name"
+	collectorRoleProcessorName = "resource/odigos-collector-role"
+	ownMetricsUiExporterName   = "otlp/odigos-own-telemetry-ui"
+	ownMetricsUiReceiverName   = "prometheus/self-metrics-ui"
+	ownMetricsUiPipelineName   = "metrics/own-metrics-ui"
 )
 
 var staticOwnMetricsUiProcessors config.GenericMap
+var uiOtlpEndpoint string
 
 func init() {
+
+	odigosNamespace := env.GetCurrentNamespace()
+
 	staticOwnMetricsUiProcessors = config.GenericMap{
 		odigosTrafficMetricsProcessorName: config.GenericMap{
 			"res_attributes_keys": []string{
@@ -31,7 +39,11 @@ func init() {
 				string(semconv.K8SStatefulSetNameKey),
 				string(semconv.K8SDaemonSetNameKey),
 				string(semconv.K8SCronJobNameKey),
+				// Custom attribute for Argo Rollouts (no semconv key available)
 				k8sconsts.K8SArgoRolloutNameAttribute,
+				// Custom attribute to distinguish workload types that share the same semconv key (e.g., DeploymentConfig uses k8s.deployment.name)
+				// This allows the UI to distinguish between DeploymentConfig and Deployment, and construct the correct Source workload.
+				// Since DeploymentConfig uses k8s.deployment.name as the semconv key, we need to add this attribute to the list of attributes to be collected.
 				consts.OdigosWorkloadKindAttribute,
 				consts.OdigosWorkloadNameAttribute,
 			},
@@ -51,6 +63,8 @@ func init() {
 			}},
 		},
 	}
+
+	uiOtlpEndpoint = k8sconsts.UiOtlpGrpcEndpoint(odigosNamespace)
 }
 
 func receiversConfigForOwnMetricsUi(ownMetricsPort int32) config.GenericMap {
@@ -104,7 +118,10 @@ func serviceTelemetryConfigForOwnMetricsUi(ownMetricsPort int32) config.Telemetr
 			Readers: []config.GenericMap{reader},
 		},
 		Resource: map[string]*string{
-			string(semconv.ServiceNameKey):    nil,
+			// The collector add "otelcol" as a service name, so we need to remove it
+			// to avoid duplication, since we are interested in the instrumented services.
+			string(semconv.ServiceNameKey): nil,
+			// The collector adds its own version as a service version, which is not needed currently.
 			string(semconv.ServiceVersionKey): nil,
 			string(semconv.K8SPodNameKey):     &podNameFromEnv,
 			string(semconv.K8SNodeNameKey):    &nodeNameFromEnv,
@@ -112,7 +129,7 @@ func serviceTelemetryConfigForOwnMetricsUi(ownMetricsPort int32) config.Telemetr
 	}
 }
 
-func ownMetricsExportersUi(uiOtlpEndpoint string) config.GenericMap {
+func ownMetricsExportersUi() config.GenericMap {
 	return config.GenericMap{
 		ownMetricsUiExporterName: config.GenericMap{
 			"endpoint": uiOtlpEndpoint,
@@ -136,13 +153,11 @@ func ownMetricsPipelinesUi() map[string]config.Pipeline {
 	}
 }
 
-// OwnMetricsConfigUi configures the node collector pipeline that sends own metrics to the UI OTLP endpoint.
 func OwnMetricsConfigUi(ownMetricsPort int32) config.Config {
-	uiOtlpEndpoint := fmt.Sprintf("ui.%s:%d", env.GetCurrentNamespace(), consts.OTLPPort)
 
 	return config.Config{
 		Receivers:  receiversConfigForOwnMetricsUi(ownMetricsPort),
-		Exporters:  ownMetricsExportersUi(uiOtlpEndpoint),
+		Exporters:  ownMetricsExportersUi(),
 		Processors: staticOwnMetricsUiProcessors,
 		Service: config.Service{
 			Pipelines: ownMetricsPipelinesUi(),

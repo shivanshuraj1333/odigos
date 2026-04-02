@@ -1,27 +1,18 @@
 package clustercollector
 
 import (
-	"fmt"
-
+	"github.com/odigos-io/odigos/api/k8sconsts"
 	commonconf "github.com/odigos-io/odigos/autoscaler/controllers/common"
 	"github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/config"
-	odigosconsts "github.com/odigos-io/odigos/common/consts"
-)
-
-const (
-	filterProfilesGatewayProcessor        = "filter/profiles-gateway-require-container-id"
-	k8sAttributesProfilesGatewayProcessor = "k8s_attributes/profiles-gateway"
-	otlpProfilesToUIExporterName          = "otlp_grpc/profiles-to-ui"
 )
 
 func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *common.ProfilingConfiguration) error {
-	if profiling == nil || profiling.Enabled == nil || !*profiling.Enabled {
+	if !common.ProfilingPipelineActive(profiling) {
 		return nil
 	}
-	if c.Processors == nil {
-		c.Processors = config.GenericMap{}
-	}
+	// Filter + k8s_attributes run on the node collector only; OTLP to the gateway already carries
+	// enriched resource attributes. The gateway profiles pipeline is receive → export to UI.
 	if c.Exporters == nil {
 		c.Exporters = config.GenericMap{}
 	}
@@ -29,7 +20,7 @@ func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *c
 		c.Service.Pipelines = map[string]config.Pipeline{}
 	}
 
-	endpoint := fmt.Sprintf("ui.%s:%d", odigosNs, odigosconsts.OTLPPort)
+	endpoint := k8sconsts.UiOtlpGrpcEndpoint(odigosNs)
 
 	exp := commonconf.MergeProfilingOtlpExporter(config.GenericMap{
 		"endpoint":    endpoint,
@@ -37,14 +28,12 @@ func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *c
 		"compression": "none",
 	}, profiling.Exporter)
 
-	c.Processors[filterProfilesGatewayProcessor] = commonconf.ProfilingFilterProcessorConfig()
-	c.Processors[k8sAttributesProfilesGatewayProcessor] = commonconf.K8sAttributesProfilesProcessorConfig()
-	c.Exporters[otlpProfilesToUIExporterName] = exp
+	c.Exporters[commonconf.ProfilingGatewayToUIExporter] = exp
 
 	c.Service.Pipelines["profiles"] = config.Pipeline{
 		Receivers:  []string{"otlp"},
-		Processors: []string{filterProfilesGatewayProcessor, k8sAttributesProfilesGatewayProcessor},
-		Exporters:  []string{otlpProfilesToUIExporterName},
+		Processors: nil,
+		Exporters:  []string{commonconf.ProfilingGatewayToUIExporter},
 	}
 	return nil
 }

@@ -1,8 +1,6 @@
 package collectorconfig
 
 import (
-	"fmt"
-
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	commonconf "github.com/odigos-io/odigos/autoscaler/controllers/common"
 	"github.com/odigos-io/odigos/common"
@@ -10,20 +8,13 @@ import (
 	odigosconsts "github.com/odigos-io/odigos/common/consts"
 )
 
-const (
-	profilingReceiverName             = "profiling"
-	filterProfilesProcessor           = "filter/profiles-require-container-id"
-	k8sAttributesProfilesProcessor    = "k8s_attributes/profiles"
-	otlpProfilesToGatewayExporterName = "otlp_grpc/profiles-to-gateway"
-)
-
 // ProfilingPipelineConfig builds the node collector profiles domain when profiling is enabled.
 func ProfilingPipelineConfig(odigosNamespace string, profiling *common.ProfilingConfiguration) config.Config {
-	if profiling == nil || profiling.Enabled == nil || !*profiling.Enabled {
+	if !common.ProfilingPipelineActive(profiling) {
 		return config.Config{}
 	}
 
-	endpoint := fmt.Sprintf("dns:///%s.%s:%d", k8sconsts.OdigosClusterCollectorServiceName, odigosNamespace, odigosconsts.OTLPPort)
+	endpoint := k8sconsts.OtlpGrpcDNSEndpoint(k8sconsts.OdigosClusterCollectorServiceName, odigosNamespace, odigosconsts.OTLPPort)
 	exp := commonconf.MergeProfilingOtlpExporter(config.GenericMap{
 		"endpoint":    endpoint,
 		"tls":         config.GenericMap{"insecure": true},
@@ -32,21 +23,21 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 
 	return config.Config{
 		Receivers: config.GenericMap{
-			profilingReceiverName: config.GenericMap{},
+			commonconf.ProfilingReceiver: config.GenericMap{},
 		},
 		Processors: config.GenericMap{
-			filterProfilesProcessor:        commonconf.ProfilingFilterProcessorConfig(),
-			k8sAttributesProfilesProcessor: commonconf.K8sAttributesProfilesProcessorConfig(),
+			commonconf.ProfilingNodeFilterProcessor:        commonconf.ProfilingFilterProcessorConfig(),
+			commonconf.ProfilingNodeK8sAttributesProcessor: commonconf.K8sAttributesProfilesProcessorConfig(),
 		},
 		Exporters: config.GenericMap{
-			otlpProfilesToGatewayExporterName: exp,
+			commonconf.ProfilingNodeToGatewayExporter: exp,
 		},
 		Service: config.Service{
 			Pipelines: map[string]config.Pipeline{
 				"profiles": {
-					Receivers:  []string{profilingReceiverName},
-					Processors: []string{filterProfilesProcessor, k8sAttributesProfilesProcessor},
-					Exporters:  []string{otlpProfilesToGatewayExporterName},
+					Receivers:  []string{commonconf.ProfilingReceiver},
+					Processors: []string{commonconf.ProfilingNodeFilterProcessor, commonconf.ProfilingNodeK8sAttributesProcessor},
+					Exporters:  []string{commonconf.ProfilingNodeToGatewayExporter},
 				},
 			},
 		},
