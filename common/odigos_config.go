@@ -498,9 +498,15 @@ type ProfilingConfiguration struct {
 	Ui       *ProfilingUiConfiguration  `json:"ui,omitempty" yaml:"ui,omitempty"`
 }
 
+// ProfilingPipelineActive reports whether profiling pipelines and related collector settings should be applied.
+// Profiling is opt-in: Enabled must be explicitly true; nil or false keeps profiling off.
+func ProfilingPipelineActive(p *ProfilingConfiguration) bool {
+	return p != nil && p.Enabled != nil && *p.Enabled
+}
+
 // ProfilingEnabled reports whether profiling is explicitly enabled.
 func (o *OdigosConfiguration) ProfilingEnabled() bool {
-	return o != nil && o.Profiling != nil && o.Profiling.Enabled != nil && *o.Profiling.Enabled
+	return ProfilingPipelineActive(o.Profiling)
 }
 
 // OdigosConfiguration defines the desired state of OdigosConfiguration
