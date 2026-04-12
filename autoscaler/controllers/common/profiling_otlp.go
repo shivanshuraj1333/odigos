@@ -39,6 +39,16 @@ func MergeProfilingOtlpExporter(base config.GenericMap, otlp *odigoscommon.OtlpE
 		}
 		out["retry_on_failure"] = retry
 	}
+	if otlp.SendingQueue != nil {
+		q := config.GenericMap{}
+		if otlp.SendingQueue.Enabled != nil {
+			q["enabled"] = *otlp.SendingQueue.Enabled
+		}
+		if otlp.SendingQueue.QueueSize > 0 {
+			q["queue_size"] = otlp.SendingQueue.QueueSize
+		}
+		out["sending_queue"] = q
+	}
 	return out
 }
 

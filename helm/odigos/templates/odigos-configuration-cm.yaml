@@ -64,6 +64,7 @@ data:
     {{- if .Values.profiling.enabled }}
     {{- $pex := .Values.profiling.exporter | default dict }}
     {{- $pretry := $pex.retryOnFailure | default dict }}
+    {{- $psq := $pex.sendingQueue | default dict }}
     profiling:
       enabled: true
       exporter:
@@ -72,8 +73,11 @@ data:
         retryOnFailure:
           enabled: {{ $pretry.enabled | default true }}
           initialInterval: {{ $pretry.initialInterval | default "5s" }}
-          maxInterval: {{ $pretry.maxInterval | default "30s" }}
-          maxElapsedTime: {{ $pretry.maxElapsedTime | default "300s" }}
+          maxInterval: {{ $pretry.maxInterval | default "15s" }}
+          maxElapsedTime: {{ $pretry.maxElapsedTime | default "30s" }}
+        sendingQueue:
+          enabled: {{ $psq.enabled | default true }}
+          queueSize: {{ $psq.queueSize | default 50 | int }}
       {{- $pui := .Values.profiling.ui | default dict }}
       ui:
         {{- /* Defaults must match frontend/services/collector_profiles/defaults.go */}}

@@ -51,6 +51,21 @@ func TestMergeProfilingOtlpExporter_TimeoutAndRetry(t *testing.T) {
 	assert.Equal(t, "30s", retry["max_interval"])
 }
 
+func TestMergeProfilingOtlpExporter_SendingQueue(t *testing.T) {
+	enabled := true
+	otlp := &odigoscommon.OtlpExporterConfiguration{
+		SendingQueue: &odigoscommon.SendingQueue{
+			Enabled:   &enabled,
+			QueueSize: 50,
+		},
+	}
+	out := MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x"}, otlp)
+	q, ok := out["sending_queue"].(config.GenericMap)
+	require.True(t, ok)
+	assert.Equal(t, true, q["enabled"])
+	assert.Equal(t, 50, q["queue_size"])
+}
+
 func TestProfilingProfileDropConditions(t *testing.T) {
 	conds := ProfilingProfileDropConditions()
 	require.Len(t, conds, 1)

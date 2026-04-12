@@ -44,8 +44,8 @@ func tryPyroscopeOTLP(chunk []byte) (samples []Sample, ok bool, failReason strin
 	if err := protoJSONUnmarshal.Unmarshal(chunk, req); err != nil {
 		return nil, false, fmt.Sprintf("protojson_unmarshal: %v", err)
 	}
-	if req.Dictionary == nil || len(req.Dictionary.StringTable) == 0 {
-		return nil, false, "missing_or_empty_dictionary_string_table"
+	if req.Dictionary == nil {
+		req.Dictionary = &otelProfile.ProfilesDictionary{}
 	}
 	if len(req.ResourceProfiles) == 0 {
 		return nil, false, "no_resource_profiles"
@@ -267,7 +267,7 @@ func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
 
 // googleProfileToSamples converts a Google pprof Profile to our Sample format (root-first stack, value).
 func googleProfileToSamples(p *googleProfile.Profile) []Sample {
-	if p == nil || len(p.Sample) == 0 || len(p.StringTable) == 0 {
+	if p == nil || len(p.Sample) == 0 {
 		return nil
 	}
 	locByID := make(map[uint64]*googleProfile.Location)
@@ -297,18 +297,24 @@ func googleProfileToSamples(p *googleProfile.Profile) []Sample {
 		for i := len(s.LocationId) - 1; i >= 0; i-- {
 			locID := s.LocationId[i]
 			loc := locByID[locID]
-			if loc == nil || len(loc.Line) == 0 {
+			if loc == nil {
 				continue
 			}
-			line := loc.Line[0]
-			fn := funcByID[line.FunctionId]
-			if fn == nil {
-				continue
+			var name string
+			if len(loc.Line) > 0 {
+				line := loc.Line[0]
+				if fn := funcByID[line.FunctionId]; fn != nil {
+					name = getName(fn.Name)
+				}
 			}
-			name := getName(fn.Name)
-			if name != "" {
-				stack = append(stack, name)
+			if name == "" {
+				if loc.Address != 0 {
+					name = fmt.Sprintf("0x%x", loc.Address)
+				} else {
+					name = fmt.Sprintf("frame_%d", locID)
+				}
 			}
+			stack = append(stack, name)
 		}
 		if len(stack) > 0 {
 			out = append(out, Sample{Stack: stack, Value: value})

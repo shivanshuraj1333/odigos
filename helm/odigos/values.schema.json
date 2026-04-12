@@ -1702,13 +1702,13 @@
                   "title": "initialInterval"
                 },
                 "maxElapsedTime": {
-                  "default": "300s",
+                  "default": "30s",
                   "description": "Maximum time spent retrying a batch; 0 means retry until success.",
                   "required": [],
                   "title": "maxElapsedTime"
                 },
                 "maxInterval": {
-                  "default": "30s",
+                  "default": "15s",
                   "description": "Upper bound on backoff between retries.",
                   "required": [],
                   "title": "maxInterval"
@@ -1716,6 +1716,26 @@
               },
               "required": [],
               "title": "retryOnFailure"
+            },
+            "sendingQueue": {
+              "additionalProperties": false,
+              "description": "Bounded queue for profiling OTLP exports (collector exporter sending_queue).",
+              "properties": {
+                "enabled": {
+                  "default": "true",
+                  "description": "Whether to enable the exporter sending queue for profiling OTLP batches.",
+                  "required": [],
+                  "title": "enabled"
+                },
+                "queueSize": {
+                  "default": "50",
+                  "description": "Max batches queued when the downstream is slow.",
+                  "required": [],
+                  "title": "queueSize"
+                }
+              },
+              "required": [],
+              "title": "sendingQueue"
             },
             "timeout": {
               "default": "5s",
