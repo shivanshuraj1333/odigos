@@ -172,6 +172,7 @@ export const GET_EFFECTIVE_CONFIG = gql`
         reconciledFrom
       }
       manifestYAML
+      profilingEnabled
     }
   }
 `;

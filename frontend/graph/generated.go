@@ -424,6 +424,7 @@ type ComplexityRoot struct {
 		Oidc                             func(childComplexity int) int
 		OpenshiftEnabled                 func(childComplexity int) int
 		Profiles                         func(childComplexity int) int
+		ProfilingEnabled                 func(childComplexity int) int
 		Provenance                       func(childComplexity int) int
 		Psp                              func(childComplexity int) int
 		ResourceSizePreset               func(childComplexity int) int
@@ -3267,6 +3268,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.EffectiveConfig.Profiles(childComplexity), true
+
+	case "EffectiveConfig.profilingEnabled":
+		if e.complexity.EffectiveConfig.ProfilingEnabled == nil {
+			break
+		}
+
+		return e.complexity.EffectiveConfig.ProfilingEnabled(childComplexity), true
 
 	case "EffectiveConfig.provenance":
 		if e.complexity.EffectiveConfig.Provenance == nil {
@@ -21721,6 +21729,47 @@ func (ec *executionContext) fieldContext_EffectiveConfig_manifestYAML(_ context.
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _EffectiveConfig_profilingEnabled(ctx context.Context, field graphql.CollectedField, obj *model.EffectiveConfig) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_EffectiveConfig_profilingEnabled(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (any, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.ProfilingEnabled, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*bool)
+	fc.Result = res
+	return ec.marshalOBoolean2ᚖbool(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_EffectiveConfig_profilingEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "EffectiveConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -41874,6 +41923,8 @@ func (ec *executionContext) fieldContext_Query_effectiveConfig(_ context.Context
 				return ec.fieldContext_EffectiveConfig_provenance(ctx, field)
 			case "manifestYAML":
 				return ec.fieldContext_EffectiveConfig_manifestYAML(ctx, field)
+			case "profilingEnabled":
+				return ec.fieldContext_EffectiveConfig_profilingEnabled(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type EffectiveConfig", field.Name)
 		},
@@ -55130,6 +55181,8 @@ func (ec *executionContext) _EffectiveConfig(ctx context.Context, sel ast.Select
 			out.Values[i] = ec._EffectiveConfig_provenance(ctx, field, obj)
 		case "manifestYAML":
 			out.Values[i] = ec._EffectiveConfig_manifestYAML(ctx, field, obj)
+		case "profilingEnabled":
+			out.Values[i] = ec._EffectiveConfig_profilingEnabled(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}

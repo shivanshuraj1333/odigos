@@ -192,6 +192,9 @@ func EffectiveConfigToModel(config *common.OdigosConfiguration, prov map[string]
 		ConfigVersion: config.ConfigVersion,
 	}
 
+	result.ProfilingEnabled = ptrBool(config.ProfilingEnabled())
+	pc.record("profilingEnabled")
+
 	// Non-pointer booleans (always present)
 	result.TelemetryEnabled = ptrBool(config.TelemetryEnabled)
 	pc.record("telemetryEnabled")

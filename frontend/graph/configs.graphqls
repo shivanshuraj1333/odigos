@@ -263,6 +263,11 @@ type EffectiveConfig {
   componentLogLevels: ComponentLogLevelsConfig
   provenance: [ProvenanceEntry!]
   manifestYAML: String
+  """
+  True when Odigos continuous profiling is enabled in cluster config (e.g. Helm profiling.enabled).
+  When false, the UI should hide profiling controls; the backend also keeps OTLP profiling ingest off.
+  """
+  profilingEnabled: Boolean
 }
 
 # Remote configuration managed by central-backend

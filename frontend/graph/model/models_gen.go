@@ -482,6 +482,9 @@ type EffectiveConfig struct {
 	ComponentLogLevels               *ComponentLogLevelsConfig           `json:"componentLogLevels,omitempty"`
 	Provenance                       []*ProvenanceEntry                  `json:"provenance,omitempty"`
 	ManifestYaml                     *string                             `json:"manifestYAML,omitempty"`
+	// True when Odigos continuous profiling is enabled in cluster config (e.g. Helm profiling.enabled).
+	// When false, the UI should hide profiling controls; the backend also keeps OTLP profiling ingest off.
+	ProfilingEnabled *bool `json:"profilingEnabled,omitempty"`
 }
 
 type EnableProfilingResult struct {

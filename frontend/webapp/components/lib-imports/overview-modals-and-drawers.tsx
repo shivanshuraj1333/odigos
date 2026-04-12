@@ -25,6 +25,7 @@ import {
   useProfiling,
   useTestConnection,
   useWorkloadUtils,
+  useEffectiveConfig,
 } from '@/hooks';
 
 const OverviewModalsAndDrawers = () => {
@@ -42,6 +43,10 @@ const OverviewModalsAndDrawers = () => {
   const { createInstrumentationRuleV2, updateInstrumentationRule, deleteInstrumentationRule } = useInstrumentationRuleCRUD();
   const { persistSources, persistSourcesV2, updateSource, fetchSourceById, fetchSourceLibraries, fetchPeerSources } = useSourceCRUD();
   const { fetchProfilingSlots, enableProfiling, releaseProfiling, fetchSourceProfiling } = useProfiling();
+  const { effectiveConfig, effectiveConfigLoading } = useEffectiveConfig();
+
+  const profilingUiEnabled =
+    !effectiveConfigLoading && effectiveConfig?.profilingEnabled === true;
 
   const handleCloseModal = useCallback(() => setCurrentModal(''), [setCurrentModal]);
 
@@ -88,10 +93,14 @@ const OverviewModalsAndDrawers = () => {
         fetchSourceDescribe={fetchDescribeSource}
         fetchSourceLibraries={fetchSourceLibraries}
         fetchPeerSources={fetchPeerSources}
-        fetchProfilingSlots={fetchProfilingSlots}
-        enableProfiling={enableProfiling}
-        releaseProfiling={releaseProfiling}
-        fetchSourceProfiling={fetchSourceProfiling}
+        {...(profilingUiEnabled
+          ? {
+              fetchProfilingSlots,
+              enableProfiling,
+              releaseProfiling,
+              fetchSourceProfiling,
+            }
+          : {})}
       />
       <DestinationDrawer categories={categories} updateDestination={updateDestination} deleteDestination={deleteDestination} testConnection={testConnection} />
       <InstrumentationRuleDrawer updateInstrumentationRule={updateInstrumentationRule} deleteInstrumentationRule={deleteInstrumentationRule} />

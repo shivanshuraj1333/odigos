@@ -4,8 +4,9 @@ import { GET_EFFECTIVE_CONFIG } from '@/graphql';
 import { useNotificationStore } from '@odigos/ui-kit/store';
 import { Crud, type EffectiveConfig, StatusType } from '@odigos/ui-kit/types';
 
+/** EffectiveConfig from ui-kit plus fields added by the Odigos GraphQL API before ui-kit types are updated. */
 interface FetchedEffectiveConfig {
-  effectiveConfig?: EffectiveConfig;
+  effectiveConfig?: EffectiveConfig & { profilingEnabled?: boolean | null };
 }
 
 export const useEffectiveConfig = () => {
