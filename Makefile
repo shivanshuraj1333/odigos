@@ -494,7 +494,13 @@ push-workload-lifecycle-images:
 ecr-login:
 	aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
 
+# Build UI (with embedded ui-kit), push to public ECR images.ui repo, helm upgrade --reuse-values (see scripts/deploy-ui-eks.sh).
+.PHONY: deploy-ui-eks
+deploy-ui-eks:
+	./scripts/deploy-ui-eks.sh
+
 build-tag-push-ecr-image/%:
+	@case "$*" in ui) mkdir -p frontend/docker-build-context/ui-kit && ./scripts/embed-ui-kit-for-docker.sh ;; esac
 	docker build --platform linux/amd64 -t $(ORG)/odigos-$*$(IMG_SUFFIX):$(TAG) $(BUILD_DIR) -f $(DOCKERFILE) \
 	--build-arg SERVICE_NAME="$*" \
 	--build-arg ODIGOS_VERSION=$(TAG) \
