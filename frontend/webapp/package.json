@@ -3,8 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "check-peer-dependencies --runOnlyOnRootDependencies",
+    "postinstall": "check-peer-dependencies --runOnlyOnRootDependencies && patch-package",
+    "predev": "node scripts/verify-ui-kit-patch.cjs",
+    "sync-ui-kit": "rm -rf node_modules/@odigos/ui-kit && mkdir -p node_modules/@odigos/ui-kit && rsync -a --delete --exclude node_modules --exclude .git ../../../ui-kit/ node_modules/@odigos/ui-kit/",
     "dev": "next dev --turbopack",
+    "dev:local-ui": "node scripts/verify-ui-kit-patch.cjs && cross-env NEXT_PUBLIC_ODIGOS_BACKEND_URL=http://127.0.0.1:3000 next dev --turbopack",
     "prebuild": "rm -rf out .next",
     "build": "cross-env NODE_ENV=production next build --turbopack",
     "back:build": "cd .. && go build -o odigos-backend",
@@ -36,6 +39,7 @@
     "cypress": "^15.14.0",
     "eslint": "9.39.2",
     "eslint-config-next": "16.2.4",
+    "patch-package": "^8.0.0",
     "postcss": "^8.5.10",
     "typescript": "5.9.3"
   }

@@ -40,6 +40,7 @@
   ],
   "exclude": [
     "node_modules",
-    "out"
+    "out",
+    "embedded-ui-kit"
   ]
 }
