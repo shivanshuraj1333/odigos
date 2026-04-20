@@ -4,3 +4,8 @@ odigos-backend
 __debug_bin*
 vendor
 .tools
+# Populated by scripts/embed-ui-kit-for-docker.sh (Docker build only)
+docker-build-context/ui-kit/*
+!docker-build-context/ui-kit/.gitkeep
+odigos-ui-local
+*.pid
