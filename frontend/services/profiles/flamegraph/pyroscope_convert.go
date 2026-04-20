@@ -1,0 +1,458 @@
+// Package flamegraph converts stored OTLP Profiles JSON chunks into merged stack samples and Pyroscope-shaped flame JSON.
+//
+// Pyroscope OTLP conversion uses github.com/grafana/pyroscope/pkg/ingester/otlp.ConvertOtelToGoogle
+// (same path as Grafana Pyroscope ingest). Public Pyroscope modules expose conversion on protobuf
+// types; chunks may be OTLP JSON or binary protobuf (pdata ProtoMarshaler, same wire as ExportProfilesServiceRequest body).
+//
+// Pipeline in this file:
+//  1. ParseExportProfilesServiceRequest / tryPyroscopeOTLP: binary proto (OdigosProfilesConsumer) or JSON → ExportProfilesServiceRequest.
+//  2. googleProfilesFromParsedRequest → Google pprof per OTLP profile (Pyroscope ConvertOtelToGoogle).
+//  3. mergeGoogleProfilesGrouped (pkg/pprof.ProfileMerge) across profiles per compatibility bucket; googleProfileToSamples
+//     is used only for legacy/sample-based helpers (multi-Line Locations, placeholders for missing location ids).
+//  4. profile_builder uses BuildFlamebearerViaPyroscopeSymdb: merged Google profile → pkg/pprof.Normalize → symdb →
+//     Resolver.Tree → pkg/model NewFlameGraph + ExportToFlamebearer (same as Pyroscope Explore stack merge path).
+package flamegraph
+
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"strings"
+	"unsafe"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/odigos-io/odigos/api/k8sconsts"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	pprofileotlp "go.opentelemetry.io/proto/otlp/collector/profiles/v1development"
+	otelCommon "go.opentelemetry.io/proto/otlp/common/v1"
+	otelProfile "go.opentelemetry.io/proto/otlp/profiles/v1development"
+	otelResource "go.opentelemetry.io/proto/otlp/resource/v1"
+
+	googleProfile "github.com/grafana/pyroscope/api/gen/proto/go/google/v1"
+	typesv1 "github.com/grafana/pyroscope/api/gen/proto/go/types/v1"
+)
+
+var protoJSONUnmarshal = protojson.UnmarshalOptions{DiscardUnknown: true}
+
+// ParseExportProfilesServiceRequest decodes one OTLP Profiles chunk (binary protobuf first, then JSON).
+// Used by ingest-style binary chunks and by timeline scans; matches tryPyroscopeOTLP wire format.
+func ParseExportProfilesServiceRequest(chunk []byte) (*pprofileotlp.ExportProfilesServiceRequest, error) {
+	req := &pprofileotlp.ExportProfilesServiceRequest{}
+	protoErr := proto.Unmarshal(chunk, req)
+	if protoErr == nil && len(req.ResourceProfiles) > 0 {
+		return req, nil
+	}
+	req = &pprofileotlp.ExportProfilesServiceRequest{}
+	if err := protoJSONUnmarshal.Unmarshal(chunk, req); err != nil {
+		if protoErr != nil {
+			return nil, fmt.Errorf("proto_unmarshal: %v; protojson_unmarshal: %w", protoErr, err)
+		}
+		return nil, fmt.Errorf("protojson_unmarshal: %w", err)
+	}
+	if len(req.ResourceProfiles) == 0 {
+		return nil, fmt.Errorf("no_resource_profiles")
+	}
+	return req, nil
+}
+
+const (
+	// failReasonProfileExtractPrefix is prefixed to ConvertOtelToGoogle extract failures for logging.
+	failReasonProfileExtractPrefix = "pyroscope_profile_extract_failed:"
+	failReasonNoSamplesFromConvert = "convert_otel_to_google_yielded_no_samples"
+)
+
+// tryPyroscopeOTLP unmarshals one OTLP Profiles chunk (binary protobuf or JSON), converts with Pyroscope's
+// OTLP→Google path, merges Google profiles with pprof.ProfileMerge when compatible, then expands to samples.
+func tryPyroscopeOTLP(chunk []byte) (samples []Sample, ok bool, failReason string) {
+	req, err := ParseExportProfilesServiceRequest(chunk)
+	if err != nil {
+		return nil, false, err.Error()
+	}
+	profiles := googleProfilesFromParsedRequest(req)
+	if len(profiles) == 0 {
+		return nil, false, failReasonNoSamplesFromConvert
+	}
+	merged, extra := mergeGoogleProfilesGrouped(profiles)
+	var out []Sample
+	for _, k := range sortedKeys(merged) {
+		out = append(out, googleProfileToSamples(merged[k])...)
+	}
+	out = append(out, extra...)
+	if len(out) == 0 {
+		return nil, false, failReasonNoSamplesFromConvert
+	}
+	return out, true, ""
+}
+
+// DefaultProfileType is used when OTLP chunks do not expose a usable pprof sample type.
+func DefaultProfileType() *typesv1.ProfileType {
+	return &typesv1.ProfileType{SampleType: "cpu"}
+}
+
+// ProfileTypeFromChunks returns the profile type of the dominant merged bucket (same heuristic as
+// MergedSamplesFromChunks), else DefaultProfileType.
+func ProfileTypeFromChunks(chunks [][]byte) *typesv1.ProfileType {
+	_, pt := MergedSamplesFromChunks(chunks)
+	return pt
+}
+
+func profileTypeFromGoogleProfile(p *googleProfile.Profile) *typesv1.ProfileType {
+	if p == nil || len(p.SampleType) == 0 {
+		return DefaultProfileType()
+	}
+	idx := int(p.DefaultSampleType)
+	if idx < 0 || idx >= len(p.SampleType) {
+		idx = 0
+	}
+	st := p.SampleType[idx]
+	if st == nil {
+		return DefaultProfileType()
+	}
+	sampleType := stringFromPprofStringTable(p.StringTable, st.Type)
+	sampleUnit := stringFromPprofStringTable(p.StringTable, st.Unit)
+	if sampleType == "" {
+		return DefaultProfileType()
+	}
+	return &typesv1.ProfileType{
+		SampleType: sampleType,
+		SampleUnit: sampleUnit,
+	}
+}
+
+func stringFromPprofStringTable(table []string, idx int64) string {
+	if idx <= 0 || int(idx) >= len(table) {
+		return ""
+	}
+	return table[idx]
+}
+
+// normalizeSampleValuesForPyroscope adapts chunks where sample values carry multiple counters
+// but sample type contains a single entry. Pyroscope conversion expects lengths to match.
+//
+// When multiple values are present they correspond to distinct sample types (e.g. sample count vs
+// CPU nanoseconds). Summing them mixes units and inflates weights (often to tens of millions).
+// We keep only the primary counter (index 0), matching pprof convention used for flame graphs.
+func normalizeSampleValuesForPyroscope(profile *otelProfile.Profile) {
+	if profile == nil {
+		return
+	}
+	for _, s := range profile.Samples {
+		if s == nil || len(s.Values) <= 1 {
+			continue
+		}
+		s.Values = []int64{s.Values[0]}
+	}
+}
+
+// ensureServiceNameInSamples adds service.name to profile samples when missing, so Pyroscope's
+// converter matches ingest expectations. defaultProfileServiceName is used only when the OTLP
+// resource has no service.name (e.g. some agent paths); prefer the real k8s workload/service attribute.
+func ensureServiceNameInSamples(profile *otelProfile.Profile, dictionary *otelProfile.ProfilesDictionary, resource *otelResource.Resource) {
+	if profile == nil || dictionary == nil {
+		return
+	}
+
+	const defaultProfileServiceName = "odigos-profile"
+	serviceName := defaultProfileServiceName
+
+	if resource != nil {
+		if svc := getResourceAttributeString(resource, string(semconv.ServiceNameKey)); svc != "" {
+			serviceName = svc
+		} else if v := getResourceAttributeString(resource, string(semconv.K8SDeploymentNameKey)); v != "" {
+			serviceName = v
+		} else if v := getResourceAttributeString(resource, string(semconv.K8SStatefulSetNameKey)); v != "" {
+			serviceName = v
+		} else if v := getResourceAttributeString(resource, string(semconv.K8SDaemonSetNameKey)); v != "" {
+			serviceName = v
+		} else if v := getResourceAttributeString(resource, string(semconv.K8SCronJobNameKey)); v != "" {
+			serviceName = v
+		} else if v := getResourceAttributeString(resource, string(semconv.K8SJobNameKey)); v != "" {
+			serviceName = v
+		} else if v := getResourceAttributeString(resource, k8sconsts.K8SArgoRolloutNameAttribute); v != "" {
+			serviceName = v
+		}
+	}
+
+	keyIdx := ensureStringInDictionary(dictionary, string(semconv.ServiceNameKey))
+	_ = ensureStringInDictionary(dictionary, serviceName)
+
+	attrIdx := int32(len(dictionary.AttributeTable))
+	dictionary.AttributeTable = append(dictionary.AttributeTable, &otelProfile.KeyValueAndUnit{
+		KeyStrindex: keyIdx,
+		Value: &otelCommon.AnyValue{
+			Value: &otelCommon.AnyValue_StringValue{StringValue: serviceName},
+		},
+	})
+
+	for _, s := range profile.Samples {
+		if s == nil {
+			continue
+		}
+		if svc := getDictionaryAttributeString(s.AttributeIndices, dictionary, string(semconv.ServiceNameKey)); svc != "" {
+			continue
+		}
+		s.AttributeIndices = append(s.AttributeIndices, attrIdx)
+	}
+}
+
+func ensureStringInDictionary(dictionary *otelProfile.ProfilesDictionary, value string) int32 {
+	for i, v := range dictionary.StringTable {
+		if v == value {
+			return int32(i)
+		}
+	}
+	dictionary.StringTable = append(dictionary.StringTable, value)
+	return int32(len(dictionary.StringTable) - 1)
+}
+
+func getDictionaryAttributeString(attributeIndices []int32, dictionary *otelProfile.ProfilesDictionary, key string) string {
+	for _, idx := range attributeIndices {
+		if idx < 0 || int(idx) >= len(dictionary.AttributeTable) {
+			continue
+		}
+		kv := dictionary.AttributeTable[idx]
+		if kv == nil {
+			continue
+		}
+		keyIdx := kv.KeyStrindex
+		if keyIdx < 0 || int(keyIdx) >= len(dictionary.StringTable) {
+			continue
+		}
+		if dictionary.StringTable[keyIdx] != key {
+			continue
+		}
+		if kv.Value != nil {
+			return kv.Value.GetStringValue()
+		}
+	}
+	return ""
+}
+
+func getResourceAttributeString(resource *otelResource.Resource, key string) string {
+	if resource == nil {
+		return ""
+	}
+	for _, kv := range resource.Attributes {
+		if kv == nil {
+			continue
+		}
+		if kv.Key == key && kv.Value != nil {
+			return kv.Value.GetStringValue()
+		}
+	}
+	return ""
+}
+
+// extractGoogleProfile reads converted profile data from pyroscope conversion output.
+// Newer pyroscope versions may change field names, so we locate by type first.
+func extractGoogleProfile(cp interface{}) *googleProfile.Profile {
+	v := reflect.ValueOf(cp)
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+
+	googleProfilePtrType := reflect.TypeOf((*googleProfile.Profile)(nil))
+	googleProfileValType := reflect.TypeOf(googleProfile.Profile{})
+
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		t := f.Type()
+
+		switch t {
+		case googleProfilePtrType:
+			if f.CanInterface() {
+				if p, _ := f.Interface().(*googleProfile.Profile); p != nil {
+					return p
+				}
+			}
+			// Pyroscope's converted type may use unexported fields; unsafe dereference couples us to their
+			// layout — keep collector deps pinned and rely on tests + JSON fallback below.
+			if f.CanAddr() {
+				if p := *(**googleProfile.Profile)(unsafe.Pointer(f.Addr().UnsafePointer())); p != nil {
+					return p
+				}
+			}
+		case googleProfileValType:
+			if f.CanInterface() {
+				if p, _ := f.Interface().(googleProfile.Profile); p.Sample != nil {
+					cp := p
+					return &cp
+				}
+			}
+		}
+	}
+
+	// Fallback: if converted profile exposes JSON fields, decode "profile".
+	raw, err := json.Marshal(cp)
+	if err != nil {
+		return nil
+	}
+	var holder struct {
+		Profile *googleProfile.Profile `json:"profile"`
+	}
+	if err := json.Unmarshal(raw, &holder); err != nil {
+		return nil
+	}
+	return holder.Profile
+}
+
+// maxFrameNameLen caps display strings for UI / merge stability (aligned with common pprof truncation).
+const maxFrameNameLen = 256
+
+func truncateFrameName(s string) string {
+	const maxRunes = maxFrameNameLen
+	var b strings.Builder
+	n := 0
+	for _, r := range s {
+		if n >= maxRunes {
+			b.WriteString("…")
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String()
+}
+
+func stringFromTable(table []string, idx int64) string {
+	if idx >= 0 && int(idx) < len(table) {
+		return table[idx]
+	}
+	return ""
+}
+
+func functionLineLabel(p *googleProfile.Profile, fn *googleProfile.Function, sourceLine int64) string {
+	if fn == nil {
+		return ""
+	}
+	if s := stringFromTable(p.StringTable, fn.Name); s != "" {
+		return truncateFrameName(s)
+	}
+	if s := stringFromTable(p.StringTable, fn.SystemName); s != "" {
+		return truncateFrameName(s)
+	}
+	file := stringFromTable(p.StringTable, fn.Filename)
+	if file != "" && sourceLine > 0 {
+		return truncateFrameName(fmt.Sprintf("%s:%d", file, sourceLine))
+	}
+	if file != "" && fn.StartLine > 0 {
+		return truncateFrameName(fmt.Sprintf("%s:%d", file, fn.StartLine))
+	}
+	if file != "" {
+		return truncateFrameName(file)
+	}
+	return ""
+}
+
+func lineFrameLabel(p *googleProfile.Profile, ln *googleProfile.Line, funcByID map[uint64]*googleProfile.Function) string {
+	if ln == nil {
+		return ""
+	}
+	return functionLineLabel(p, funcByID[ln.FunctionId], ln.Line)
+}
+
+// locationFallbackLabel is used when a Location has no usable Line entries (same as classic pprof mapping+PC).
+func locationFallbackLabel(p *googleProfile.Profile, loc *googleProfile.Location, mappingByID map[uint64]*googleProfile.Mapping) string {
+	if loc == nil {
+		return truncateFrameName("[unknown frame]")
+	}
+	if m := mappingByID[loc.MappingId]; m != nil {
+		fnStr := stringFromTable(p.StringTable, m.Filename)
+		buildID := stringFromTable(p.StringTable, m.BuildId)
+		if fnStr != "" && loc.Address != 0 {
+			if buildID != "" {
+				return truncateFrameName(fmt.Sprintf("%s [%s]+0x%x", fnStr, buildID, loc.Address))
+			}
+			return truncateFrameName(fmt.Sprintf("%s+0x%x", fnStr, loc.Address))
+		}
+		if fnStr != "" {
+			return truncateFrameName(fnStr)
+		}
+		if buildID != "" && loc.Address != 0 {
+			return truncateFrameName(fmt.Sprintf("%s+0x%x", buildID, loc.Address))
+		}
+	}
+	if loc.Address != 0 {
+		return fmt.Sprintf("0x%x", loc.Address)
+	}
+	return fmt.Sprintf("frame_%d", loc.Id)
+}
+
+// locationFrameLabels returns one or more flame labels for a pprof Location.
+// For inlined symbols, google/v1 profile puts multiple Line entries on one Location; the last line is
+// the caller into which preceding lines were inlined. We emit outer→inner (caller first) so that,
+// when building a root-first stack (root … leaf), inline chains stay in natural call order — closer to
+// Pyroscope/Grafana than collapsing the whole PC to a single picked line.
+func locationFrameLabels(p *googleProfile.Profile, loc *googleProfile.Location, funcByID map[uint64]*googleProfile.Function, mappingByID map[uint64]*googleProfile.Mapping) []string {
+	if loc == nil {
+		return []string{truncateFrameName("[unknown frame]")}
+	}
+	if len(loc.Line) > 0 {
+		labels := make([]string, 0, len(loc.Line))
+		for i := len(loc.Line) - 1; i >= 0; i-- {
+			if s := lineFrameLabel(p, loc.Line[i], funcByID); s != "" {
+				labels = append(labels, s)
+			}
+		}
+		if len(labels) > 0 {
+			return labels
+		}
+	}
+	return []string{locationFallbackLabel(p, loc, mappingByID)}
+}
+
+// googleProfileToSamples converts a Google pprof Profile to our Sample format (root-first stack, value).
+func googleProfileToSamples(p *googleProfile.Profile) []Sample {
+	if p == nil || len(p.Sample) == 0 {
+		return nil
+	}
+	locByID := make(map[uint64]*googleProfile.Location)
+	for _, loc := range p.Location {
+		locByID[loc.Id] = loc
+	}
+	funcByID := make(map[uint64]*googleProfile.Function)
+	for _, fn := range p.Function {
+		funcByID[fn.Id] = fn
+	}
+	mappingByID := make(map[uint64]*googleProfile.Mapping)
+	for _, m := range p.Mapping {
+		if m != nil {
+			mappingByID[m.Id] = m
+		}
+	}
+	var out []Sample
+	for _, s := range p.Sample {
+		var value int64
+		if len(s.Value) > 0 {
+			// Multiple values map to different sample types; summing mixes units (e.g. count + ns).
+			value = s.Value[0]
+		}
+		if value <= 0 {
+			continue
+		}
+		// Keep samples even when a location id is missing after merge: dropping them creates visible
+		// holes vs Pyroscope/Grafana, which retain weight by resolving through their symbol pipeline.
+		stack := make([]string, 0, len(s.LocationId)*2)
+		for i := len(s.LocationId) - 1; i >= 0; i-- {
+			locID := s.LocationId[i]
+			loc := locByID[locID]
+			if loc == nil {
+				stack = append(stack, truncateFrameName(fmt.Sprintf("[missing location id=%d]", locID)))
+				continue
+			}
+			stack = append(stack, locationFrameLabels(p, loc, funcByID, mappingByID)...)
+		}
+		if len(stack) > 0 {
+			out = append(out, Sample{Stack: stack, Value: value})
+		}
+	}
+	return out
+}
