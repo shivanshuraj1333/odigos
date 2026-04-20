@@ -125,6 +125,13 @@ type OtlpExporterConfiguration struct {
 	EnableDataCompression *bool           `json:"enableDataCompression,omitempty"`
 	Timeout               string          `json:"timeout,omitempty"`
 	RetryOnFailure        *RetryOnFailure `json:"retryOnFailure,omitempty"`
+	SendingQueue          *SendingQueue   `json:"sendingQueue,omitempty" yaml:"sendingQueue,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+type SendingQueue struct {
+	Enabled   *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	QueueSize int   `json:"queueSize,omitempty" yaml:"queueSize,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
@@ -493,9 +500,14 @@ type ProfilingUiConfiguration struct {
 // +kubebuilder:object:generate=true
 // ProfilingConfiguration is cluster-wide continuous profiling; disabled unless Enabled is set.
 type ProfilingConfiguration struct {
-	Enabled  *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// Exporter applies to profiling OTLP exporters (node → gateway, gateway → UI).
 	Exporter *OtlpExporterConfiguration `json:"exporter,omitempty" yaml:"exporter,omitempty"`
 	Ui       *ProfilingUiConfiguration  `json:"ui,omitempty" yaml:"ui,omitempty"`
+	// GatewayUiOtlpEndpoint, when non-empty, is the OTLP gRPC host:port the cluster gateway uses to export
+	// profiles to the Odigos UI (default: ui.<namespace>:4317). Use for local UI debugging when the UI process
+	// runs outside the cluster and is reachable from worker nodes at this address.
+	GatewayUiOtlpEndpoint string `json:"gatewayUiOtlpEndpoint,omitempty" yaml:"gatewayUiOtlpEndpoint,omitempty"`
 }
 
 // OdigosConfiguration defines the desired state of OdigosConfiguration

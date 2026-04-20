@@ -18,6 +18,13 @@ func MergeProfilingOtlpExporter(base config.GenericMap, otlp *odigoscommon.OtlpE
 	if otlp == nil {
 		return out
 	}
+	if otlp.EnableDataCompression != nil {
+		if *otlp.EnableDataCompression {
+			out["compression"] = "gzip"
+		} else {
+			out["compression"] = "none"
+		}
+	}
 	if otlp.Timeout != "" {
 		out["timeout"] = otlp.Timeout
 	}
@@ -38,6 +45,16 @@ func MergeProfilingOtlpExporter(base config.GenericMap, otlp *odigoscommon.OtlpE
 			retry["max_elapsed_time"] = otlp.RetryOnFailure.MaxElapsedTime
 		}
 		out["retry_on_failure"] = retry
+	}
+	if otlp.SendingQueue != nil {
+		q := config.GenericMap{}
+		if otlp.SendingQueue.Enabled != nil {
+			q["enabled"] = *otlp.SendingQueue.Enabled
+		}
+		if otlp.SendingQueue.QueueSize > 0 {
+			q["queue_size"] = otlp.SendingQueue.QueueSize
+		}
+		out["sending_queue"] = q
 	}
 	return out
 }
@@ -86,11 +103,13 @@ func K8sAttributesProfilesProcessorConfig() config.GenericMap {
 	}
 }
 
-// ProfilingProfileDropConditions returns filterprocessor profile_conditions used on node and gateway
-// profiles pipelines (drop rows without container id before k8s_attributes).
+// ProfilingProfileDropConditions returns filterprocessor profile_conditions for the node
+// profiles pipeline. These run after k8s_attributes so enrichment can use container.id or
+// k8s.pod.ip pod_association; we then drop profiles that still have no Kubernetes namespace
+// (host/system noise) instead of dropping everything missing container.id before enrichment.
 func ProfilingProfileDropConditions() []string {
 	return []string{
-		`resource.attributes["container.id"] == nil`,
+		`resource.attributes["k8s.namespace.name"] == nil`,
 	}
 }
 
@@ -99,5 +118,27 @@ func ProfilingFilterProcessorConfig() config.GenericMap {
 	return config.GenericMap{
 		"error_mode":         "ignore",
 		"profile_conditions": ProfilingProfileDropConditions(),
+	}
+}
+
+// ProfilingServiceNameTransformProcessorConfig sets OpenTelemetry service.name on profile resources
+// from Kubernetes workload attributes when service.name is absent. Runs after k8s_attributes so
+// k8s.deployment.name (and friends) are populated; uses the contrib transform processor (profile_statements).
+func ProfilingServiceNameTransformProcessorConfig() config.GenericMap {
+	return config.GenericMap{
+		"error_mode": "ignore",
+		"profile_statements": []any{
+			config.GenericMap{
+				"context": "resource",
+				"statements": []any{
+					`set(attributes["service.name"], attributes["k8s.deployment.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.deployment.name"])`,
+					`set(attributes["service.name"], attributes["k8s.statefulset.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.statefulset.name"])`,
+					`set(attributes["service.name"], attributes["k8s.daemonset.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.daemonset.name"])`,
+					`set(attributes["service.name"], attributes["k8s.cronjob.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.cronjob.name"])`,
+					`set(attributes["service.name"], attributes["k8s.job.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.job.name"])`,
+					`set(attributes["service.name"], attributes["k8s.argoproj.rollout.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.argoproj.rollout.name"])`,
+				},
+			},
+		},
 	}
 }

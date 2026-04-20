@@ -68,6 +68,8 @@ processors:
     - eks
     - azure
     - aks
+    eks:
+      node_from_env_var: NODE_NAME
     timeout: 2s
   test_type/test_processor:
     key: val

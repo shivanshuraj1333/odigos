@@ -9,8 +9,13 @@ const (
 	// Node collector profiles domain — receive on host, forward to cluster gateway.
 	ProfilingNodeFilterProcessor        = "filter/profiles-node"
 	ProfilingNodeK8sAttributesProcessor = "k8s_attributes/profiles-node"
-	ProfilingNodeToGatewayExporter      = "otlp_grpc/profiles-to-gateway"
+	// ProfilingNodeServiceNameTransformProcessor sets resource service.name from k8s workload metadata
+	// when missing, so Pyroscope and OTLP destinations get a stable service dimension after k8s_attributes.
+	ProfilingNodeServiceNameTransformProcessor = "transform/profiles-service-name"
+	// Use the otlp exporter type (not otlp_grpc) so configs work with released odigos-collector
+	// images (e.g. v1.23.x) that do not register a separate otlp_grpc exporter component ID.
+	ProfilingNodeToGatewayExporter = "otlp/profiles-to-gateway"
 
-	// Cluster gateway profiles pipeline — OTLP in from nodes, export to UI (no extra processors).
-	ProfilingGatewayToUIExporter = "otlp_grpc/profiles-to-ui"
+	// Cluster gateway profiles pipeline — OTLP in from nodes, export to UI (and destination OTLP exporters when configured).
+	ProfilingGatewayToUIExporter = "otlp/profiles-to-ui"
 )

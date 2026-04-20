@@ -76,8 +76,10 @@ logLevel: "info"
 # description: |-
 #   Continuous profiling (off by default): node collector → gateway → UI over OTLP gRPC. UI buffers only workloads
 #   with an open Profiler tab / enableSourceProfiling; scrape ui:3000/metrics for odigos_ui_profiling_* when enabled.
-#   When enabled, profiling.exporter and profiling.ui are written to odigos-configuration; any field you omit in a
-#   partial override falls back to the chart defaults below.
+#   When enabled, profiling.exporter and profiling.ui are written to odigos-configuration; defaults match
+#   frontend/services/profiles/consts.go (24 slots × 8 MiB, 120s TTL). Any field you omit in a
+#   partial override falls back to the chart defaults below. The autoscaler also reads profiling from
+#   odigos-configuration when the scheduler omits it from effective-config (e.g. stock scheduler image).
 # @schema
 profiling:
   # @schema
@@ -111,27 +113,43 @@ profiling:
       # @schema
       # description: Upper bound on backoff between retries.
       # @schema
-      maxInterval: 30s
+      maxInterval: 15s
       # @schema
       # description: Maximum time spent retrying a batch; 0 means retry until success.
       # @schema
-      maxElapsedTime: 300s
+      maxElapsedTime: 30s
+    sendingQueue:
+      # @schema
+      # description: Bounded queue for profiling OTLP exports (collector exporter sending_queue).
+      # @schema
+      enabled: true
+      # @schema
+      # description: Max batches queued when the downstream is slow.
+      # @schema
+      queueSize: 50
   # @schema
   # description: UI-side profiling resource limits (written when profiling.enabled is true). Override any field from Helm as needed.
   # @schema
   ui:
     # @schema
-    # description: Slot TTL in seconds.
+    # description: Slot TTL in seconds (matches UI in-process default when unset).
     # @schema
-    slotTTLSeconds: 300
+    slotTTLSeconds: 120
     # @schema
-    # description: Max in-memory profile slots.
+    # description: Max in-memory profile slots (default 24; with 8 MiB/slot ≈192 MiB buffer budget toward a 200 MiB target).
     # @schema
-    maxSlots: 32
+    maxSlots: 24
     # @schema
-    # description: Max bytes per slot (default 8 MiB).
+    # description: Max bytes per rolling OTLP buffer per workload (default 8 MiB; matches UI binary default).
     # @schema
     slotMaxBytes: 8388608
+  # @schema
+  # description: |-
+  #   Optional host:port for gateway→UI profiles OTLP gRPC. Empty uses ui.<release-namespace>:4317.
+  #   For local UI debugging: bind the UI binary on 0.0.0.0:4317 on a host reachable from the cluster (VPC IP),
+  #   allow SG ingress from nodes, scale down in-cluster ui, set this to that host:port, helm upgrade, wait for gateway rollout.
+  # @schema
+  gatewayUiOtlpEndpoint: ''
 
 # @schema
 # description: Configuration for OpenTelemetry (OTEL) agents instrumentation environment variables.
@@ -836,6 +854,18 @@ odiglet:
   # description: Log level for odiglet. Defaults to info.
   # @schema
   logLevel: "info"
+
+  # @schema
+  # description: |-
+  #   Optional annotations on the odiglet ServiceAccount. On AWS EKS, attach an IAM role for IRSA
+  #   so the node collector's resourcedetection processors (ec2, eks) can call EC2 APIs.
+  #   Example:
+  #     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/odigos-node-collector-resourcedetection
+  #   The role trust policy must allow the SA namespace/name (e.g. odigos-system:odiglet). Grant at least
+  #   ec2:DescribeInstances on the cluster's EC2 instances (often via Condition ec2:ResourceTag with
+  #   kubernetes.io/cluster/CLUSTER_NAME or a path scoped to node instance IDs).
+  # @schema
+  serviceAccountAnnotations: {}
 
   # @schema
   # description: Configuration for the odiglet container.
