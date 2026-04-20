@@ -13,6 +13,8 @@ spec:
       supported: true
     logs:
       supported: true
+    profiles:
+      supported: true
   fields:
     - name: OTLP_GRPC_ENDPOINT
       displayName: OTLP gRPC Endpoint
