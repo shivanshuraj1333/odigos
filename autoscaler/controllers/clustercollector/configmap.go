@@ -190,7 +190,11 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 	collectorLogLevel := string(odigoscommon.LogLevelInfo)
 	var profilingCfg *odigoscommon.ProfilingConfiguration
 	if odigosCfg, err := utils.GetCurrentOdigosConfiguration(ctx, c); err == nil {
-		profilingCfg = odigosCfg.Profiling
+		if p, perr := utils.ProfilingFromEffectiveOrHelm(ctx, c, odigosCfg.Profiling); perr == nil {
+			profilingCfg = p
+		} else {
+			profilingCfg = odigosCfg.Profiling
+		}
 		if odigosCfg.ComponentLogLevels != nil {
 			collectorLogLevel = odigosCfg.ComponentLogLevels.Resolve("collector")
 		}
@@ -204,7 +208,7 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 			if err := addSelfTelemetryPipeline(c, gateway.Spec.CollectorOwnMetricsPort, destinationPipelineNames, signalsRootPipelines); err != nil {
 				return err
 			}
-			if err := addProfilingGatewayPipeline(c, env.GetCurrentNamespace(), profilingCfg); err != nil {
+			if err := addProfilingGatewayPipeline(c, env.GetCurrentNamespace(), profilingCfg, gateway, enabledDests); err != nil {
 				return err
 			}
 			c.Service.Telemetry.Logs = config.LogsConfig{Level: collectorLogLevel}
@@ -225,6 +229,12 @@ func syncConfigMap(enabledDests *odigosv1.DestinationList, allProcessors *odigos
 	if err != nil {
 		logger.Error(err, "Failed to calculate config")
 		return nil, err
+	}
+
+	if profilingCfg != nil && odigoscommon.ProfilingPipelineActive(profilingCfg) {
+		if !slices.Contains(signals, odigoscommon.ProfilesObservabilitySignal) {
+			signals = append(signals, odigoscommon.ProfilesObservabilitySignal)
+		}
 	}
 
 	for destName, destErr := range status.Destination {

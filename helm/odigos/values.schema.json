@@ -1075,6 +1075,15 @@
           "required": [],
           "title": "affinity"
         },
+        "serviceAccountAnnotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional annotations on the odiglet ServiceAccount (e.g. eks.amazonaws.com/role-arn for IRSA).",
+          "required": [],
+          "title": "serviceAccountAnnotations",
+          "type": "object"
+        },
         "csidriver": {
           "additionalProperties": false,
           "description": "CSI driver resource configuration.\nOnly applied when instrumentor.mountMethod is \"k8s-csi-driver\"",
@@ -1667,7 +1676,7 @@
     },
     "profiling": {
       "additionalProperties": false,
-      "description": "Continuous profiling (off by default): node collector → gateway → UI over OTLP gRPC. UI buffers only workloads\nwith an open Profiler tab / enableSourceProfiling; scrape ui:3000/metrics for odigos_ui_profiling_* when enabled.\nWhen enabled, profiling.exporter and profiling.ui are written to odigos-configuration; any field you omit in a\npartial override falls back to the chart defaults below.",
+      "description": "Continuous profiling (off by default): node collector → gateway → UI over OTLP gRPC. UI buffers only workloads\nwith an open Profiler tab / enableSourceProfiling; scrape ui:3000/metrics for odigos_ui_profiling_* when enabled.\nWhen enabled, profiling.exporter and profiling.ui are written to odigos-configuration; defaults match\nfrontend/services/profiles/consts.go (24 slots × 8 MiB, 120s TTL). Any field you omit in a\npartial override falls back to the chart defaults below.",
       "properties": {
         "enabled": {
           "default": "false",
@@ -1702,13 +1711,13 @@
                   "title": "initialInterval"
                 },
                 "maxElapsedTime": {
-                  "default": "300s",
+                  "default": "30s",
                   "description": "Maximum time spent retrying a batch; 0 means retry until success.",
                   "required": [],
                   "title": "maxElapsedTime"
                 },
                 "maxInterval": {
-                  "default": "30s",
+                  "default": "15s",
                   "description": "Upper bound on backoff between retries.",
                   "required": [],
                   "title": "maxInterval"
@@ -1716,6 +1725,26 @@
               },
               "required": [],
               "title": "retryOnFailure"
+            },
+            "sendingQueue": {
+              "additionalProperties": false,
+              "description": "Bounded queue for profiling OTLP exports (collector exporter sending_queue).",
+              "properties": {
+                "enabled": {
+                  "default": "true",
+                  "description": "Whether to enable the exporter sending queue for profiling OTLP batches.",
+                  "required": [],
+                  "title": "enabled"
+                },
+                "queueSize": {
+                  "default": "50",
+                  "description": "Max batches queued when the downstream is slow.",
+                  "required": [],
+                  "title": "queueSize"
+                }
+              },
+              "required": [],
+              "title": "sendingQueue"
             },
             "timeout": {
               "default": "5s",
@@ -1732,26 +1761,33 @@
           "description": "UI-side profiling resource limits (written when profiling.enabled is true). Override any field from Helm as needed.",
           "properties": {
             "maxSlots": {
-              "default": "32",
-              "description": "Max in-memory profile slots.",
+              "default": "24",
+              "description": "Max in-memory profile slots (default 24; with 8 MiB/slot ≈192 MiB buffer budget toward a 200 MiB target).",
               "required": [],
               "title": "maxSlots"
             },
             "slotMaxBytes": {
               "default": "8388608",
-              "description": "Max bytes per slot (default 8 MiB).",
+              "description": "Max bytes per rolling OTLP buffer per workload (default 8 MiB; matches UI binary default).",
               "required": [],
               "title": "slotMaxBytes"
             },
             "slotTTLSeconds": {
-              "default": "300",
-              "description": "Slot TTL in seconds.",
+              "default": "120",
+              "description": "Slot TTL in seconds (matches UI in-process default when unset).",
               "required": [],
               "title": "slotTTLSeconds"
             }
           },
           "required": [],
           "title": "ui"
+        },
+        "gatewayUiOtlpEndpoint": {
+          "default": "",
+          "description": "Optional host:port for gateway→UI profiles OTLP gRPC. When empty, uses ui.<namespace>:4317. Set when running the UI outside the cluster for debugging.",
+          "required": [],
+          "title": "gatewayUiOtlpEndpoint",
+          "type": "string"
         }
       },
       "required": [],

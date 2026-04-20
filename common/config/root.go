@@ -122,6 +122,10 @@ func isLoggingEnabled(dest SignalSpecific) bool {
 	return isSignalExists(dest, common.LogsObservabilitySignal)
 }
 
+func isProfilesEnabled(dest SignalSpecific) bool {
+	return isSignalExists(dest, common.ProfilesObservabilitySignal)
+}
+
 func addProtocol(s string) string {
 	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
 		return s

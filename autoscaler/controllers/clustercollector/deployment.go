@@ -322,8 +322,12 @@ func getDesiredDeployment(ctx context.Context, c client.Client, enabledDests *od
 		desiredDeployment.Spec.Template.Spec.TopologySpreadConstraints = adjusted
 	}
 
+	profilingForGates, perr := k8sutils.ProfilingFromEffectiveOrHelm(ctx, c, odigosConfiguration.Profiling)
+	if perr != nil {
+		return nil, errors.Join(perr, errors.New("failed to resolve profiling configuration"))
+	}
 	var featureGates []string
-	if common.ProfilingPipelineActive(odigosConfiguration.Profiling) {
+	if common.ProfilingPipelineActive(profilingForGates) {
 		featureGates = append(featureGates, "service.profilesSupport")
 	}
 	if odigosConfiguration.ClickhouseJsonTypeEnabledProperty != nil && *odigosConfiguration.ClickhouseJsonTypeEnabledProperty {

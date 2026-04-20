@@ -45,11 +45,18 @@ func commonProcessors(nodeCG *odigosv1.CollectorsGroup, runningOnGKE bool) confi
 	if runningOnGKE {
 		detectors = []string{"gcp"}
 	} else {
+		// ec2/eks call AWS EC2 APIs (DescribeInstances / IMDS). On EKS, grant the odiglet ServiceAccount
+		// an IAM role (IRSA) with ec2:DescribeInstances scoped to the cluster nodes — see
+		// helm odiglet.serviceAccountAnnotations and values description.
 		detectors = []string{"ec2", "eks", "azure", "aks"}
 	}
 	allProcessors[resourceDetectionProcessorName] = config.GenericMap{
 		"detectors": detectors,
 		"timeout":   "2s",
+		// EKS detector uses the Kubernetes API when IMDS is unreachable; requires the local node name.
+		"eks": config.GenericMap{
+			"node_from_env_var": "NODE_NAME",
+		},
 	}
 
 	return allProcessors

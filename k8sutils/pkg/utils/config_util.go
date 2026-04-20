@@ -41,3 +41,50 @@ func GetCurrentOdigosConfiguration(ctx context.Context, k8sClient client.Client)
 	}
 	return odigosConfiguration, nil
 }
+
+// GetOdigosHelmManagedConfiguration loads the Helm-managed odigos-configuration ConfigMap
+// (user-facing baseline before scheduler merges into effective-config).
+func GetOdigosHelmManagedConfiguration(ctx context.Context, k8sClient client.Client) (common.OdigosConfiguration, error) {
+	var configMap v1.ConfigMap
+	var odigosConfiguration common.OdigosConfiguration
+	ns := env.GetCurrentNamespace()
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: consts.OdigosConfigurationName}, &configMap); err != nil {
+		return odigosConfiguration, err
+	}
+	if configMap.Data == nil || configMap.Data[consts.OdigosConfigurationFileName] == "" {
+		return odigosConfiguration, nil
+	}
+	if err := yaml.Unmarshal([]byte(configMap.Data[consts.OdigosConfigurationFileName]), &odigosConfiguration); err != nil {
+		return odigosConfiguration, err
+	}
+	return odigosConfiguration, nil
+}
+
+// ProfilingFromEffectiveOrHelm returns profiling settings for collector configuration.
+//
+// When the scheduler persists profiling into effective-config, that value wins (including
+// profiling.enabled: false from overlays). If profiling is omitted from effective-config
+// entirely (nil) — e.g. older scheduler binaries that drop unknown YAML keys — this falls
+// back to odigos-configuration so the autoscaler still enables profiling pipelines.
+//
+// When effective-config includes profiling but omits gatewayUiOtlpEndpoint (common with older
+// schedulers that do not persist that field), the Helm-managed odigos-configuration value is
+// merged in so gateway → UI OTLP can still be overridden without upgrading the scheduler.
+func ProfilingFromEffectiveOrHelm(ctx context.Context, k8sClient client.Client, effectiveProfiling *common.ProfilingConfiguration) (*common.ProfilingConfiguration, error) {
+	helmCfg, helmErr := GetOdigosHelmManagedConfiguration(ctx, k8sClient)
+	if helmErr != nil {
+		if effectiveProfiling != nil {
+			return effectiveProfiling, nil
+		}
+		return nil, helmErr
+	}
+	helmProf := helmCfg.Profiling
+
+	if effectiveProfiling != nil {
+		if effectiveProfiling.GatewayUiOtlpEndpoint == "" && helmProf != nil && helmProf.GatewayUiOtlpEndpoint != "" {
+			effectiveProfiling.GatewayUiOtlpEndpoint = helmProf.GatewayUiOtlpEndpoint
+		}
+		return effectiveProfiling, nil
+	}
+	return helmProf, nil
+}
