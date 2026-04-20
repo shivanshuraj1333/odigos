@@ -61,6 +61,7 @@ func GetGenericBatchProcessor() odigosv1.Processor {
 				common.TracesObservabilitySignal,
 				common.MetricsObservabilitySignal,
 				common.LogsObservabilitySignal,
+				common.ProfilesObservabilitySignal,
 			},
 		},
 	}
