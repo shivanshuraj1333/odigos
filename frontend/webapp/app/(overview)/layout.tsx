@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import styled from 'styled-components';
 import { OdigosProvider } from '@odigos/ui-kit/contexts';
 import { useDarkMode, useModalStore } from '@odigos/ui-kit/store';
-import { EntityTypes, OtherEntityTypes } from '@odigos/ui-kit/types';
+import { EntityTypes, OtherEntityTypes, PlatformType, Tier } from '@odigos/ui-kit/types';
 import { OverviewHeader, OverviewModalsAndDrawers } from '@/components';
 import { ErrorBoundary, FlexColumn, IconsNav } from '@odigos/ui-kit/components';
 import { useConfig, useDataStreamsCRUD, useSSE, useTokenTracker } from '@/hooks';
@@ -71,7 +71,11 @@ function OverviewLayout({ children }: PropsWithChildren) {
 
   return (
     <ErrorBoundary>
-      <OdigosProvider platformType={config?.platformType} tier={config?.tier} version={config?.odigosVersion || ''}>
+      <OdigosProvider
+        platformType={config?.platformType ?? PlatformType.K8s}
+        tier={config?.tier ?? Tier.Community}
+        version={config?.odigosVersion || ''}
+      >
         <PageContent>
           <OverviewHeader />
 

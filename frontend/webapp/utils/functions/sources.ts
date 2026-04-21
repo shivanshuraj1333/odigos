@@ -39,7 +39,9 @@ function mapDesiredStatusToConditionStatus(status: DesiredStateProgress): Status
 function mapContainerToSourceContainer(c: K8sWorkloadContainerResponse): SourceContainer {
   return {
     containerName: c.containerName,
-    language: (c.runtimeInfo?.language?.toLowerCase() ?? 'unknown') as ProgrammingLanguages,
+    language: (typeof c.runtimeInfo?.language === 'string' && c.runtimeInfo.language.trim() !== ''
+      ? c.runtimeInfo.language.toLowerCase()
+      : 'unknown') as ProgrammingLanguages,
     runtimeVersion: c.runtimeInfo?.runtimeVersion ?? '',
     overriden: c.overrides != null,
     instrumented: c.agentEnabled?.agentEnabled ?? false,
@@ -80,7 +82,10 @@ export function mapWorkloadToSource(w: WorkloadResponse): Source {
     dataStreamNames: w.dataStreamNames,
     containers: w.containers ? w.containers.map(mapContainerToSourceContainer) : null,
     conditions: mapConditionsToConditionArray(w.conditions),
-    detectedLanguages: w.runtimeInfo?.detectedLanguages?.map((lang) => lang.toLowerCase() as ProgrammingLanguages) ?? null,
+    detectedLanguages:
+      w.runtimeInfo?.detectedLanguages
+        ?.filter((lang): lang is string => typeof lang === 'string' && lang.trim() !== '')
+        .map((lang) => lang.toLowerCase() as ProgrammingLanguages) ?? null,
     workloadOdigosHealthStatus: w.workloadOdigosHealthStatus ?? null,
     podsAgentInjectionStatus: w.podsAgentInjectionStatus,
     rollbackOccurred: w.rollbackOccurred,
