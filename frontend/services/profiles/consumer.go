@@ -35,6 +35,7 @@ func (c *OdigosProfilesConsumer) OTLPProfiles() xconsumer.Profiles {
 }
 
 func (c *OdigosProfilesConsumer) consume(ctx context.Context, incomingBatch pprofile.Profiles) error {
+	log := commonlogger.LoggerCompat().With("subsystem", "backend-profiling")
 	resourceProfiles := incomingBatch.ResourceProfiles()
 	numResources := resourceProfiles.Len()
 	if numResources == 0 {
@@ -48,6 +49,8 @@ func (c *OdigosProfilesConsumer) consume(ctx context.Context, incomingBatch ppro
 			continue
 		}
 		if !c.store.IsActive(sourceKey) {
+			// Open a profiling slot in the UI for this exact key (namespace/Kind/name) or batches are dropped.
+			log.Debug("profile_batch_skip_inactive_slot", "sourceKey", sourceKey)
 			continue
 		}
 		appendResourceProfileChunk(c.store, incomingBatch, resourceProfiles, idx)
