@@ -76,6 +76,7 @@ func appendResourceProfileChunk(store *ProfileStore, incomingBatch pprofile.Prof
 		return
 	}
 	store.AddProfileData(sourceKey, chunkBytes)
+	log.Debug("stored_profile_chunk", "sourceKey", sourceKey, "bytes", len(chunkBytes))
 }
 
 // buildSingleResourceProfilesFromBatch builds a standalone pprofile.Profiles message

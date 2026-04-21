@@ -25,7 +25,7 @@ func (p *Profiles) Register(ctx context.Context, rx *Receiver) error {
 	xf, ok := rx.Factory.(xreceiver.Factory)
 	if !ok {
 		p.rx = rx
-		commonlogger.LoggerCompat().With("subsystem", "ui-otlp", "receiver").Warn(
+		commonlogger.LoggerCompat().With("subsystem", "ui-otlp", "component", "receiver").Warn(
 			"OTLP profiles receiver was not created; profiling ingestion disabled (gateway may log Unimplemented on ProfilesService)")
 		return nil
 	}

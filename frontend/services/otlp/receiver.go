@@ -81,7 +81,7 @@ func (r *Receiver) Setup(ctx context.Context, consumers ...Consumer) error {
 }
 
 func (r *Receiver) WaitAndShutdown(ctx context.Context, consumers ...Consumer) error {
-	commonlogger.LoggerCompat().With("subsystem", "ui-otlp", "receiver").Info("OTLP gRPC running",
+	commonlogger.LoggerCompat().With("subsystem", "ui-otlp", "component", "receiver").Info("OTLP gRPC running",
 		"endpoint", fmt.Sprintf("0.0.0.0:%d", r.Port),
 		"metrics", r.metricsReceiver != nil,
 		"profiles", r.profilesReceiver != nil,
