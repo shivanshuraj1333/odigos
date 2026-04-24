@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { GET_CONFIG } from '@/graphql';
-import { useSuspenseQuery } from '@apollo/client';
+import { useQuery } from '@apollo/client';
 import { useNotificationStore } from '@odigos/ui-kit/store';
 import { Crud, StatusType, Tier } from '@odigos/ui-kit/types';
 import { InstallationStatus, type FetchedConfig } from '@/types';
@@ -10,8 +10,11 @@ import { InstallationStatus, type FetchedConfig } from '@/types';
 export const useConfig = () => {
   const { addNotification } = useNotificationStore();
 
-  const { data, error } = useSuspenseQuery<{ config?: FetchedConfig }>(GET_CONFIG, {
+  // useQuery (not useSuspenseQuery): overview layout has no <Suspense> ancestor; missing boundary
+  // surfaces as 500 Internal Server Error in next dev when the query first runs on the client.
+  const { data, error } = useQuery<{ config?: FetchedConfig }>(GET_CONFIG, {
     skip: typeof window === 'undefined',
+    fetchPolicy: 'cache-and-network',
   });
 
   useEffect(() => {
