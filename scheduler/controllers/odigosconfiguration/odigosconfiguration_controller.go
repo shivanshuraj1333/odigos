@@ -349,22 +349,14 @@ func mergeConfigs(baseConfig *common.OdigosConfiguration, addtionalConfig *commo
 		if overlay.Enabled != nil {
 			dst.Enabled = overlay.Enabled
 		}
+		if overlay.PipelineStability != "" {
+			dst.PipelineStability = overlay.PipelineStability
+		}
 		if overlay.Exporter != nil {
 			dst.Exporter = overlay.Exporter
 		}
-		if overlay.Ui != nil {
-			if dst.Ui == nil {
-				dst.Ui = &common.ProfilingUiConfiguration{}
-			}
-			if overlay.Ui.MaxSlots > 0 {
-				dst.Ui.MaxSlots = overlay.Ui.MaxSlots
-			}
-			if overlay.Ui.SlotTTLSeconds > 0 {
-				dst.Ui.SlotTTLSeconds = overlay.Ui.SlotTTLSeconds
-			}
-			if overlay.Ui.SlotMaxBytes > 0 {
-				dst.Ui.SlotMaxBytes = overlay.Ui.SlotMaxBytes
-			}
+		if overlay.UiOtlpEndpoint != "" {
+			dst.UiOtlpEndpoint = overlay.UiOtlpEndpoint
 		}
 	}
 

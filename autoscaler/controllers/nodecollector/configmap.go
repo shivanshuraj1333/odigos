@@ -334,6 +334,7 @@ func getSignalsFromOtelcolConfig(otelcolConfigContent string) ([]odigoscommon.Ob
 	tracesEnabled := false
 	metricsEnabled := false
 	logsEnabled := false
+	profilesEnabled := false
 	for pipelineName, pipeline := range config.Service.Pipelines {
 		// only consider pipelines with `otlp` receiver
 		// which are the ones that can actually receive data
@@ -346,6 +347,8 @@ func getSignalsFromOtelcolConfig(otelcolConfigContent string) ([]odigoscommon.Ob
 			metricsEnabled = true
 		} else if strings.HasPrefix(pipelineName, "logs") {
 			logsEnabled = true
+		} else if strings.HasPrefix(pipelineName, "profiles") {
+			profilesEnabled = true
 		}
 	}
 
@@ -358,6 +361,9 @@ func getSignalsFromOtelcolConfig(otelcolConfigContent string) ([]odigoscommon.Ob
 	}
 	if logsEnabled {
 		signals = append(signals, odigoscommon.LogsObservabilitySignal)
+	}
+	if profilesEnabled {
+		signals = append(signals, odigoscommon.ProfilesObservabilitySignal)
 	}
 
 	return signals, nil

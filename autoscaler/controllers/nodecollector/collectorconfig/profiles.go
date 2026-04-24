@@ -16,18 +16,20 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 
 	endpoint := k8sconsts.OtlpGrpcDNSEndpoint(k8sconsts.OdigosClusterCollectorServiceName, odigosNamespace, odigosconsts.OTLPPort)
 	exp := commonconf.MergeProfilingOtlpExporter(config.GenericMap{
-		"endpoint":    endpoint,
-		"tls":         config.GenericMap{"insecure": true},
-		"compression": "none",
-	}, profiling.Exporter)
+		"endpoint":      endpoint,
+		"tls":           config.GenericMap{"insecure": true},
+		"compression":   "none",
+		"balancer_name": "round_robin",
+	}, profiling.Exporter, profiling.PipelineStability)
 
 	return config.Config{
 		Receivers: config.GenericMap{
 			commonconf.ProfilingReceiver: config.GenericMap{},
 		},
 		Processors: config.GenericMap{
-			commonconf.ProfilingNodeFilterProcessor:        commonconf.ProfilingFilterProcessorConfig(),
-			commonconf.ProfilingNodeK8sAttributesProcessor: commonconf.K8sAttributesProfilesProcessorConfig(),
+			commonconf.ProfilingNodeK8sAttributesProcessor:        commonconf.K8sAttributesProfilesProcessorConfig(),
+			commonconf.ProfilingNodeServiceNameTransformProcessor: commonconf.ProfilingServiceNameTransformProcessorConfig(),
+			commonconf.ProfilingNodeFilterProcessor:               commonconf.ProfilingFilterProcessorConfig(),
 		},
 		Exporters: config.GenericMap{
 			commonconf.ProfilingNodeToGatewayExporter: exp,
@@ -35,9 +37,18 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 		Service: config.Service{
 			Pipelines: map[string]config.Pipeline{
 				"profiles": {
-					Receivers:  []string{commonconf.ProfilingReceiver},
-					Processors: []string{commonconf.ProfilingNodeFilterProcessor, commonconf.ProfilingNodeK8sAttributesProcessor},
-					Exporters:  []string{commonconf.ProfilingNodeToGatewayExporter},
+					Receivers: []string{commonconf.ProfilingReceiver},
+					// memory_limiter is merged from common_application_telemetry.
+					// k8s_attributes → transform(service.name) → filter: enrich K8s metadata first, then set
+					// service.name for Pyroscope/destinations when the agent leaves it unset, then drop
+					// host noise. The ebpf receiver may not set container.id on every profile
+					Processors: []string{
+						commonconf.ProfilingNodeK8sAttributesProcessor,
+						commonconf.ProfilingNodeServiceNameTransformProcessor,
+						commonconf.ProfilingNodeFilterProcessor,
+						memoryLimiterProcessorName,
+					},
+					Exporters: []string{commonconf.ProfilingNodeToGatewayExporter},
 				},
 			},
 		},
