@@ -36,6 +36,7 @@ enum SignalType {
   TRACES
   METRICS
   LOGS
+  PROFILES
 }
 
 enum SpanKind {
@@ -125,6 +126,11 @@ type K8sActualSource {
   conditions: [Condition!]
   manifestYAML: String
   instrumentationConfigYAML: String
+  """
+  On-demand profiling data for this workload. Null when profiling is disabled or no slot is open.
+  Call enableSourceProfiling first to open a buffering slot before polling this field.
+  """
+  profiling: SourceProfilingResult
 }
 
 input K8sDesiredSourceInput {
@@ -324,6 +330,7 @@ type SupportedSignals {
   traces: ObservabilitySignalSupport!
   metrics: ObservabilitySignalSupport!
   logs: ObservabilitySignalSupport!
+  profiles: ObservabilitySignalSupport!
 }
 
 type ObservabilitySignalSupport {
@@ -371,6 +378,7 @@ type ExportedSignals {
   traces: Boolean!
   metrics: Boolean!
   logs: Boolean!
+  profiles: Boolean!
 }
 
 type Destination {
@@ -403,6 +411,7 @@ input ExportedSignalsInput {
   traces: Boolean!
   metrics: Boolean!
   logs: Boolean!
+  profiles: Boolean!
 }
 
 input PersistNamespaceItemInput {

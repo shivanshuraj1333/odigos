@@ -125,6 +125,13 @@ type OtlpExporterConfiguration struct {
 	EnableDataCompression *bool           `json:"enableDataCompression,omitempty"`
 	Timeout               string          `json:"timeout,omitempty"`
 	RetryOnFailure        *RetryOnFailure `json:"retryOnFailure,omitempty"`
+	SendingQueue          *SendingQueue   `json:"sendingQueue,omitempty" yaml:"sendingQueue,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+type SendingQueue struct {
+	Enabled   *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	QueueSize int   `json:"queueSize,omitempty" yaml:"queueSize,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
@@ -482,20 +489,31 @@ type SamplingConfiguration struct {
 	K8sHealthProbesSampling *K8sHealthProbesSamplingConfiguration `json:"k8sHealthProbesSampling,omitempty"`
 }
 
-// +kubebuilder:object:generate=true
-// ProfilingUiConfiguration holds optional UI resource limits and OTLP listen overrides for profiling.
-type ProfilingUiConfiguration struct {
-	SlotTTLSeconds int `json:"slotTTLSeconds,omitempty" yaml:"slotTTLSeconds,omitempty"`
-	MaxSlots       int `json:"maxSlots,omitempty" yaml:"maxSlots,omitempty"`
-	SlotMaxBytes   int `json:"slotMaxBytes,omitempty" yaml:"slotMaxBytes,omitempty"`
-}
+// ProfilingPipelineStability controls how much overhead the profiling pipelines add.
+// basic (default): minimal pipeline — no retry, no queue, no memory_limiter on the gateway.
+// advance: production-grade — retry_on_failure + sending_queue on all profiling exporters,
+// memory_limiter on the gateway profiles pipeline.
+type ProfilingPipelineStability string
+
+const (
+	ProfilingPipelineStabilityBasic   ProfilingPipelineStability = "basic"
+	ProfilingPipelineStabilityAdvance ProfilingPipelineStability = "advance"
+)
 
 // +kubebuilder:object:generate=true
 // ProfilingConfiguration is cluster-wide continuous profiling; disabled unless Enabled is set.
+// UI store limits (max slots, slot TTL, slot max bytes) are configured via the UI pod's environment
+// variables (PROFILES_MAX_SLOTS, PROFILES_SLOT_TTL_SECONDS, PROFILES_SLOT_MAX_BYTES) — not here.
 type ProfilingConfiguration struct {
-	Enabled  *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// PipelineStability selects basic (default) or advance pipeline features.
+	PipelineStability ProfilingPipelineStability `json:"pipelineStability,omitempty" yaml:"pipelineStability,omitempty"`
+	// Exporter applies to profiling OTLP exporters (node → gateway, gateway → UI).
+	// retry_on_failure and sending_queue within Exporter are only applied when PipelineStability is advance.
 	Exporter *OtlpExporterConfiguration `json:"exporter,omitempty" yaml:"exporter,omitempty"`
-	Ui       *ProfilingUiConfiguration  `json:"ui,omitempty" yaml:"ui,omitempty"`
+	// UiOtlpEndpoint overrides the OTLP gRPC host:port the cluster gateway uses to export profiles
+	// to the Odigos UI. Defaults to ui.<namespace>:4317 (in-cluster Kubernetes Service DNS).
+	UiOtlpEndpoint string `json:"uiOtlpEndpoint,omitempty" yaml:"uiOtlpEndpoint,omitempty"`
 }
 
 // OdigosConfiguration defines the desired state of OdigosConfiguration

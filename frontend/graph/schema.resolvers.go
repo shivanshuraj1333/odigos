@@ -18,6 +18,7 @@ import (
 	"github.com/odigos-io/odigos/frontend/services"
 	"github.com/odigos-io/odigos/frontend/services/describe/odigos_describe"
 	"github.com/odigos-io/odigos/frontend/services/describe/source_describe"
+	"github.com/odigos-io/odigos/frontend/services/profiles"
 	testconnection "github.com/odigos-io/odigos/frontend/services/test_connection"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	"github.com/odigos-io/odigos/k8sutils/pkg/pro"
@@ -278,6 +279,22 @@ func (r *k8sActualNamespaceResolver) Sources(ctx context.Context, obj *model.K8s
 	}
 
 	return sources, nil
+}
+
+// Profiling is the resolver for the profiling field.
+func (r *k8sActualSourceResolver) Profiling(ctx context.Context, obj *model.K8sActualSource) (*model.SourceProfilingResult, error) {
+	if r.ProfileStore == nil {
+		return nil, nil
+	}
+	profileOut, err := profiles.GetProfilingForSource(ctx, r.ProfileStore, obj.Namespace, string(obj.Kind), obj.Name)
+	if err != nil {
+		return nil, err
+	}
+	profileBytes, err := json.Marshal(profileOut.Profile)
+	if err != nil {
+		return nil, err
+	}
+	return &model.SourceProfilingResult{ProfileJSON: string(profileBytes)}, nil
 }
 
 // UpdateAPIToken is the resolver for the updateApiToken field.
@@ -1031,6 +1048,9 @@ func (r *Resolver) K8sActualNamespace() K8sActualNamespaceResolver {
 	return &k8sActualNamespaceResolver{r}
 }
 
+// K8sActualSource returns K8sActualSourceResolver implementation.
+func (r *Resolver) K8sActualSource() K8sActualSourceResolver { return &k8sActualSourceResolver{r} }
+
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
@@ -1039,5 +1059,6 @@ func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
 type computePlatformResolver struct{ *Resolver }
 type k8sActualNamespaceResolver struct{ *Resolver }
+type k8sActualSourceResolver struct{ *Resolver }
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }

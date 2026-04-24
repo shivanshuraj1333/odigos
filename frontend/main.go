@@ -27,6 +27,7 @@ import (
 
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	"github.com/odigos-io/odigos/common"
+	"github.com/odigos-io/odigos/common/consts"
 	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/config"
 	"github.com/odigos-io/odigos/destinations"
@@ -37,8 +38,11 @@ import (
 	"github.com/odigos-io/odigos/frontend/middlewares"
 	"github.com/odigos-io/odigos/frontend/services"
 	collectormetrics "github.com/odigos-io/odigos/frontend/services/collector_metrics"
+	fecommon "github.com/odigos-io/odigos/frontend/services/common"
 	"github.com/odigos-io/odigos/frontend/services/db"
-	metrics "github.com/odigos-io/odigos/frontend/services/metrics"
+	"github.com/odigos-io/odigos/frontend/services/metrics"
+	"github.com/odigos-io/odigos/frontend/services/otlp"
+	"github.com/odigos-io/odigos/frontend/services/profiles"
 	"github.com/odigos-io/odigos/frontend/services/sse"
 	"github.com/odigos-io/odigos/frontend/version"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
@@ -61,11 +65,9 @@ type Flags struct {
 //go:embed all:webapp/out/*
 var uiFS embed.FS
 
-// The above should point to the UI production build.
-// If it's red for you...
-// 1. Go to "frontend/webapp/"
-// 2. Then run: "yarn install && yarn build"
-// After the build completed, there should be a "frontend/webapp/out/" dir (which is ignored from git), that should resolve the red error.
+// The UI is baked in at **compile time**. Rebuild the static client before `go build`, e.g.:
+//   (cd frontend/webapp && yarn install && yarn build)
+// Missing steps → VM/binary serves an old `out/` (e.g. no Profiling tab).
 
 //go:embed graph/workloads.html
 var workloadsHTML embed.FS
@@ -151,7 +153,13 @@ func serveClientFiles(ctx context.Context, r *gin.Engine, dist fs.FS) {
 	})
 }
 
-func startHTTPServer(ctx context.Context, flags *Flags, logger logr.Logger, odigosMetrics *collectormetrics.OdigosMetricsConsumer, k8sCacheClient client.Client, promAPI v1.API) (*gin.Engine, error) {
+func startHTTPServer(ctx context.Context,
+	flags *Flags,
+	logger logr.Logger,
+	odigosMetrics *collectormetrics.OdigosMetricsConsumer,
+	k8sCacheClient client.Client,
+	promAPI v1.API,
+	profileStore fecommon.ProfileStoreRef) (*gin.Engine, error) {
 	var r *gin.Engine
 	if flags.Debug {
 		r = gin.Default()
@@ -197,6 +205,7 @@ func startHTTPServer(ctx context.Context, flags *Flags, logger logr.Logger, odig
 			Logger:          logger,
 			PromAPI:         promAPI,
 			K8sCacheClient:  k8sCacheClient,
+			ProfileStore:    profileStore,
 		},
 	})
 	gqlExecutor := executor.New(gqlExecutableSchema)
@@ -322,16 +331,82 @@ func main() {
 		os.Exit(1)
 	}
 
-	odigosMetrics := collectormetrics.NewOdigosMetrics()
+	// OTLP gRPC: one listener (default consts.OTLPPort)
+	// Metrics always; optional profiles when enabled in config.
+	odigosMetricsConsumer := collectormetrics.NewOdigosMetrics()
+
+	profCfg, profCfgErr := services.ResolveProfilingFromEffectiveConfig(ctx, k8sCacheClient)
+	if profCfgErr != nil {
+		log.Error("profiling: could not load effective config; receiver will stay disabled", "err", profCfgErr)
+	}
+
+	var odigosProfilesConsumer *profiles.OdigosProfilesConsumer
+	var profileStoreRef fecommon.ProfileStoreRef
+
+	if profCfg.ReceiverOn {
+		profileStore := profiles.NewProfileStore(
+			profCfg.StoreLimits.MaxSlots,
+			profCfg.StoreLimits.SlotTTLSeconds,
+			profCfg.StoreLimits.SlotMaxBytes,
+			profCfg.CleanupInterval,
+		)
+		profileStore.RunCleanup(ctx)
+		defer profileStore.StopCleanup()
+
+		var err error
+		odigosProfilesConsumer, err = profiles.NewOdigosProfilesConsumer(profileStore)
+		if err != nil {
+			// Non-fatal: startup continues without profiling ingestion so metrics and the rest
+			// of the UI stay up. Log at WARN with enough context for an operator to diagnose.
+			log.Warn("profiling: profiles consumer init failed; profiling ingestion disabled",
+				"err", err,
+				"consumer", "OdigosProfilesConsumer",
+				"pipeline", "otlp-profiles",
+				"maxSlots", profCfg.StoreLimits.MaxSlots,
+				"slotMaxBytes", profCfg.StoreLimits.SlotMaxBytes,
+				"slotTTLSeconds", profCfg.StoreLimits.SlotTTLSeconds,
+			)
+			odigosProfilesConsumer = nil
+		} else {
+			// Same *ProfileStore is exposed to GraphQL via ProfileStoreRef (not a copy).
+			profileStoreRef = profileStore
+		}
+	}
+	// Register metric/profile sinks on one receiver, start gRPC, then block until shutdown.
+	otlpPort := consts.OTLPPort
+	receiver, err := otlp.NewReceiver(otlpPort)
+	if err != nil {
+		log.Error("OTLP receiver config failed", "err", err)
+		os.Exit(1)
+	}
+
+	consumers := []otlp.Consumer{otlp.NewMetrics(odigosMetricsConsumer)}
+	if odigosProfilesConsumer != nil {
+		consumers = append(consumers, otlp.NewProfilesConsumer(odigosProfilesConsumer.OTLPProfiles()))
+	}
+
+	if err := receiver.Setup(ctx, consumers...); err != nil {
+		log.Error("OTLP setup failed", "err", err)
+		os.Exit(1)
+	}
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
+
+	// K8s delete watcher + in-process notification loop for metrics maps (independent of OTLP receiver).
 	go func() {
 		defer wg.Done()
-		odigosMetrics.Run(ctx, flags.Namespace)
+		odigosMetricsConsumer.RunDeleteWatcherAndNotifications(ctx, flags.Namespace)
+	}()
+
+	go func() {
+		defer wg.Done()
+		if err := receiver.WaitAndShutdown(ctx, consumers...); err != nil {
+			log.Error("OTLP receiver shutdown failed", "err", err)
+		}
 	}()
 
 	// Start watchers
-	err = startWatchers(ctx, k8sCache, odigosMetrics)
+	err = startWatchers(ctx, k8sCache, odigosMetricsConsumer)
 	if err != nil {
 		log.Error("Error starting watchers", "err", err)
 		os.Exit(1)
@@ -346,7 +421,7 @@ func main() {
 	}
 
 	// Start server
-	r, err := startHTTPServer(ctx, &flags, logger, odigosMetrics, k8sCacheClient, promAPI)
+	r, err := startHTTPServer(ctx, &flags, logger, odigosMetricsConsumer, k8sCacheClient, promAPI, profileStoreRef)
 	if err != nil {
 		log.Error("Error starting server", "err", err)
 		os.Exit(1)

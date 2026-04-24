@@ -9,9 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMergeProfilingOtlpExporter_Compression(t *testing.T) {
+	on := true
+	off := false
+	assert.Equal(t, "gzip", MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x", "compression": "none"}, &odigoscommon.OtlpExporterConfiguration{
+		EnableDataCompression: &on,
+	}, odigoscommon.ProfilingPipelineStabilityBasic)["compression"])
+	assert.Equal(t, "none", MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x", "compression": "gzip"}, &odigoscommon.OtlpExporterConfiguration{
+		EnableDataCompression: &off,
+	}, odigoscommon.ProfilingPipelineStabilityBasic)["compression"])
+}
+
 func TestMergeProfilingOtlpExporter_NilOtlp(t *testing.T) {
 	base := config.GenericMap{"endpoint": "localhost:4317", "compression": "none"}
-	out := MergeProfilingOtlpExporter(base, nil)
+	out := MergeProfilingOtlpExporter(base, nil, odigoscommon.ProfilingPipelineStabilityBasic)
 	assert.Equal(t, base, out)
 	out["endpoint"] = "mutated"
 	assert.Equal(t, "localhost:4317", base["endpoint"], "mutating result must not change caller base map")
@@ -26,10 +37,30 @@ func TestMergeProfilingOtlpExporter_WithOtlp_DoesNotMutateBase(t *testing.T) {
 		},
 	}
 	base := config.GenericMap{"endpoint": "x", "compression": "none"}
-	out := MergeProfilingOtlpExporter(base, otlp)
+	out := MergeProfilingOtlpExporter(base, otlp, odigoscommon.ProfilingPipelineStabilityAdvance)
 	out["endpoint"] = "y"
 	assert.Equal(t, "x", base["endpoint"])
 	assert.Equal(t, "5s", out["timeout"])
+}
+
+// basic mode: retry and queue must not appear even when configured in Exporter
+func TestMergeProfilingOtlpExporter_BasicMode_NoRetryNoQueue(t *testing.T) {
+	enabled := true
+	otlp := &odigoscommon.OtlpExporterConfiguration{
+		Timeout: "5s",
+		RetryOnFailure: &odigoscommon.RetryOnFailure{
+			Enabled:         &enabled,
+			InitialInterval: "1s",
+		},
+		SendingQueue: &odigoscommon.SendingQueue{
+			Enabled:   &enabled,
+			QueueSize: 50,
+		},
+	}
+	out := MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x"}, otlp, odigoscommon.ProfilingPipelineStabilityBasic)
+	assert.Equal(t, "5s", out["timeout"])
+	assert.Nil(t, out["retry_on_failure"], "retry_on_failure must be absent in basic mode")
+	assert.Nil(t, out["sending_queue"], "sending_queue must be absent in basic mode")
 }
 
 func TestMergeProfilingOtlpExporter_TimeoutAndRetry(t *testing.T) {
@@ -42,7 +73,7 @@ func TestMergeProfilingOtlpExporter_TimeoutAndRetry(t *testing.T) {
 			MaxInterval:     "30s",
 		},
 	}
-	out := MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x"}, otlp)
+	out := MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x"}, otlp, odigoscommon.ProfilingPipelineStabilityAdvance)
 	assert.Equal(t, "5s", out["timeout"])
 	retry, ok := out["retry_on_failure"].(config.GenericMap)
 	require.True(t, ok)
@@ -51,10 +82,25 @@ func TestMergeProfilingOtlpExporter_TimeoutAndRetry(t *testing.T) {
 	assert.Equal(t, "30s", retry["max_interval"])
 }
 
+func TestMergeProfilingOtlpExporter_SendingQueue(t *testing.T) {
+	enabled := true
+	otlp := &odigoscommon.OtlpExporterConfiguration{
+		SendingQueue: &odigoscommon.SendingQueue{
+			Enabled:   &enabled,
+			QueueSize: 50,
+		},
+	}
+	out := MergeProfilingOtlpExporter(config.GenericMap{"endpoint": "x"}, otlp, odigoscommon.ProfilingPipelineStabilityAdvance)
+	q, ok := out["sending_queue"].(config.GenericMap)
+	require.True(t, ok)
+	assert.Equal(t, true, q["enabled"])
+	assert.Equal(t, 50, q["queue_size"])
+}
+
 func TestProfilingProfileDropConditions(t *testing.T) {
 	conds := ProfilingProfileDropConditions()
 	require.Len(t, conds, 1)
-	assert.Equal(t, `resource.attributes["container.id"] == nil`, conds[0])
+	assert.Equal(t, `resource.attributes["k8s.namespace.name"] == nil`, conds[0])
 }
 
 func TestProfilingFilterProcessorConfig(t *testing.T) {
@@ -63,4 +109,18 @@ func TestProfilingFilterProcessorConfig(t *testing.T) {
 	pc, ok := m["profile_conditions"].([]string)
 	require.True(t, ok)
 	assert.Equal(t, ProfilingProfileDropConditions(), pc)
+}
+
+func TestProfilingServiceNameTransformProcessorConfig(t *testing.T) {
+	m := ProfilingServiceNameTransformProcessorConfig()
+	assert.Equal(t, "ignore", m["error_mode"])
+	ps, ok := m["profile_statements"].([]any)
+	require.True(t, ok)
+	require.Len(t, ps, 1)
+	grp, ok := ps[0].(config.GenericMap)
+	require.True(t, ok)
+	assert.Equal(t, "resource", grp["context"])
+	st, ok := grp["statements"].([]any)
+	require.True(t, ok)
+	require.GreaterOrEqual(t, len(st), 4)
 }

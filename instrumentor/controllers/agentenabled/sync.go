@@ -217,6 +217,23 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 	runtimeDetailsByContainer := ic.RuntimeDetailsByContainer()
 	podManifestInjectionOptional := true // pod manifest is optional, unless some container agent requires it
 
+	// Enabled signals are a workload-level decision (driven by the NodeCollectorsGroup and
+	// workload-level instrumentation rules), not per-container. Compute once for the workload;
+	// when disabled, short-circuit distro/dynamic-config work and mark every container with
+	// the same workload-level reason, then fall through to the aggregation block below.
+	enabledSignals, workloadDisabledInfo := signals.GetEnabledSignalsForWorkload(cg, irls)
+	if workloadDisabledInfo != nil {
+		for containerName := range runtimeDetailsByContainer {
+			containersConfig = append(containersConfig, odigosv1.ContainerAgentConfig{
+				ContainerName:       containerName,
+				AgentEnabled:        false,
+				AgentEnabledReason:  workloadDisabledInfo.AgentEnabledReason,
+				AgentEnabledMessage: workloadDisabledInfo.AgentEnabledMessage,
+			})
+		}
+		runtimeDetailsByContainer = nil // skip the per-container loop below
+	}
+
 	for containerName, containerRuntimeDetails := range runtimeDetailsByContainer {
 
 		// at this point, containerRuntimeDetails can be nil, indicating we have no runtime details for this container
@@ -231,18 +248,6 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 				AgentEnabled:        false,
 				AgentEnabledReason:  err.AgentEnabledReason,
 				AgentEnabledMessage: err.AgentEnabledMessage,
-			})
-			continue
-		}
-
-		// calculate and verify there are enabled signals for this container.
-		enabledSignals, disabledInfo := signals.GetEnabledSignalsForContainer(cg, irls)
-		if disabledInfo != nil {
-			containersConfig = append(containersConfig, odigosv1.ContainerAgentConfig{
-				ContainerName:       containerName,
-				AgentEnabled:        false,
-				AgentEnabledReason:  disabledInfo.AgentEnabledReason,
-				AgentEnabledMessage: disabledInfo.AgentEnabledMessage,
 			})
 			continue
 		}

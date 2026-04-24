@@ -13,7 +13,13 @@ type EnabledSignals struct {
 	LogsEnabled    bool
 }
 
-func GetEnabledSignalsForContainer(nodeCollectorsGroup *odigosv1.CollectorsGroup, irls *[]odigosv1.InstrumentationRule) (EnabledSignals, *odigosv1.AgentDisabledInfo) {
+// GetEnabledSignalsForWorkload returns the signals enabled at the workload level.
+// Inputs (node collectors group + workload-level instrumentation rules) do not vary
+// per container, so the result is invariant across all containers of the workload
+// and the caller should compute it once per reconcile, not once per container.
+// Library-scoped rules (irl.Spec.InstrumentationLibraries != nil) are ignored here
+// and handled later in dynamicconfig.
+func GetEnabledSignalsForWorkload(nodeCollectorsGroup *odigosv1.CollectorsGroup, irls *[]odigosv1.InstrumentationRule) (EnabledSignals, *odigosv1.AgentDisabledInfo) {
 
 	enabledSignals := EnabledSignals{
 		TracesEnabled:  false,
@@ -50,8 +56,7 @@ func GetEnabledSignalsForContainer(nodeCollectorsGroup *odigosv1.CollectorsGroup
 			continue
 		}
 
-		// if any instrumentation rule has trace config disabled, we should disable traces for this container.
-		// the list is already filtered to only include rules that are relevant to the current workload.
+		// if any workload-level instrumentation rule has trace config disabled, traces are disabled for the whole workload.
 		if irl.Spec.TraceConfig != nil && irl.Spec.TraceConfig.Disabled != nil && *irl.Spec.TraceConfig.Disabled {
 			enabledSignals.TracesEnabled = false
 		}

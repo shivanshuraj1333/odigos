@@ -1,0 +1,94 @@
+# On-demand continuous profiling via GraphQL.
+# Flow: enableSourceProfiling → poll K8sActualSource.profiling; clearSourceProfilingBuffer to drop
+# buffered chunks while keeping the slot open; disableSourceProfiling when the user closes the panel.
+# The per-workload profile is exposed as a field on the existing K8sActualSource type (see
+# schema.graphqls) rather than as a separate top-level query, so a UI query that already fetches
+# a workload can select `profiling { profileJson }` in the same round trip.
+
+extend type Query {
+  """
+  Active profiling slots and memory diagnostics.
+  Returns null when profiling is disabled in the effective configuration.
+  Use this query to observe slot occupancy (activeKeys), which slots have buffered data
+  (keysWithData), and the current memory footprint before enabling profiling for a new source.
+  """
+  profilingSlots: ProfilingSlots
+}
+
+extend type Mutation {
+  """
+  Open or refresh the profiling slot for a workload.
+  Idempotent: calling again on an already-open slot resets its TTL timer without clearing data.
+  Without an open slot the OTLP ingest path silently drops incoming profile batches for this
+  source — this mutation must be called before K8sActualSource.profiling returns non-empty data.
+  """
+  enableSourceProfiling(
+    namespace: String!
+    kind: String!
+    name: String!
+  ): EnableProfilingResult!
+
+  """
+  Disable profiling for a workload and free its in-memory slot immediately.
+  Symmetric with enableSourceProfiling; call when the user closes the profiling panel to
+  stop buffering OTLP data and reclaim slot memory. Slots are also evicted automatically
+  by the TTL sweep if this mutation is not called.
+  """
+  disableSourceProfiling(
+    namespace: String!
+    kind: String!
+    name: String!
+  ): DisableProfilingResult!
+
+  """
+  Clear buffered OTLP profile chunks for this workload's slot without removing the slot,
+  so the flame graph resets while profiling stays active.
+  """
+  clearSourceProfilingBuffer(
+    namespace: String!
+    kind: String!
+    name: String!
+  ): ClearProfilingBufferResult!
+}
+
+type ProfilingSlots {
+  """Source keys for all open slots. Format: namespace/kind/name (e.g. default/Deployment/my-app)."""
+  activeKeys: [String!]!
+  """Subset of activeKeys that have at least one buffered OTLP chunk ready to merge."""
+  keysWithData: [String!]!
+  """Total bytes currently buffered across all active slots (rolling OTLP chunks)."""
+  totalBytesInUse: Int!
+  """Configured max bytes per workload slot (rolling buffer cap)."""
+  slotMaxBytes: Int!
+  """Configured max concurrent workload slots (LRU eviction when exceeded)."""
+  maxSlots: Int!
+  """Upper bound for total buffered bytes (maxSlots × slotMaxBytes; default 24 × 8 MiB ≈ 192 MiB)."""
+  maxTotalBytesBudget: Int!
+  """Seconds after the last view request before a slot is TTL-evicted."""
+  slotTtlSeconds: Int!
+}
+
+type EnableProfilingResult {
+  status: String!
+  """Identifies the slot that was opened or refreshed. Format: namespace/kind/name (e.g. default/Deployment/my-app)."""
+  sourceKey: String!
+  maxSlots: Int!
+  activeSlots: Int!
+}
+
+type DisableProfilingResult {
+  status: String!
+  """Identifies the slot that was freed. Format: namespace/kind/name."""
+  sourceKey: String!
+  activeSlots: Int!
+}
+
+type ClearProfilingBufferResult {
+  status: String!
+  sourceKey: String!
+  activeSlots: Int!
+}
+
+type SourceProfilingResult {
+  profileJson: String!
+}
