@@ -495,7 +495,9 @@ type ProfilingUiConfiguration struct {
 type ProfilingConfiguration struct {
 	Enabled  *bool                      `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	Exporter *OtlpExporterConfiguration `json:"exporter,omitempty" yaml:"exporter,omitempty"`
-	Ui       *ProfilingUiConfiguration  `json:"ui,omitempty" yaml:"ui,omitempty"`
+	// UiOtlpEndpoint overrides the OTLP gRPC host:port the cluster gateway uses to export profiles
+	// to the Odigos UI. Defaults to ui.<namespace>:4317 (in-cluster Kubernetes Service DNS).
+	UiOtlpEndpoint string `json:"uiOtlpEndpoint,omitempty" yaml:"uiOtlpEndpoint,omitempty"`
 }
 
 // OdigosConfiguration defines the desired state of OdigosConfiguration
