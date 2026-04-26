@@ -33,7 +33,7 @@ export interface WorkloadResponse {
   dataStreamNames: string[];
   numberOfInstances: number | null;
   markedForInstrumentation: { markedForInstrumentation: boolean | null };
-  runtimeInfo: { detectedLanguages: string[] | null } | null;
+  runtimeInfo: { detectedLanguages: (string | null | undefined)[] | null } | null;
   containers: K8sWorkloadContainerResponse[] | null;
   conditions: K8sWorkloadConditions | null;
   workloadOdigosHealthStatus: DesiredConditionStatus | null;

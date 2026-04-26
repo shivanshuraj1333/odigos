@@ -15,6 +15,13 @@ import {
   type OtelDistroName,
 } from '@odigos/ui-kit/types';
 
+function normalizeDesiredConditionStatus<T extends DesiredConditionStatus | null | undefined>(status: T): DesiredConditionStatus | null {
+  if (!status || typeof status.status !== 'string' || status.status.trim() === '') {
+    return null;
+  }
+  return status;
+}
+
 function mapDesiredStatusToConditionStatus(status: DesiredStateProgress): StatusType | OtherStatus {
   switch (status) {
     case DesiredStateProgress.Failure:
@@ -39,8 +46,10 @@ function mapDesiredStatusToConditionStatus(status: DesiredStateProgress): Status
 
 function mapContainerToSourceContainer(c: K8sWorkloadContainerResponse): SourceContainer {
   return {
-    containerName: c.containerName,
-    language: (c.runtimeInfo?.language?.toLowerCase() ?? 'unknown') as ProgrammingLanguages,
+    containerName: typeof c.containerName === 'string' ? c.containerName : '',
+    language: (typeof c.runtimeInfo?.language === 'string' && c.runtimeInfo.language.trim() !== ''
+      ? c.runtimeInfo.language.toLowerCase()
+      : 'unknown') as ProgrammingLanguages,
     runtimeVersion: c.runtimeInfo?.runtimeVersion ?? '',
     overriden: c.overrides != null,
     instrumented: c.agentEnabled?.agentEnabled ?? false,
@@ -56,7 +65,7 @@ export function mapConditionsToConditionArray(conditions: K8sWorkloadConditions 
   const fields: (keyof K8sWorkloadConditions)[] = ['runtimeDetection', 'agentInjectionEnabled', 'rollout', 'agentInjected', 'processesAgentHealth', 'expectingTelemetry'];
 
   for (const field of fields) {
-    const dcs: DesiredConditionStatus | null = conditions[field];
+    const dcs = normalizeDesiredConditionStatus(conditions[field]);
     if (!dcs) continue;
 
     result.push({
@@ -71,19 +80,28 @@ export function mapConditionsToConditionArray(conditions: K8sWorkloadConditions 
 }
 
 export function mapWorkloadToSource(w: WorkloadResponse): Source {
+  const namespace = typeof w.id?.namespace === 'string' ? w.id.namespace : '';
+  const kind = typeof w.id?.kind === 'string' ? w.id.kind : '';
+  const name = typeof w.id?.name === 'string' ? w.id.name : '';
+  const workloadOdigosHealthStatus = normalizeDesiredConditionStatus(w.workloadOdigosHealthStatus);
+  const podsAgentInjectionStatus = normalizeDesiredConditionStatus(w.podsAgentInjectionStatus);
+
   return {
-    namespace: w.id.namespace,
-    kind: w.id.kind,
-    name: w.id.name,
+    namespace,
+    kind,
+    name,
     selected: w.markedForInstrumentation?.markedForInstrumentation ?? false,
     otelServiceName: w.serviceName ?? '',
     numberOfInstances: w.numberOfInstances ?? undefined,
-    dataStreamNames: w.dataStreamNames,
-    containers: w.containers ? w.containers.map(mapContainerToSourceContainer) : null,
+    dataStreamNames: Array.isArray(w.dataStreamNames) ? w.dataStreamNames.filter((s): s is string => typeof s === 'string') : [],
+    containers: Array.isArray(w.containers) ? w.containers.map(mapContainerToSourceContainer) : null,
     conditions: mapConditionsToConditionArray(w.conditions),
-    detectedLanguages: w.runtimeInfo?.detectedLanguages?.map((lang) => lang.toLowerCase() as ProgrammingLanguages) ?? null,
-    workloadOdigosHealthStatus: w.workloadOdigosHealthStatus ?? null,
-    podsAgentInjectionStatus: w.podsAgentInjectionStatus,
+    detectedLanguages:
+      w.runtimeInfo?.detectedLanguages
+        ?.filter((lang): lang is string => typeof lang === 'string' && lang.trim() !== '')
+        .map((lang) => lang.toLowerCase() as ProgrammingLanguages) ?? null,
+    workloadOdigosHealthStatus,
+    podsAgentInjectionStatus,
     rollbackOccurred: w.rollbackOccurred,
   };
 }

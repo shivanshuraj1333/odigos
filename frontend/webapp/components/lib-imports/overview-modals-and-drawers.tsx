@@ -21,6 +21,7 @@ import {
   useInstrumentationRuleCRUD,
   useNamespace,
   usePotentialDestinations,
+  useProfiling,
   useSourceCRUD,
   useTestConnection,
   useWorkloadUtils,
@@ -40,6 +41,7 @@ const OverviewModalsAndDrawers = () => {
   const { createDestination, updateDestination, deleteDestination } = useDestinationCRUD();
   const { createInstrumentationRuleV2, updateInstrumentationRule, deleteInstrumentationRule } = useInstrumentationRuleCRUD();
   const { persistSources, persistSourcesV2, updateSource, fetchSourceById, fetchSourceLibraries, fetchPeerSources } = useSourceCRUD();
+  const { fetchProfilingSlots, enableProfiling, releaseProfiling, fetchSourceProfiling } = useProfiling();
 
   const handleCloseModal = useCallback(() => setCurrentModal(''), [setCurrentModal]);
 
@@ -86,6 +88,10 @@ const OverviewModalsAndDrawers = () => {
         fetchSourceDescribe={fetchDescribeSource}
         fetchSourceLibraries={fetchSourceLibraries}
         fetchPeerSources={fetchPeerSources}
+        fetchProfilingSlots={fetchProfilingSlots}
+        enableProfiling={enableProfiling}
+        releaseProfiling={releaseProfiling}
+        fetchSourceProfiling={fetchSourceProfiling}
       />
       <DestinationDrawer categories={categories} updateDestination={updateDestination} deleteDestination={deleteDestination} testConnection={testConnection} />
       <InstrumentationRuleDrawer updateInstrumentationRule={updateInstrumentationRule} deleteInstrumentationRule={deleteInstrumentationRule} />
