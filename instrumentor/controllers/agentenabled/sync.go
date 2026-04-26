@@ -235,6 +235,19 @@ func updateInstrumentationConfigSpec(ctx context.Context, c client.Client, pw k8
 			continue
 		}
 
+		enabledSignals, workloadDisabledInfo := signals.GetEnabledSignalsForContainer(cg, irls)
+		if workloadDisabledInfo != nil {
+			for containerName := range runtimeDetailsByContainer {
+				containersConfig = append(containersConfig, odigosv1.ContainerAgentConfig{
+					ContainerName:       containerName,
+					AgentEnabled:        false,
+					AgentEnabledReason:  workloadDisabledInfo.AgentEnabledReason,
+					AgentEnabledMessage: workloadDisabledInfo.AgentEnabledMessage,
+				})
+			}
+			runtimeDetailsByContainer = nil // skip the per-container loop below
+		}
+
 		// calculate and verify there are enabled signals for this container.
 		enabledSignals, disabledInfo := signals.GetEnabledSignalsForContainer(cg, irls)
 		if disabledInfo != nil {

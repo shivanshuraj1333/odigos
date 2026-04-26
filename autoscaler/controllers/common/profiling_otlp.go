@@ -13,31 +13,50 @@ import (
 // We map fields explicitly rather than json.Marshal/Unmarshal: OdigosConfiguration uses camelCase
 // JSON tags (e.g. retryOnFailure, initialInterval) while the OpenTelemetry Collector exporter
 // block expects snake_case keys (retry_on_failure, initial_interval, etc.).
-func MergeProfilingOtlpExporter(base config.GenericMap, otlp *odigoscommon.OtlpExporterConfiguration) config.GenericMap {
+func MergeProfilingOtlpExporter(base config.GenericMap, otlp *odigoscommon.OtlpExporterConfiguration, stability odigoscommon.ProfilingPipelineStability) config.GenericMap {
 	out := cloneGenericMap(base)
 	if otlp == nil {
 		return out
 	}
+	if otlp.EnableDataCompression != nil {
+		if *otlp.EnableDataCompression {
+			out["compression"] = "gzip"
+		} else {
+			out["compression"] = "none"
+		}
+	}
 	if otlp.Timeout != "" {
 		out["timeout"] = otlp.Timeout
 	}
-	if otlp.RetryOnFailure != nil {
-		retry := config.GenericMap{}
-		if otlp.RetryOnFailure.Enabled != nil {
-			retry["enabled"] = *otlp.RetryOnFailure.Enabled
-		} else {
-			retry["enabled"] = true
+	if stability == odigoscommon.ProfilingPipelineStabilityAdvance {
+		if otlp.RetryOnFailure != nil {
+			retry := config.GenericMap{}
+			if otlp.RetryOnFailure.Enabled != nil {
+				retry["enabled"] = *otlp.RetryOnFailure.Enabled
+			} else {
+				retry["enabled"] = true
+			}
+			if otlp.RetryOnFailure.InitialInterval != "" {
+				retry["initial_interval"] = otlp.RetryOnFailure.InitialInterval
+			}
+			if otlp.RetryOnFailure.MaxInterval != "" {
+				retry["max_interval"] = otlp.RetryOnFailure.MaxInterval
+			}
+			if otlp.RetryOnFailure.MaxElapsedTime != "" {
+				retry["max_elapsed_time"] = otlp.RetryOnFailure.MaxElapsedTime
+			}
+			out["retry_on_failure"] = retry
 		}
-		if otlp.RetryOnFailure.InitialInterval != "" {
-			retry["initial_interval"] = otlp.RetryOnFailure.InitialInterval
+		if otlp.SendingQueue != nil {
+			q := config.GenericMap{}
+			if otlp.SendingQueue.Enabled != nil {
+				q["enabled"] = *otlp.SendingQueue.Enabled
+			}
+			if otlp.SendingQueue.QueueSize > 0 {
+				q["queue_size"] = otlp.SendingQueue.QueueSize
+			}
+			out["sending_queue"] = q
 		}
-		if otlp.RetryOnFailure.MaxInterval != "" {
-			retry["max_interval"] = otlp.RetryOnFailure.MaxInterval
-		}
-		if otlp.RetryOnFailure.MaxElapsedTime != "" {
-			retry["max_elapsed_time"] = otlp.RetryOnFailure.MaxElapsedTime
-		}
-		out["retry_on_failure"] = retry
 	}
 	return out
 }
@@ -99,5 +118,27 @@ func ProfilingFilterProcessorConfig() config.GenericMap {
 	return config.GenericMap{
 		"error_mode":         "ignore",
 		"profile_conditions": ProfilingProfileDropConditions(),
+	}
+}
+
+// ProfilingServiceNameTransformProcessorConfig sets OpenTelemetry service.name on profile resources
+// from Kubernetes workload attributes when service.name is absent. Runs after k8s_attributes so
+// k8s.deployment.name are populated; uses the contrib transform processor (profile_statements).
+func ProfilingServiceNameTransformProcessorConfig() config.GenericMap {
+	return config.GenericMap{
+		"error_mode": "ignore",
+		"profile_statements": []any{
+			config.GenericMap{
+				"context": "resource",
+				"statements": []any{
+					`set(attributes["service.name"], attributes["k8s.deployment.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.deployment.name"])`,
+					`set(attributes["service.name"], attributes["k8s.statefulset.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.statefulset.name"])`,
+					`set(attributes["service.name"], attributes["k8s.daemonset.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.daemonset.name"])`,
+					`set(attributes["service.name"], attributes["k8s.cronjob.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.cronjob.name"])`,
+					`set(attributes["service.name"], attributes["k8s.job.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.job.name"])`,
+					`set(attributes["service.name"], attributes["k8s.argoproj.rollout.name"]) where not(IsString(attributes["service.name"])) and IsString(attributes["k8s.argoproj.rollout.name"])`,
+				},
+			},
+		},
 	}
 }
