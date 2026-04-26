@@ -74,16 +74,24 @@ logLevel: "info"
 
 # @schema
 # description: |-
-#   Continuous profiling (off by default): node collector → gateway → UI over OTLP gRPC. UI buffers only workloads
-#   with an open Profiler tab / enableSourceProfiling; scrape ui:3000/metrics for odigos_ui_profiling_* when enabled.
-#   When enabled, profiling.exporter and profiling.ui are written to odigos-configuration; any field you omit in a
-#   partial override falls back to the chart defaults below.
+#   Continuous profiling (off by default): node collector → gateway → UI over OTLP gRPC.
 # @schema
 profiling:
   # @schema
   # description: When true, enables profiling pipelines on the node collector and cluster gateway.
   # @schema
   enabled: false
+  # @schema
+  # description: |-
+  #   Pipeline stability level.
+  #   basic (default): lightweight end-to-end flow — no retry, no queue, no memory_limiter on the gateway.
+  #   advance: production-grade — retry_on_failure + sending_queue on all profiling exporters,
+  #   memory_limiter on the gateway profiles pipeline.
+  # enum:
+  #   - basic
+  #   - advance
+  # @schema
+  pipelineStability: basic
   # @schema
   # description: OTLP settings for profiling exporters (node → gateway, gateway → UI). Omitted from config when profiling.enabled is false.
   # @schema
@@ -97,13 +105,13 @@ profiling:
     # @schema
     timeout: 5s
     # @schema
-    # description: Retry policy for profiling OTLP exports.
+    # description: Retry policy for profiling OTLP exports. Only applied when pipelineStability is advance.
     # @schema
     retryOnFailure:
       # @schema
       # description: Whether to retry failed OTLP sends for profiling.
       # @schema
-      enabled: true
+      enabled: false
       # @schema
       # description: Backoff after the first failure.
       # @schema
@@ -111,27 +119,29 @@ profiling:
       # @schema
       # description: Upper bound on backoff between retries.
       # @schema
-      maxInterval: 30s
+      maxInterval: 15s
       # @schema
       # description: Maximum time spent retrying a batch; 0 means retry until success.
       # @schema
-      maxElapsedTime: 300s
+      maxElapsedTime: 30s
+    # @schema
+    # description: Sending queue for profiling OTLP exports. Only applied when pipelineStability is advance.
+    # @schema
+    sendingQueue:
+      # @schema
+      # description: Bounded queue for profiling OTLP exports (collector exporter sending_queue).
+      # @schema
+      enabled: false
+      # @schema
+      # description: Max batches queued when the downstream is slow.
+      # @schema
+      queueSize: 50
   # @schema
-  # description: UI-side profiling resource limits (written when profiling.enabled is true). Override any field from Helm as needed.
+  # description: |-
+  #   Optional override for the OTLP gRPC host:port the cluster gateway uses to export profiles to the UI.
+  #   Defaults to ui.<release-namespace>:4317 (in-cluster Kubernetes Service DNS) when empty.
   # @schema
-  ui:
-    # @schema
-    # description: Slot TTL in seconds.
-    # @schema
-    slotTTLSeconds: 300
-    # @schema
-    # description: Max in-memory profile slots.
-    # @schema
-    maxSlots: 32
-    # @schema
-    # description: Max bytes per slot (default 8 MiB).
-    # @schema
-    slotMaxBytes: 8388608
+  uiOtlpEndpoint: ''
 
 # @schema
 # description: Configuration for OpenTelemetry (OTEL) agents instrumentation environment variables.

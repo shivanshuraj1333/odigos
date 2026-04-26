@@ -349,8 +349,14 @@ func mergeConfigs(baseConfig *common.OdigosConfiguration, addtionalConfig *commo
 		if overlay.Enabled != nil {
 			dst.Enabled = overlay.Enabled
 		}
+		if overlay.PipelineStability != "" {
+			dst.PipelineStability = overlay.PipelineStability
+		}
 		if overlay.Exporter != nil {
 			dst.Exporter = overlay.Exporter
+		}
+		if overlay.UiOtlpEndpoint != "" {
+			dst.UiOtlpEndpoint = overlay.UiOtlpEndpoint
 		}
 	}
 
