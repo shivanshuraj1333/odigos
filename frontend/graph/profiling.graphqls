@@ -1,0 +1,57 @@
+# [srs:review] [can this be merged with schema.graphqls file?]
+extend type Query {
+    profilingSlots: ProfilingSlots
+}
+
+extend type Mutation {
+    enableSourceProfiling(
+        namespace: String!
+        kind: String!
+        name: String!
+    ): EnableProfilingResult!
+
+    disableSourceProfiling(
+        namespace: String!
+        kind: String!
+        name: String!
+    ): DisableProfilingResult!
+
+    clearSourceProfilingBuffer(
+        namespace: String!
+        kind: String!
+        name: String!
+    ): ClearProfilingBufferResult!
+}
+
+type ProfilingSlots {
+    activeKeys: [String!]!
+    keysWithData: [String!]!
+    totalBytesInUse: Int!
+    slotMaxBytes: Int!
+    maxSlots: Int!
+    maxTotalBytesBudget: Int!
+    slotTtlSeconds: Int!
+}
+
+type EnableProfilingResult {
+    status: String!
+    sourceKey: String!
+    maxSlots: Int!
+    activeSlots: Int!
+}
+
+type DisableProfilingResult {
+    status: String!
+    sourceKey: String!
+    activeSlots: Int!
+}
+
+type ClearProfilingBufferResult {
+    status: String!
+    sourceKey: String!
+    activeSlots: Int!
+}
+
+type SourceProfilingResult {
+    profileJson: String!
+}

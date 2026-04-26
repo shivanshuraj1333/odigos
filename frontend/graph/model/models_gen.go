@@ -124,6 +124,12 @@ type BooleanConditionInput struct {
 	ExpectedValue bool             `json:"expectedValue"`
 }
 
+type ClearProfilingBufferResult struct {
+	Status      string `json:"status"`
+	SourceKey   string `json:"sourceKey"`
+	ActiveSlots int    `json:"activeSlots"`
+}
+
 type ClusterAttribute struct {
 	AttributeName        string `json:"attributeName"`
 	AttributeStringValue string `json:"attributeStringValue"`
@@ -436,6 +442,12 @@ type DiagnoseStats struct {
 	TotalSizeHuman string `json:"totalSizeHuman"`
 }
 
+type DisableProfilingResult struct {
+	Status      string `json:"status"`
+	SourceKey   string `json:"sourceKey"`
+	ActiveSlots int    `json:"activeSlots"`
+}
+
 type DistroParam struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -483,6 +495,13 @@ type EffectiveConfig struct {
 	ComponentLogLevels               *ComponentLogLevelsConfig           `json:"componentLogLevels,omitempty"`
 	Provenance                       []*ProvenanceEntry                  `json:"provenance,omitempty"`
 	ManifestYaml                     *string                             `json:"manifestYAML,omitempty"`
+}
+
+type EnableProfilingResult struct {
+	Status      string `json:"status"`
+	SourceKey   string `json:"sourceKey"`
+	MaxSlots    int    `json:"maxSlots"`
+	ActiveSlots int    `json:"activeSlots"`
 }
 
 type EntityProperty struct {
@@ -743,17 +762,18 @@ type K8sActualNamespace struct {
 }
 
 type K8sActualSource struct {
-	Namespace                 string             `json:"namespace"`
-	Name                      string             `json:"name"`
-	Kind                      K8sResourceKind    `json:"kind"`
-	DataStreamNames           []*string          `json:"dataStreamNames"`
-	NumberOfInstances         *int               `json:"numberOfInstances,omitempty"`
-	Selected                  *bool              `json:"selected,omitempty"`
-	OtelServiceName           *string            `json:"otelServiceName,omitempty"`
-	Containers                []*SourceContainer `json:"containers,omitempty"`
-	Conditions                []*Condition       `json:"conditions,omitempty"`
-	ManifestYaml              *string            `json:"manifestYAML,omitempty"`
-	InstrumentationConfigYaml *string            `json:"instrumentationConfigYAML,omitempty"`
+	Namespace                 string                 `json:"namespace"`
+	Name                      string                 `json:"name"`
+	Kind                      K8sResourceKind        `json:"kind"`
+	DataStreamNames           []*string              `json:"dataStreamNames"`
+	NumberOfInstances         *int                   `json:"numberOfInstances,omitempty"`
+	Selected                  *bool                  `json:"selected,omitempty"`
+	OtelServiceName           *string                `json:"otelServiceName,omitempty"`
+	Containers                []*SourceContainer     `json:"containers,omitempty"`
+	Conditions                []*Condition           `json:"conditions,omitempty"`
+	ManifestYaml              *string                `json:"manifestYAML,omitempty"`
+	InstrumentationConfigYaml *string                `json:"instrumentationConfigYAML,omitempty"`
+	Profiling                 *SourceProfilingResult `json:"profiling,omitempty"`
 }
 
 type K8sAnnotationAttribute struct {
@@ -1355,6 +1375,16 @@ type PodWorkloadInput struct {
 	Name      string          `json:"name"`
 }
 
+type ProfilingSlots struct {
+	ActiveKeys          []string `json:"activeKeys"`
+	KeysWithData        []string `json:"keysWithData"`
+	TotalBytesInUse     int      `json:"totalBytesInUse"`
+	SlotMaxBytes        int      `json:"slotMaxBytes"`
+	MaxSlots            int      `json:"maxSlots"`
+	MaxTotalBytesBudget int      `json:"maxTotalBytesBudget"`
+	SlotTTLSeconds      int      `json:"slotTtlSeconds"`
+}
+
 type ProvenanceEntry struct {
 	HelmPath       string `json:"helmPath"`
 	ReconciledFrom string `json:"reconciledFrom"`
@@ -1507,6 +1537,10 @@ type SourceContainer struct {
 	Instrumented           bool    `json:"instrumented"`
 	InstrumentationMessage string  `json:"instrumentationMessage"`
 	OtelDistroName         *string `json:"otelDistroName,omitempty"`
+}
+
+type SourceProfilingResult struct {
+	ProfileJSON string `json:"profileJson"`
 }
 
 type SourcesScope struct {
