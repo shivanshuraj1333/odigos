@@ -125,6 +125,7 @@ type K8sActualSource {
   conditions: [Condition!]
   manifestYAML: String
   instrumentationConfigYAML: String
+  profiling: SourceProfilingResult
 }
 
 input K8sDesiredSourceInput {
