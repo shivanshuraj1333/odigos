@@ -21,6 +21,7 @@ import {
   useInstrumentationRuleCRUD,
   useNamespace,
   usePotentialDestinations,
+  useProfiling,
   useSourceCRUD,
   useTestConnection,
   useWorkloadUtils,
@@ -40,6 +41,13 @@ const OverviewModalsAndDrawers = () => {
   const { createDestination, updateDestination, deleteDestination } = useDestinationCRUD();
   const { createInstrumentationRuleV2, updateInstrumentationRule, deleteInstrumentationRule } = useInstrumentationRuleCRUD();
   const { persistSources, persistSourcesV2, updateSource, fetchSourceById, fetchSourceLibraries, fetchPeerSources } = useSourceCRUD();
+  const { fetchProfilingSlots, enableProfiling, fetchSourceProfiling } = useProfiling();
+
+  // Drawer close should NOT release the profiling slot — let the UI's ProfileStore TTL
+  // (PROFILES_SLOT_TTL_SECONDS, default 120s of no fetchSourceProfiling polling) reclaim
+  // it instead. This avoids paying re-enable + re-buffer cost for users who just toggle
+  // the panel. SourceDrawer requires a function shape, so we pass a no-op.
+  const releaseProfilingNoop = useCallback(async () => undefined, []);
 
   const handleCloseModal = useCallback(() => setCurrentModal(''), [setCurrentModal]);
 
@@ -86,6 +94,10 @@ const OverviewModalsAndDrawers = () => {
         fetchSourceDescribe={fetchDescribeSource}
         fetchSourceLibraries={fetchSourceLibraries}
         fetchPeerSources={fetchPeerSources}
+        fetchProfilingSlots={fetchProfilingSlots}
+        enableProfiling={enableProfiling}
+        releaseProfiling={releaseProfilingNoop}
+        fetchSourceProfiling={fetchSourceProfiling}
       />
       <DestinationDrawer categories={categories} updateDestination={updateDestination} deleteDestination={deleteDestination} testConnection={testConnection} />
       <InstrumentationRuleDrawer updateInstrumentationRule={updateInstrumentationRule} deleteInstrumentationRule={deleteInstrumentationRule} />
