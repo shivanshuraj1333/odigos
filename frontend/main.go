@@ -173,7 +173,8 @@ func startHTTPServer(ctx context.Context,
 	logger logr.Logger,
 	odigosMetrics *collectormetrics.OdigosMetricsConsumer,
 	k8sCacheClient client.Client,
-	promAPI v1.API) (*gin.Engine, error) {
+	promAPI v1.API,
+	profileStore *profiles.ProfileStore) (*gin.Engine, error) {
 	var r *gin.Engine
 	if flags.Debug {
 		r = gin.Default()
@@ -219,6 +220,7 @@ func startHTTPServer(ctx context.Context,
 			Logger:          logger,
 			PromAPI:         promAPI,
 			K8sCacheClient:  k8sCacheClient,
+			ProfileStore:    profileStore,
 		},
 	})
 	gqlExecutor := executor.New(gqlExecutableSchema)
@@ -376,7 +378,10 @@ func main() {
 		odigosProfilesConsumer = nil
 	}
 
-	// Register metric/profile sinks on one otlpReceiver, start gRPC, then block until shutdown.
+	// Register OTLP profiles sink on UI port and start gRPC.
+	// NOTE: We intentionally avoid starting a second OTLP signal component on the same endpoint.
+	// Starting separate metrics/profiles receiver components against :4317 leads to one signal
+	// not being registered (gateway then sees "unknown service ... ProfilesService").
 	otlpPort := consts.OTLPPort
 	otlpReceiver, err := otlp.NewReceiver(otlpPort)
 	if err != nil {
@@ -394,7 +399,7 @@ func main() {
 
 	// OTLP receiver lifecycle: warn and continue if it cannot start.
 	if otlpReceiver != nil {
-		registeredPipelines := []otlp.OTLPPipeline{otlp.NewMetricsPipeline(otlpReceiver, odigosMetricsConsumer)}
+		registeredPipelines := []otlp.OTLPPipeline{}
 		if odigosProfilesConsumer != nil {
 			registeredPipelines = append(registeredPipelines, otlp.NewProfilesPipeline(otlpReceiver, odigosProfilesConsumer.GetConsumer()))
 		}
@@ -434,7 +439,7 @@ func main() {
 	}
 
 	// Start server
-	r, err := startHTTPServer(ctx, &flags, logger, odigosMetricsConsumer, k8sCacheClient, promAPI)
+	r, err := startHTTPServer(ctx, &flags, logger, odigosMetricsConsumer, k8sCacheClient, promAPI, profileStore)
 	if err != nil {
 		log.Error("Error starting server", "err", err)
 		os.Exit(1)

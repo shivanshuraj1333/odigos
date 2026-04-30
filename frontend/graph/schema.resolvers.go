@@ -12,12 +12,14 @@ import (
 
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	"github.com/odigos-io/odigos/api/odigos/v1alpha1"
+	commonlogger "github.com/odigos-io/odigos/common/logger"
 	"github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/frontend/graph/model"
 	"github.com/odigos-io/odigos/frontend/kube"
 	"github.com/odigos-io/odigos/frontend/services"
 	"github.com/odigos-io/odigos/frontend/services/describe/odigos_describe"
 	"github.com/odigos-io/odigos/frontend/services/describe/source_describe"
+	"github.com/odigos-io/odigos/frontend/services/profiles"
 	testconnection "github.com/odigos-io/odigos/frontend/services/test_connection"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	"github.com/odigos-io/odigos/k8sutils/pkg/pro"
@@ -150,6 +152,20 @@ func (r *computePlatformResolver) Source(ctx context.Context, obj *model.Compute
 	}
 	for _, item := range otherConditions {
 		payload.Conditions = append(payload.Conditions, item.Conditions...)
+	}
+
+	// Compute source-specific profiling payload on-demand for the source() path only.
+	if r.ProfileStore != nil {
+		log := commonlogger.LoggerCompat().With("subsystem", "backend-profiling")
+		if profilingOut, profilingErr := profiles.GetProfilingForSource(ctx, r.ProfileStore, ns, string(kind), name); profilingErr == nil {
+			if profileJSON, marshalErr := json.Marshal(profilingOut.Profile); marshalErr == nil {
+				payload.Profiling = &model.SourceProfilingResult{ProfileJSON: string(profileJSON)}
+			} else {
+				log.Warn("source_profile_marshal_failed", "namespace", ns, "kind", kind, "name", name, "err", marshalErr)
+			}
+		} else {
+			log.Warn("source_profile_build_failed", "namespace", ns, "kind", kind, "name", name, "err", profilingErr)
+		}
 	}
 
 	return payload, nil

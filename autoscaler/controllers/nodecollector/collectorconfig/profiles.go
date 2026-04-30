@@ -36,7 +36,9 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 			Pipelines: map[string]config.Pipeline{
 				"profiles": {
 					Receivers:  []string{commonconf.ProfilingReceiver},
-					Processors: []string{commonconf.ProfilingNodeFilterProcessor, commonconf.ProfilingNodeK8sAttributesProcessor},
+					// Enrich first, then drop: profiles may arrive with k8s.pod.ip (no container.id yet).
+					// k8sattributes can resolve container.id from pod metadata; filter then removes non-k8s processes.
+					Processors: []string{commonconf.ProfilingNodeK8sAttributesProcessor, commonconf.ProfilingNodeFilterProcessor},
 					Exporters:  []string{commonconf.ProfilingNodeToGatewayExporter},
 				},
 			},
