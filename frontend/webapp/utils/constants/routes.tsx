@@ -20,7 +20,17 @@ const IS_DEV = process.env.NODE_ENV === 'development';
 const HAS_WINDOW = typeof window !== 'undefined';
 const DEFAULT = 'http://localhost:8085';
 
-const BACKEND_HTTP_ORIGIN = IS_DEV || !HAS_WINDOW ? DEFAULT : window.location.origin;
+// When developing the Next app (`yarn dev`), GraphQL defaults to DEFAULT (8085) unless you set:
+//   NEXT_PUBLIC_ODIGOS_BACKEND_URL=http://127.0.0.1:3000
+// e.g. `yarn dev:local-ui` or `../scripts/dev-webapp-with-local-odigos-ui.sh` while odigos-ui (or
+// `kubectl port-forward -n odigos-system svc/ui 3000:3000`) is running on that port.
+const ENV_BACKEND = (process.env.NEXT_PUBLIC_ODIGOS_BACKEND_URL || '').replace(/\/$/, '');
+
+const BACKEND_HTTP_ORIGIN = ENV_BACKEND
+  ? ENV_BACKEND
+  : IS_DEV || !HAS_WINDOW
+    ? DEFAULT
+    : window.location.origin;
 
 export const API = {
   BACKEND_HTTP_ORIGIN,

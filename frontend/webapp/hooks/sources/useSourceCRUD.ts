@@ -216,7 +216,28 @@ export const useSourceCRUD = (): UseSourceCrud => {
     fetchSources,
     fetchSourcesByTargets,
     fetchSourceById,
-    fetchSourceLibraries: (payload: WorkloadId) => querySourceLibraries({ variables: payload }),
+    fetchSourceLibraries: async (payload: WorkloadId) => {
+      const res = await querySourceLibraries({ variables: payload });
+      const components = res.data?.instrumentationInstanceComponents;
+      if (!components) return res;
+
+      // ui-kit renders monitor icons from component.type and currently assumes a string.
+      // Normalize/filer invalid values from backend payload to avoid runtime crashes.
+      const normalized = components
+        .filter((c) => typeof c?.type === 'string' && c.type.trim() !== '')
+        .map((c) => ({
+          ...c,
+          type: c.type!.trim(),
+        }));
+
+      return {
+        ...res,
+        data: {
+          ...res.data,
+          instrumentationInstanceComponents: normalized,
+        },
+      };
+    },
     fetchPeerSources: (serviceName: string) => queryPeerSources({ variables: { serviceName } }),
     persistSources,
     persistSourcesV2,

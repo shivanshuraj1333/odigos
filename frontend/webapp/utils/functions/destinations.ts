@@ -1,5 +1,22 @@
 import type { Destination } from '@odigos/ui-kit/types';
 
+/**
+ * GraphQL may include extra keys (e.g. profiles). @odigos/ui-kit maps signals with
+ * `Object.keys(exportedSignals).filter(...).map(k => yr[k])` — unknown keys become
+ * undefined and MonitorsIcons crashes on `toLowerCase()`. Keep only the three keys
+ * the UI kit understands.
+ */
+function normalizeExportedSignals(signals: Destination['exportedSignals'] | null | undefined): Destination['exportedSignals'] {
+  if (!signals || typeof signals !== 'object') {
+    return { logs: false, metrics: false, traces: false };
+  }
+  return {
+    logs: Boolean(signals.logs),
+    metrics: Boolean(signals.metrics),
+    traces: Boolean(signals.traces),
+  };
+}
+
 export const mapFetchedDestinations = (items: Destination[]): Destination[] => {
   return items.map((item) => {
     // Replace deprecated string values, with boolean values
@@ -20,6 +37,6 @@ export const mapFetchedDestinations = (items: Destination[]): Destination[] => {
             .replace('"QRYN_OSS_RESOURCE_TO_TELEMETRY_CONVERSION":"No"', '"QRYN_OSS_RESOURCE_TO_TELEMETRY_CONVERSION":"false"')
         : item.fields;
 
-    return { ...item, fields };
+    return { ...item, fields, exportedSignals: normalizeExportedSignals(item.exportedSignals) };
   });
 };
