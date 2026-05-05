@@ -1,0 +1,704 @@
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package process // import "go.opentelemetry.io/ebpf-profiler/process"
+
+import (
+	"bufio"
+	"bytes"
+	"debug/elf"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/ebpf-profiler/internal/log"
+	"golang.org/x/sys/unix"
+
+	"go.opentelemetry.io/ebpf-profiler/libpf"
+	"go.opentelemetry.io/ebpf-profiler/libpf/pfelf"
+	"go.opentelemetry.io/ebpf-profiler/libpf/pfunsafe"
+	"go.opentelemetry.io/ebpf-profiler/remotememory"
+	"go.opentelemetry.io/ebpf-profiler/stringutil"
+)
+
+// cgroupInodeLoggedOnce tracks cgroup inodes we have already logged about to avoid flooding.
+var cgroupInodeLoggedOnce sync.Map
+
+// commContainerCacheTTL is how often we rebuild the comm→container_id cache.
+const commContainerCacheTTL = 15 * time.Second
+
+// commContainerCache is a best-effort cache mapping process comm names to container IDs,
+// built by scanning the host /proc (kind-node namespace). Used as a fallback when the
+// eBPF-reported PID does not exist in /proc (PID namespace mismatch in kind clusters).
+// Only entries where the comm uniquely maps to a single container are kept.
+var commContainerCache struct {
+	mu         sync.Mutex
+	lastUpdate time.Time
+	data       map[string]libpf.String // comm → container_id (only unique mappings)
+}
+
+// LookupContainerIDByComm returns the container ID for a process whose comm name is unique
+// across all containers visible in /proc. Returns NullString if the comm is ambiguous
+// (multiple containers) or not found.
+func LookupContainerIDByComm(comm string) libpf.String {
+	commContainerCache.mu.Lock()
+	defer commContainerCache.mu.Unlock()
+
+	if time.Since(commContainerCache.lastUpdate) > commContainerCacheTTL {
+		commContainerCache.data = buildCommContainerMap()
+		commContainerCache.lastUpdate = time.Now()
+		log.Infof("LookupContainerIDByComm: rebuilt comm→container cache with %d unique entries",
+			len(commContainerCache.data))
+	}
+
+	if commContainerCache.data == nil {
+		return libpf.NullString
+	}
+	return commContainerCache.data[comm]
+}
+
+// buildCommContainerMap scans /proc to build a map from comm names to container IDs.
+// Only comms that are found in exactly one container are included.
+func buildCommContainerMap() map[string]libpf.String {
+	// comm → set of container IDs seen with that comm
+	commToContainers := make(map[string]map[libpf.String]struct{})
+
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		log.Warnf("buildCommContainerMap: failed to read /proc: %v", err)
+		return nil
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(entry.Name()); err != nil {
+			continue // skip non-numeric entries
+		}
+		pid := entry.Name()
+
+		commBytes, err := os.ReadFile("/proc/" + pid + "/comm")
+		if err != nil {
+			continue
+		}
+		comm := strings.TrimSpace(string(commBytes))
+		if comm == "" {
+			continue
+		}
+
+		cgroupFile, err := os.Open("/proc/" + pid + "/cgroup")
+		if err != nil {
+			continue
+		}
+		containerID := parseContainerID(cgroupFile)
+		cgroupFile.Close()
+
+		if containerID == libpf.NullString {
+			continue
+		}
+
+		if commToContainers[comm] == nil {
+			commToContainers[comm] = make(map[libpf.String]struct{})
+		}
+		commToContainers[comm][containerID] = struct{}{}
+	}
+
+	// Keep only comms that map to exactly one container
+	result := make(map[string]libpf.String, len(commToContainers))
+	for comm, containers := range commToContainers {
+		if len(containers) == 1 {
+			for containerID := range containers {
+				result[comm] = containerID
+			}
+		}
+	}
+	return result
+}
+
+// ErrNoMappings is returned when no mappings can be extracted.
+var ErrNoMappings = errors.New("no mappings")
+
+// ErrCallbackStopped is returned when the IterateMappings callback returns
+// false, signaling that iteration was intentionally interrupted.
+var ErrCallbackStopped = errors.New("IterateMappings stopped by callback")
+
+const (
+	containerSource = "[0-9a-f]{64}"
+	taskSource      = "[0-9a-f]{32}-\\d+"
+)
+
+//nolint:lll
+var (
+	// expLine matches a line in the /proc/<pid>/cgroup file. It has a submatch for the last element (path), which contains the container ID. Supports both cgroup v1 and v2.
+	expLine = regexp.MustCompile(`^\d+:[^:]*:(.+)$`)
+
+	// Inspired from https://github.com/DataDog/dd-otel-host-profiler/blob/1e50a36d4c3a8a87f0cc828f37b48455ec436e55/containermetadata/container.go#L32-L47 with the following changes to handle unit tests in process_test.go:
+	// - support prefix after `scope` to handle "0::/system.slice/docker-b1eba9dfaeba29d8b80532a574a03ea3cac29384327f339c26da13649e2120df.scope/init"
+	// - remove uuidSource to doesn't match "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.gnome.Terminal.slice/vte-spawn-868f9513-eee8-457d-8e36-1b37ae8ae622.scope"
+	expContainerID = regexp.MustCompile(fmt.Sprintf(`(%s|%s)(?:\.scope)?(?:/[a-z]+)?$`, containerSource, taskSource))
+)
+
+// systemProcess provides an implementation of the Process interface for a
+// process that is currently running on this machine.
+type systemProcess struct {
+	pid libpf.PID
+	tid libpf.PID
+
+	mainThreadExit bool
+	remoteMemory   remotememory.RemoteMemory
+
+	fileToMapping map[string]*RawMapping
+}
+
+var _ Process = &systemProcess{}
+
+var bufPool sync.Pool
+
+// mappingParseBufferSize defines the initial buffer size used to store lines from
+// /proc/PID/maps during parsing of mappings.
+
+const mappingParseBufferSize = 256
+
+func init() {
+	bufPool = sync.Pool{
+		New: func() any {
+			buf := make([]byte, mappingParseBufferSize)
+			return &buf
+		},
+	}
+}
+
+// New returns an object with Process interface accessing it
+func New(pid, tid libpf.PID) Process {
+	return &systemProcess{
+		pid:          pid,
+		tid:          tid,
+		remoteMemory: remotememory.NewProcessVirtualMemory(pid),
+	}
+}
+
+func (sp *systemProcess) PID() libpf.PID {
+	return sp.pid
+}
+
+func (sp *systemProcess) GetMachineData() MachineData {
+	return MachineData{Machine: pfelf.CurrentMachine}
+}
+
+func (sp *systemProcess) GetExe() (libpf.String, error) {
+	str, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", sp.pid))
+	if err != nil {
+		return libpf.NullString, err
+	}
+	return libpf.Intern(str), nil
+}
+
+func (sp *systemProcess) GetProcessMeta(cfg MetaConfig) ProcessMeta {
+	var processName libpf.String
+	exePath, _ := sp.GetExe()
+	if name, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", sp.pid)); err == nil {
+		processName = libpf.Intern(pfunsafe.ToString(name))
+	}
+
+	var envVarMap map[libpf.String]libpf.String
+	if len(cfg.IncludeEnvVars) > 0 {
+		if envVars, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", sp.pid)); err == nil {
+			envVarMap = make(map[libpf.String]libpf.String, len(cfg.IncludeEnvVars))
+			// environ has environment variables separated by a null byte (hex: 00)
+			for envVar := range strings.SplitSeq(pfunsafe.ToString(envVars), "\000") {
+				var fields [2]string
+				if stringutil.SplitN(envVar, "=", fields[:]) < 2 {
+					continue
+				}
+				if _, ok := cfg.IncludeEnvVars[fields[0]]; ok {
+					envVarMap[libpf.Intern(fields[0])] = libpf.Intern(fields[1])
+				}
+			}
+		}
+	}
+
+	containerID, err := extractContainerID(sp.pid)
+	if err != nil {
+		log.Debugf("Failed extracting containerID for %d: %v", sp.pid, err)
+	}
+	return ProcessMeta{
+		Name:         processName,
+		Executable:   exePath,
+		ContainerID:  containerID,
+		EnvVariables: envVarMap,
+	}
+}
+
+// parseContainerID parses cgroup v1 and v2 container IDs
+func parseContainerID(cgroupFile io.Reader) libpf.String {
+	scanner := bufio.NewScanner(cgroupFile)
+	buf := make([]byte, 512)
+	// Providing a predefined buffer overrides the internal buffer that Scanner uses (4096 bytes).
+	// We can do that and also set a maximum allocation size on the following call.
+	// With a maximum of 4096 characters path in the kernel, 8192 should be fine here. We don't
+	// expect lines in /proc/<PID>/cgroup to be longer than that.
+	scanner.Buffer(buf, 8192)
+	for scanner.Scan() {
+		b := scanner.Bytes()
+		if bytes.Equal(b, []byte("0::/")) {
+			continue // Skip a common case
+		}
+		line := pfunsafe.ToString(b)
+		m := expLine.FindStringSubmatchIndex(line)
+		if len(m) == 4 {
+			sub := line[m[2]:m[3]]
+			if parts := expContainerID.FindStringSubmatchIndex(sub); len(parts) == 4 {
+				return libpf.Intern(sub[parts[2]:parts[3]])
+			}
+		}
+		log.Debugf("Could not extract container ID from line: %s", line)
+	}
+
+	// No containerID could be extracted
+	return libpf.NullString
+}
+
+// extractContainerID returns the containerID for pid (supports both cgroup v1 and v2)
+func extractContainerID(pid libpf.PID) (libpf.String, error) {
+	cgroupFile, err := os.Open(fmt.Sprintf("/proc/%d/cgroup", pid))
+	if err != nil {
+		return libpf.NullString, err
+	}
+	defer cgroupFile.Close()
+
+	return parseContainerID(cgroupFile), nil
+}
+
+// CgroupRootInode returns the inode of /proc/<pid>/root/sys/fs/cgroup, which identifies
+// the cgroup namespace root visible to the given process, unaffected by namespace masking.
+func CgroupRootInode(pid libpf.PID) (uint64, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(fmt.Sprintf("/proc/%d/root/sys/fs/cgroup", pid), &st); err != nil {
+		return 0, err
+	}
+	return st.Ino, nil
+}
+
+// DetectSelfContainerIDViaInode detects the current process's container ID by matching
+// cgroup directory inodes. When the process runs in a private cgroup namespace (cgroup v2),
+// /proc/self/cgroup returns a path relative to the namespace root (e.g. "0::/"), making it
+// impossible to extract the container ID via the standard path. However, stat("/sys/fs/cgroup")
+// returns the inode of the process's actual cgroup directory on the host, unaffected by
+// namespace masking. This function walks the host's cgroup tree (via
+// /proc/1/root/sys/fs/cgroup) to find the directory whose inode matches, then extracts
+// the container ID from its path.
+func DetectSelfContainerIDViaInode() (libpf.String, uint64, error) {
+	const hostCgroupRoot = "/proc/1/root/sys/fs/cgroup"
+
+	var selfStat unix.Stat_t
+	if err := unix.Stat("/sys/fs/cgroup", &selfStat); err != nil {
+		return libpf.NullString, 0, fmt.Errorf("failed to stat /sys/fs/cgroup: %w", err)
+	}
+	selfIno := selfStat.Ino
+
+	var matched libpf.String
+	err := filepath.WalkDir(hostCgroupRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d == nil {
+				return err // root is inaccessible
+			}
+			return nil // skip inaccessible subdirectories
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		var st unix.Stat_t
+		if err := unix.Stat(path, &st); err != nil {
+			return nil
+		}
+		if st.Ino == selfIno {
+			if parts := expContainerID.FindStringSubmatch(path); len(parts) == 2 {
+				matched = libpf.Intern(parts[1])
+			}
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return libpf.NullString, 0, fmt.Errorf("failed to walk host cgroup tree: %w", err)
+	}
+	return matched, selfIno, nil
+}
+
+// ExtractContainerIDFromCgroupInode finds the container ID for the given cgroupv2 cgroup ID
+// (which equals the inode of the cgroup directory on the host). This is used as a fallback
+// when the standard PID-based container ID lookup fails due to PID namespace mismatch,
+// e.g., when the profiler runs inside a kind cluster node (Docker container) but eBPF
+// reports init-namespace PIDs that don't exist in the profiler's /proc view.
+func ExtractContainerIDFromCgroupInode(cgroupID uint64) libpf.String {
+	const hostCgroupRoot = "/proc/1/root/sys/fs/cgroup"
+
+	// Only do the expensive walk and logging once per unique cgroup inode.
+	if _, alreadySeen := cgroupInodeLoggedOnce.LoadOrStore(cgroupID, struct{}{}); alreadySeen {
+		// Fast path: re-walk without logging
+		var matched libpf.String
+		_ = filepath.WalkDir(hostCgroupRoot, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return nil
+			}
+			var st unix.Stat_t
+			if unix.Stat(p, &st) == nil && st.Ino == cgroupID {
+				if parts := expContainerID.FindStringSubmatch(p); len(parts) == 2 {
+					matched = libpf.Intern(parts[1])
+				}
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		return matched
+	}
+
+	log.Infof("ExtractContainerIDFromCgroupInode: first lookup for inode %d under %s",
+		cgroupID, hostCgroupRoot)
+
+	var matched libpf.String
+	dirCount := 0
+	_ = filepath.WalkDir(hostCgroupRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if d == nil {
+				log.Warnf("ExtractContainerIDFromCgroupInode: root walk error: %v", err)
+				return err
+			}
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		dirCount++
+		var st unix.Stat_t
+		if err := unix.Stat(p, &st); err != nil {
+			return nil
+		}
+		if st.Ino == cgroupID {
+			log.Infof("ExtractContainerIDFromCgroupInode: inode %d matched path %s", cgroupID, p)
+			if parts := expContainerID.FindStringSubmatch(p); len(parts) == 2 {
+				matched = libpf.Intern(parts[1])
+			} else {
+				log.Warnf("ExtractContainerIDFromCgroupInode: path %s did not match container ID regex", p)
+			}
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	log.Infof("ExtractContainerIDFromCgroupInode: scanned %d dirs for inode %d, result=%q",
+		dirCount, cgroupID, matched)
+	return matched
+}
+
+func trimMappingPath(path string) string {
+	// Trim the deleted indication from the path.
+	// See path_with_deleted in linux/fs/d_path.c
+	path = strings.TrimSuffix(path, " (deleted)")
+	if path == "/dev/zero" {
+		// Some JIT engines map JIT area from /dev/zero
+		// make it anonymous.
+		return ""
+	}
+	return path
+}
+
+func iterateMappings(mapsFile io.Reader, callback func(m RawMapping) bool) (uint32, error) {
+	numParseErrors := uint32(0)
+	scanner := bufio.NewScanner(mapsFile)
+	scanBuf := bufPool.Get().(*[]byte)
+	if scanBuf == nil {
+		return 0, errors.New("failed to get memory from sync pool")
+	}
+	defer func() {
+		// Reset memory and return it for reuse.
+		for j := 0; j < len(*scanBuf); j++ {
+			(*scanBuf)[j] = 0x0
+		}
+		bufPool.Put(scanBuf)
+	}()
+
+	scanner.Buffer(*scanBuf, 8192)
+	for scanner.Scan() {
+		var fields [6]string
+		var addrs [2]string
+		var devs [2]string
+
+		// WARNING: line (and all substrings derived from it, including the
+		// Path field of the emitted RawMapping) points into scanBuf which is
+		// recycled after iteration. Callers must intern Path (libpf.Intern)
+		// before storing.
+		line := pfunsafe.ToString(scanner.Bytes())
+		if stringutil.FieldsN(line, fields[:]) < 5 {
+			numParseErrors++
+			continue
+		}
+		if stringutil.SplitN(fields[0], "-", addrs[:]) < 2 {
+			numParseErrors++
+			continue
+		}
+
+		mapsFlags := fields[1]
+		if len(mapsFlags) < 3 {
+			numParseErrors++
+			continue
+		}
+		flags := elf.ProgFlag(0)
+		if mapsFlags[0] == 'r' {
+			flags |= elf.PF_R
+		}
+		if mapsFlags[1] == 'w' {
+			flags |= elf.PF_W
+		}
+		if mapsFlags[2] == 'x' {
+			flags |= elf.PF_X
+		}
+
+		// Ignore non-readable and non-executable mappings
+		if flags&(elf.PF_R|elf.PF_X) == 0 {
+			continue
+		}
+		inode, err := strconv.ParseUint(fields[4], 10, 64)
+		if err != nil {
+			log.Debugf("inode: failed to convert %s to uint64: %v", fields[4], err)
+			numParseErrors++
+			continue
+		}
+
+		if stringutil.SplitN(fields[3], ":", devs[:]) < 2 {
+			numParseErrors++
+			continue
+		}
+		major, err := strconv.ParseUint(devs[0], 16, 64)
+		if err != nil {
+			log.Debugf("major device: failed to convert %s to uint64: %v", devs[0], err)
+			numParseErrors++
+			continue
+		}
+		minor, err := strconv.ParseUint(devs[1], 16, 64)
+		if err != nil {
+			log.Debugf("minor device: failed to convert %s to uint64: %v", devs[1], err)
+			numParseErrors++
+			continue
+		}
+		device := major<<8 + minor
+
+		var path string
+		if inode == 0 {
+			if fields[5] == "[vdso]" {
+				// Map to something filename looking with synthesized inode
+				path = VdsoPathName
+				device = 0
+				inode = vdsoInode
+			} else if fields[5] == "" {
+				// This is an anonymous mapping, keep it
+			} else if strings.HasPrefix(fields[5], "[anon:") {
+				// Keep named anonymous mapping
+				path = fields[5]
+			} else {
+				// Ignore other mappings that are invalid, non-existent or are special pseudo-files
+				continue
+			}
+		} else {
+			path = trimMappingPath(fields[5])
+		}
+
+		vaddr, err := strconv.ParseUint(addrs[0], 16, 64)
+		if err != nil {
+			log.Debugf("vaddr: failed to convert %s to uint64: %v", addrs[0], err)
+			numParseErrors++
+			continue
+		}
+		vend, err := strconv.ParseUint(addrs[1], 16, 64)
+		if err != nil {
+			log.Debugf("vend: failed to convert %s to uint64: %v", addrs[1], err)
+			numParseErrors++
+			continue
+		}
+		length := vend - vaddr
+
+		fileOffset, err := strconv.ParseUint(fields[2], 16, 64)
+		if err != nil {
+			log.Debugf("fileOffset: failed to convert %s to uint64: %v", fields[2], err)
+			numParseErrors++
+			continue
+		}
+
+		if !callback(RawMapping{
+			Vaddr:      vaddr,
+			Length:     length,
+			Flags:      flags,
+			FileOffset: fileOffset,
+			Device:     device,
+			Inode:      inode,
+			Path:       path,
+		}) {
+			return numParseErrors, ErrCallbackStopped
+		}
+	}
+	return numParseErrors, scanner.Err()
+}
+
+func (sp *systemProcess) IterateMappings(callback func(m RawMapping) bool) (uint32, error) {
+	mapsFile, err := os.Open(fmt.Sprintf("/proc/%d/maps", sp.pid))
+	if err != nil {
+		return 0, err
+	}
+	defer mapsFile.Close()
+
+	fileToMapping := make(map[string]*RawMapping)
+	gotMappings := false
+
+	collectForOpenELF := func(m RawMapping) bool {
+		gotMappings = true
+		if m.IsExecutable() || m.IsVDSO() {
+			stored := m
+			stored.Path = libpf.Intern(m.Path).String()
+			fileToMapping[stored.Path] = &stored
+		}
+		return callback(m)
+	}
+
+	numParseErrors, err := iterateMappings(mapsFile, collectForOpenELF)
+	if err != nil {
+		return numParseErrors, err
+	}
+
+	if !gotMappings {
+		// We could test for main thread exit here by checking for zombie state
+		// in /proc/sp.pid/stat but it's simpler to assume that this is the case
+		// and try extracting mappings for a different thread. Since we stopped
+		// processing /proc at agent startup, it's not possible that the agent
+		// will sample a process without mappings
+		log.Debugf("PID: %v main thread exit", sp.pid)
+		sp.mainThreadExit = true
+
+		if sp.pid == sp.tid {
+			return numParseErrors, ErrNoMappings
+		}
+
+		log.Debugf("TID: %v extracting mappings", sp.tid)
+		mapsFileAlt, err := os.Open(fmt.Sprintf("/proc/%d/task/%d/maps", sp.pid, sp.tid))
+		// On all errors resulting from trying to get mappings from a different thread,
+		// return ErrNoMappings which will keep the PID tracked in processmanager and
+		// allow for a future iteration to try extracting mappings from a different thread.
+		// This is done to deal with race conditions triggered by thread exits (we do not want
+		// the agent to unload process metadata when a thread exits but the process is still
+		// alive).
+		if err != nil {
+			return numParseErrors, ErrNoMappings
+		}
+		defer mapsFileAlt.Close()
+		numParseErrors, err := iterateMappings(mapsFileAlt, collectForOpenELF)
+		if err != nil || !gotMappings {
+			return numParseErrors, ErrNoMappings
+		}
+	}
+
+	sp.fileToMapping = fileToMapping
+	return numParseErrors, nil
+}
+
+func (sp *systemProcess) GetThreads() ([]ThreadInfo, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (sp *systemProcess) Close() error {
+	return nil
+}
+
+func (sp *systemProcess) GetRemoteMemory() remotememory.RemoteMemory {
+	return sp.remoteMemory
+}
+
+func (sp *systemProcess) extractMapping(m *RawMapping) (*bytes.Reader, error) {
+	data := make([]byte, m.Length)
+	_, err := sp.remoteMemory.ReadAt(data, int64(m.Vaddr))
+	if err != nil {
+		return nil, fmt.Errorf("unable to extract mapping at %#x from PID %d",
+			m.Vaddr, sp.pid)
+	}
+	return bytes.NewReader(data), nil
+}
+
+func (sp *systemProcess) getMappingFile(m *RawMapping) string {
+	if !m.IsFileBacked() {
+		return ""
+	}
+	if sp.mainThreadExit {
+		// Neither /proc/sp.pid/map_files nor /proc/sp.pid/task/sp.tid/map_files
+		// nor /proc/sp.pid/root exist if main thread has exited, so we use the
+		// mapping path directly under the sp.tid root.
+		rootPath := fmt.Sprintf("/proc/%v/task/%v/root", sp.pid, sp.tid)
+		return path.Join(rootPath, m.Path)
+	}
+	return fmt.Sprintf("/proc/%v/map_files/%x-%x", sp.pid, m.Vaddr, m.Vaddr+m.Length)
+}
+
+func (sp *systemProcess) OpenMappingFile(m *RawMapping) (ReadAtCloser, error) {
+	filename := sp.getMappingFile(m)
+	if filename == "" {
+		return nil, errors.New("no backing file for anonymous memory")
+	}
+	return os.Open(filename)
+}
+
+func (sp *systemProcess) GetMappingFileLastModified(m *RawMapping) int64 {
+	filename := sp.getMappingFile(m)
+	if filename != "" {
+		var st unix.Stat_t
+		if err := unix.Stat(filename, &st); err == nil {
+			return st.Mtim.Nano()
+		}
+	}
+	return 0
+}
+
+// vdsoFileID caches the VDSO FileID. This assumes there is single instance of
+// VDSO for the system.
+var vdsoFileID libpf.FileID
+
+func (sp *systemProcess) CalculateMappingFileID(m *RawMapping) (libpf.FileID, error) {
+	if m.IsVDSO() {
+		if vdsoFileID != (libpf.FileID{}) {
+			return vdsoFileID, nil
+		}
+		vdso, err := sp.extractMapping(m)
+		if err != nil {
+			return libpf.FileID{}, fmt.Errorf("failed to extract VDSO: %v", err)
+		}
+		vdsoFileID, err = libpf.FileIDFromExecutableReader(vdso)
+		return vdsoFileID, err
+	}
+	return libpf.FileIDFromExecutableFile(sp.getMappingFile(m))
+}
+
+func (sp *systemProcess) OpenELF(file string) (*pfelf.File, error) {
+	// Always open via map_files as it can open deleted files if available.
+	// No fallback is attempted:
+	// - if the process exited, the fallback will error also (/proc/>PID> is gone)
+	// - if the error is due to ELF content, same error will occur in both cases
+	// - if the process unmapped the ELF, its data is no longer needed
+	if m, ok := sp.fileToMapping[file]; ok {
+		if m.IsVDSO() {
+			vdso, err := sp.extractMapping(m)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract VDSO: %v", err)
+			}
+			return pfelf.NewFile(vdso, 0, false)
+		}
+		return pfelf.Open(sp.getMappingFile(m))
+	}
+
+	// Fall back to opening the file using the process specific root
+	return pfelf.Open(path.Join("/proc", strconv.Itoa(int(sp.pid)), "root", file))
+}

@@ -1,0 +1,173 @@
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
+
+// Package stackdeltatypes provides types used to represent stack delta information as constructed
+// by `nativeunwind.GetIntervalStructures` This information is a post-processed form of the
+// stack delta information that is used in all relevant packages.
+package stackdeltatypes // import "go.opentelemetry.io/ebpf-profiler/nativeunwind/stackdeltatypes"
+
+import (
+	"slices"
+
+	"go.opentelemetry.io/ebpf-profiler/support"
+)
+
+const (
+	// MinimumGap determines the minimum number of alignment bytes needed
+	// in order to keep the created STOP stack delta between functions
+	MinimumGap = 15
+
+	// UnwindHintNone indicates that no flags are set.
+	UnwindHintNone uint8 = 0
+	// UnwindHintKeep flags important intervals that should not be removed
+	// (e.g. has CALL/SYSCALL assembly opcode, or is part of function prologue)
+	UnwindHintKeep uint8 = 1
+	// UnwindHintEnd indicates end-of-function delta.
+	UnwindHintEnd uint8 = 2
+)
+
+// UnwindInfo contains the data needed to unwind PC, SP and FP
+type UnwindInfo = support.UnwindInfo
+
+// UnwindInfoInvalid is the stack delta info indicating invalid or unsupported PC.
+var UnwindInfoInvalid = UnwindInfo{Flags: support.UnwindFlagCommand,
+	Param: support.UnwindCommandInvalid}
+
+// UnwindInfoStop is the stack delta info indicating root function of a stack.
+var UnwindInfoStop = UnwindInfo{Flags: support.UnwindFlagCommand,
+	Param: support.UnwindCommandStop}
+
+// UnwindInfoSignal is the stack delta info indicating signal return frame.
+var UnwindInfoSignal = UnwindInfo{Flags: support.UnwindFlagCommand,
+	Param: support.UnwindCommandSignal}
+
+// UnwindInfoFramePointer contains the description to unwind a frame pointer frame.
+var UnwindInfoFramePointer = UnwindInfo{Flags: support.UnwindFlagCommand,
+	Param: support.UnwindCommandFramePointer,
+}
+
+// UnwindInfoLR contains the description to unwind ARM64 function without a frame (LR only)
+var UnwindInfoLR = UnwindInfo{
+	BaseReg:    support.UnwindRegSp,
+	AuxBaseReg: support.UnwindRegLr,
+}
+
+// StackDelta defines the start address for the delta interval, along with
+// the unwind information.
+type StackDelta struct {
+	Address uint64
+	Hints   uint8
+	Info    UnwindInfo
+}
+
+// StackDeltaArray defines an address space where consecutive entries establish
+// intervals for the stack deltas
+type StackDeltaArray []StackDelta
+
+// IntervalData contains everything that a userspace agent needs to have
+// to populate eBPF maps for the kernel-space native unwinder to do its job:
+type IntervalData struct {
+	// Deltas contains all stack deltas for a single binary.
+	// Two consecutive entries describe an interval.
+	Deltas StackDeltaArray
+}
+
+// AddEx adds a new stack delta to the array.
+func (deltas *StackDeltaArray) AddEx(delta StackDelta, sorted bool) {
+	num := len(*deltas)
+	if delta.Info.Flags&support.UnwindFlagCommand != 0 {
+		if delta.Info.Param == support.UnwindCommandSignal {
+			// EBPF code does a -1 fixup for return addresses.
+			// To match the signal handler function injected into
+			// stack, the signal handler stack delta must start one
+			// byte earlier to accommodate for the ebpf fixup.
+			// C-libraries will have a 'nop' inserted to make sure
+			// nothing conflicts.
+			delta.Address--
+		}
+		// FP information is invalid/unused for command opcodes.
+		// But DWARF info often leaves bogus data there, so resetting it
+		// reduces the number of unique Info contents generated.
+		delta.Info = UnwindInfo{
+			Flags: support.UnwindFlagCommand,
+			Param: delta.Info.Param,
+		}
+	}
+	if num > 0 && sorted {
+		prev := &(*deltas)[num-1]
+		if prev.Hints&UnwindHintEnd != 0 && prev.Address+MinimumGap >= delta.Address {
+			// The previous opcode is end-of-function marker, and
+			// the gap is not large. Reduce deltas by overwriting it.
+			if num <= 1 || (*deltas)[num-2].Info != delta.Info {
+				*prev = delta
+				return
+			}
+			// The delta before end-of-function marker is same as
+			// what is being inserted now. Overwrite that.
+			prev = &(*deltas)[num-2]
+			*deltas = (*deltas)[:num-1]
+		}
+		if prev.Info == delta.Info {
+			prev.Hints |= delta.Hints & UnwindHintKeep
+			return
+		}
+		if prev.Address == delta.Address {
+			*prev = delta
+			return
+		}
+	}
+	*deltas = append(*deltas, delta)
+}
+
+// Add adds a new stack delta from a sorted source.
+func (deltas *StackDeltaArray) Add(delta StackDelta) {
+	deltas.AddEx(delta, true)
+}
+
+// compareStackDelta implements the comparison logic for slices.SortFunc.
+// It must return:
+// -1 if a should come before b (a < b)
+// 0 if a and b are considered equal
+// 1 if a should come after b (a > b)
+func compareStackDelta(a, b StackDelta) int {
+	// 1. Primary Key: Address (uint64)
+	if a.Address < b.Address {
+		return -1
+	}
+	if a.Address > b.Address {
+		return 1
+	}
+	if a.Info.BaseReg < b.Info.BaseReg {
+		return -1
+	}
+	if a.Info.AuxBaseReg > b.Info.AuxBaseReg {
+		return 1
+	}
+	if a.Info.Param < b.Info.Param {
+		return -1
+	}
+	if a.Info.Param > b.Info.Param {
+		return 1
+	}
+	return 0
+}
+
+// Sort sorts the stack deltas.
+func (deltas *StackDeltaArray) Sort() {
+	slices.SortFunc(*deltas, compareStackDelta)
+}
+
+// PackDerefParam compresses pre- and post-dereference parameters to single value
+func PackDerefParam(preDeref, postDeref int32) (int32, bool) {
+	if postDeref < 0 || postDeref > 0x20 ||
+		postDeref%support.UnwindDerefMultiplier != 0 {
+		return 0, false
+	}
+	return preDeref + postDeref/support.UnwindDerefMultiplier, true
+}
+
+// UnpackDerefParam splits the pre- and post-dereference parameters from single value
+func UnpackDerefParam(param int32) (preDeref, postDeref int32) {
+	return param &^ support.UnwindDerefMask,
+		(param & support.UnwindDerefMask) * support.UnwindDerefMultiplier
+}

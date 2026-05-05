@@ -1,0 +1,8 @@
+type: odigosconditionalattributes
+status:
+  class: processor
+  stability:
+    beta: [traces, metrics]
+  distributions: [contrib]
+  codeowners:
+    active: [tamird]

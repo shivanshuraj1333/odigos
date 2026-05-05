@@ -1,0 +1,12 @@
+type: azureblobstorage
+
+status:
+  class: exporter
+  stability:
+    beta: [traces, logs]
+  distributions: [contrib]
+  codeowners:
+    active: [edeNFed]
+
+tests:
+  expect_consumer_error: true
