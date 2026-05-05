@@ -64,6 +64,10 @@ spec:
           {{- end }}
           - name: GOMEMLIMIT
             value: {{ include "odigos.gomemlimitFromResources" (dict "Resources" .Values.ui.resources) }}
+          {{- if .Values.profiling.enabled }}
+          - name: PROFILES_SLOT_TTL_SECONDS
+            value: {{ .Values.profiling.ui.slotTTLSeconds | default 86400 | quote }}
+          {{- end }}
           {{- if and .Values.experimental .Values.experimental.sequentialCacheLoad }}
           - name: ODIGOS_SEQUENTIAL_CACHE_LOAD
             value: "true"

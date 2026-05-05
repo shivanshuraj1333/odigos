@@ -123,7 +123,7 @@ profiling:
     # @schema
     # description: Slot TTL in seconds.
     # @schema
-    slotTTLSeconds: 300
+    slotTTLSeconds: 86400
     # @schema
     # description: Max in-memory profile slots.
     # @schema

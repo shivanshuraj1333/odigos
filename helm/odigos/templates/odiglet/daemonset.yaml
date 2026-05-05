@@ -15,7 +15,7 @@
     {{- end -}}
   {{- end -}}
 {{- end -}}
-{{- $privilegedRequired := or $collectLogs $collectMetrics -}}
+{{- $privilegedRequired := or $collectLogs $collectMetrics .Values.profiling.enabled -}}
 {{- $k8sVersion := include "utils.cleanKubeVersion" . }}
 {{- if and $privilegedRequired .Values.odiglet.unPrivileged }}
 {{ fail "privileged mode is required when collecting logs or metrics, this is currently not supported in unprivileged mode" }}

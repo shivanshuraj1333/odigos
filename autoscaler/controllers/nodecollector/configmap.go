@@ -255,7 +255,7 @@ func calculateCollectorConfigDomains(
 	// - cluster collector has traces enabled (trace destination is enabled)
 	// - there are additional trace exporters (e.g. spanmetrics connector)
 	if tracesEnabledInClusterCollector || len(additionalTraceExporters) > 0 {
-		tracesConfig := collectorconfig.TracesConfig(nodeCG, odigosNamespace, processorsResults.TracesProcessors, processorsResults.TracesProcessorsPostSpanMetrics, additionalTraceExporters, tracesEnabledInClusterCollector, loadBalancingNeeded)
+		tracesConfig := collectorconfig.TracesConfig(nodeCG, odigosNamespace, processorsResults.TracesProcessors, processorsResults.TracesProcessorsPostSpanMetrics, additionalTraceExporters, tracesEnabledInClusterCollector, loadBalancingNeeded, onGKE)
 		configDomains["traces"] = tracesConfig
 	}
 

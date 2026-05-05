@@ -96,19 +96,24 @@ func tracesExporters(nodeCG *odigosv1.CollectorsGroup, odigosNamespace string, t
 }
 
 func TracesConfig(nodeCG *odigosv1.CollectorsGroup, odigosNamespace string, manifestProcessorNames []string, postSpanMetricsProcessorNames []string, additionalTraceExporters []string, tracesEnabledInClusterCollector bool,
-	loadBalancingNeeded bool) config.Config {
+	loadBalancingNeeded bool, onGKE bool) config.Config {
 
 	exporters, traceExporterNames := tracesExporters(nodeCG, odigosNamespace, tracesEnabledInClusterCollector, loadBalancingNeeded)
 
 	// traces pipeline also feeds the spanmetrics connector.
 	// users may want some custom processors (manifestProcessorNames)
 
-	tracePipelineProcessors := append([]string{
+	tracePipelineProcessors := []string{
 		batchProcessorName,         // always start with batch
 		memoryLimiterProcessorName, // memory limiter is temporary, until we migrate all inputs to rtml based memory protection
 		nodeNameProcessorName,
-		resourceDetectionProcessorName,
-	}, manifestProcessorNames...)
+	}
+	// Only include resourcedetection when at least one detector is actually configured;
+	// otherwise the merged config references a processor that commonProcessors never defines → collector crash.
+	if len(buildResourceDetectors(nodeCG.Spec.ResourceDetectors, onGKE)) > 0 {
+		tracePipelineProcessors = append(tracePipelineProcessors, resourceDetectionProcessorName)
+	}
+	tracePipelineProcessors = append(tracePipelineProcessors, manifestProcessorNames...)
 	tracePipelineProcessors = append(tracePipelineProcessors, odigosTrafficMetricsProcessorName) // keep traffic metrics last for most accurate tracking
 
 	// conditionally, create another pipeline for span exporting,
