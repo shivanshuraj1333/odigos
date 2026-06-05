@@ -3,7 +3,7 @@ package odigos_describe
 import (
 	"context"
 
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/kube"
 	describe_utils "github.com/odigos-io/odigos/frontend/services/describe/utils"
 	"github.com/odigos-io/odigos/k8sutils/pkg/describe"

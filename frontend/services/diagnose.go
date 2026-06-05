@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/kube"
 	"github.com/odigos-io/odigos/frontend/services/sse"
 	"github.com/odigos-io/odigos/k8sutils/pkg/diagnose"

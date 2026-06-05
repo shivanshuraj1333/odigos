@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/services"
 )
 

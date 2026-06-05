@@ -1,7 +1,7 @@
 package computed
 
 import (
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

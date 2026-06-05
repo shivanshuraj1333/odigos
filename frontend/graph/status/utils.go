@@ -1,6 +1,6 @@
 package status
 
-import "github.com/odigos-io/odigos/frontend/graph/model"
+import "github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 
 // givin a desired state progress enum, return a value to determine the order of severity.
 // the lower the number, the more sever the state is
