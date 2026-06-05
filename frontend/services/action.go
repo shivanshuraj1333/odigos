@@ -10,7 +10,7 @@ import (
 	"github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	urlactions "github.com/odigos-io/odigos/api/odigos/v1alpha1/actions"
 	"github.com/odigos-io/odigos/common"
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/kube"
 	"github.com/odigos-io/odigos/k8sutils/pkg/env"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

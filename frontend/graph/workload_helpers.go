@@ -8,7 +8,7 @@ import (
 
 	odigosv1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	"github.com/odigos-io/odigos/common"
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 )
 
 // collectEffectiveDetectedLanguages returns the sorted, unique list of programming

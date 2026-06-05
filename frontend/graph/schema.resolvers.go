@@ -14,7 +14,7 @@ import (
 	"github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	"github.com/odigos-io/odigos/common"
 	"github.com/odigos-io/odigos/common/config/testconnection"
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/kube"
 	"github.com/odigos-io/odigos/frontend/services"
 	"github.com/odigos-io/odigos/frontend/services/describe/odigos_describe"

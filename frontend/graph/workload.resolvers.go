@@ -14,7 +14,7 @@ import (
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	odigosv1 "github.com/odigos-io/odigos/api/odigos/v1alpha1"
 	"github.com/odigos-io/odigos/frontend/graph/loaders"
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/graph/status"
 	"github.com/odigos-io/odigos/frontend/services"
 	frontendcommon "github.com/odigos-io/odigos/frontend/services/common"

@@ -3,7 +3,7 @@ module github.com/odigos-io/odigos/frontend
 go 1.26.2
 
 require (
-	github.com/99designs/gqlgen v0.17.70
+	github.com/99designs/gqlgen v0.17.81
 	github.com/argoproj/argo-rollouts v1.8.3
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/distribution/reference v0.6.0
@@ -24,7 +24,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/common v0.67.5
 	github.com/stretchr/testify v1.11.1
-	github.com/vektah/gqlparser/v2 v2.5.27
+	github.com/vektah/gqlparser/v2 v2.5.30
 	go.opentelemetry.io/collector/component v1.54.0
 	go.opentelemetry.io/collector/component/componenttest v0.148.0
 	go.opentelemetry.io/collector/config/configoptional v1.54.0
@@ -338,6 +338,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/odigos-io/agents-api/go/server v0.0.0-local
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pierrec/lz4/v4 v4.1.26 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -398,3 +399,5 @@ replace (
 	// Matches github.com/grafana/pyroscope go.mod.
 	gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 )
+
+replace github.com/odigos-io/agents-api/go/server => ../../agents-api/go/server

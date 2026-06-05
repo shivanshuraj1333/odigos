@@ -71,7 +71,9 @@ freshly generated under v0.17.81, so it has the correct interface.
 
 ## Status
 
-Dependency-consumability proven (the api `odigos_oss` flavor imports cleanly from
-the frontend module once the stale generated graph is removed). The cutover above
-(steps 1–4, ~58 files via the alias shim) is the remaining mechanical work tracked
-by this PR.
+DONE. Cutover executed: model import repointed across 57 files, in-repo
+generated.go + schema + graph/model + gqlgen.yml deleted, graph/api_bind.go
+re-exports the api odigos_oss flavor (12 resolver interfaces + Config +
+NewExecutableSchema). `go build ./...` + `go vet` green; OSS UI binary builds
+(145MB) against the api module. Wire schema byte-identical (PR-A proof).
+Release-time: pin agents-api/go/server to its tag, drop the local replace.

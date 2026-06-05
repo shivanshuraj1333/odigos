@@ -4,7 +4,7 @@ import (
 	containersutil "github.com/odigos-io/odigos/k8sutils/pkg/containers"
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 	"github.com/odigos-io/odigos/frontend/services"
 )
 

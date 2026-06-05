@@ -3,7 +3,7 @@ package collectors
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/agents-api/go/server/graph/odigos_oss/model"
 )
 
 func buildResourceAmounts(list corev1.ResourceList) *model.ResourceAmounts {
