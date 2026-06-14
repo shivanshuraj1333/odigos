@@ -98,10 +98,14 @@ func GetOdigosConfiguration(ctx context.Context) (*common.OdigosConfiguration, e
 	return &odigosConfiguration, nil
 }
 
+// IsReadonlyMode reports whether the UI is in readonly mode, in which mutations
+// are not permitted. It fails safe: when the configuration cannot be read, it
+// reports readonly so callers deny writes rather than allow them while the mode
+// is unknown.
 func IsReadonlyMode(ctx context.Context) bool {
 	config, err := GetOdigosConfiguration(ctx)
 	if err != nil {
-		return false
+		return true
 	}
 
 	return config.UiMode == common.UiModeReadonly
