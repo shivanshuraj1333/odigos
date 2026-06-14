@@ -2236,6 +2236,12 @@
           "required": [],
           "title": "uiMode"
         },
+        "mcpAccessMode": {
+          "default": "read-only",
+          "description": "mcpAccessMode: 'read-only' or 'read-write'\n - Controls whether the MCP server may run write (mutating) tools.\n - Defaults to 'read-only', so an agent cannot change the cluster until an operator opts in to 'read-write'.",
+          "required": [],
+          "title": "mcpAccessMode"
+        },
         "uiPaginationLimit": {
           "default": "0",
           "description": "uiPaginationLimit:\n - This flag controls the number of items to fetch per paginated-batch in the UI.\n - If not set, the UI will fetch 100 items per paginated-batch.",

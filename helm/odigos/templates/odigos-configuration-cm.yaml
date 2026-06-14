@@ -40,6 +40,9 @@ data:
     {{- if .Values.ui.uiMode }}
     uiMode: {{ .Values.ui.uiMode }}
     {{- end }}
+    {{- if .Values.ui.mcpAccessMode }}
+    mcpAccessMode: {{ .Values.ui.mcpAccessMode }}
+    {{- end }}
     {{- if .Values.ui.uiPaginationLimit }}
     uiPaginationLimit: {{ .Values.ui.uiPaginationLimit }}
     {{- end }}

@@ -669,6 +669,15 @@ ui:
 
   # @schema
   # description: |-
+  #   mcpAccessMode: 'read-only' or 'read-write'
+  #    - Controls whether the MCP server may run write (mutating) tools.
+  #    - Defaults to 'read-only', so an agent cannot change the cluster until
+  #      an operator opts in to 'read-write'.
+  # @schema
+  mcpAccessMode: 'read-only'
+
+  # @schema
+  # description: |-
   #   uiPaginationLimit:
   #    - This flag controls the number of items to fetch per paginated-batch in the UI.
   #    - If not set, the UI will fetch 100 items per paginated-batch.
