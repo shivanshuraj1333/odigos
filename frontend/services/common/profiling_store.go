@@ -15,6 +15,7 @@ type ProfileStoreRef interface {
 	RemoveSlot(sourceKey string)
 	ClearSlotBuffer(sourceKey string) bool
 	GetProfileData(sourceKey string) [][]byte
+	ListProfileTypes(sourceKey string) []string
 	MaxSlots() int
 	ActiveSlots() (activeKeys []string, keysWithData []string)
 	MemoryStats() ProfileMemoryStats

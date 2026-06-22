@@ -2,213 +2,112 @@ package profiles
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/odigos-io/odigos/common/telemetrycache"
-	"github.com/odigos-io/odigos/frontend/services/common"
+	fecommon "github.com/odigos-io/odigos/frontend/services/common"
 )
 
-type Slot struct {
-	LastRequestAt time.Time
-	Buffer        *telemetrycache.BoundedBuffer
-}
+const (
+	defaultMaxSlots     = 50
+	defaultTTLSeconds   = 600 // 10 min
+	defaultSlotMaxBytes = 64 << 20 // 64 MiB per profile sub-type
+)
 
 // ProfileStore holds at most maxSlots source-keyed slots with a TTL.
-// Eviction: when full, the slot with the oldest LastRequestAt is removed.
-// TTL: slots with no request in the last ttlSeconds are removed by a background goroutine.
+// Slots must be explicitly opened via EnsureSlot before data is stored
+// (on-demand model; data arriving for unknown keys is silently dropped).
+// Internally backed by telemetrycache.Store from common.
 type ProfileStore struct {
-	mu              sync.RWMutex
-	slots           map[string]*Slot
-	maxSlots        int
-	ttlSeconds      int
-	slotMaxBytes    int
-	cleanupInterval time.Duration
-	// StopCleanup invokes it to end the TTL goroutine.
-	stopCleanup func()
-}
-
-// evictOldestSlotLocked removes the slot with the smallest LastRequestAt.
-func (s *ProfileStore) evictOldestSlotLocked() {
-	var oldestKey string
-	var oldestTime time.Time
-	for k, slot := range s.slots {
-		if oldestKey == "" || slot.LastRequestAt.Before(oldestTime) {
-			oldestTime = slot.LastRequestAt
-			oldestKey = k
-		}
-	}
-	if oldestKey != "" {
-		delete(s.slots, oldestKey)
-	}
+	store      *telemetrycache.Store
+	ttlSeconds int
+	cancelClean context.CancelFunc
 }
 
 func NewProfileStore(maxSlots, ttlSeconds, slotMaxBytes int, cleanupInterval time.Duration) *ProfileStore {
+	if maxSlots <= 0 {
+		maxSlots = defaultMaxSlots
+	}
+	if ttlSeconds <= 0 {
+		ttlSeconds = defaultTTLSeconds
+	}
+	if slotMaxBytes <= 0 {
+		slotMaxBytes = defaultSlotMaxBytes
+	}
+	if cleanupInterval <= 0 {
+		cleanupInterval = time.Minute
+	}
 	return &ProfileStore{
-		slots:           make(map[string]*Slot),
-		maxSlots:        maxSlots,
-		ttlSeconds:      ttlSeconds,
-		slotMaxBytes:    slotMaxBytes,
-		cleanupInterval: cleanupInterval,
+		store: telemetrycache.NewWithTTL(
+			maxSlots,
+			0, // no global byte cap — per-type caps handle sizing
+			slotMaxBytes,
+			time.Duration(ttlSeconds)*time.Second,
+			cleanupInterval,
+		),
+		ttlSeconds: ttlSeconds,
 	}
 }
 
-// EnsureSlot opens a slot for sourceKey if one does not already exist,
-// or refreshes its LastRequestAt if it does.
-func (s *ProfileStore) EnsureSlot(sourceKey string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
+func (s *ProfileStore) EnsureSlot(sourceKey string)      { s.store.EnsureSlot(sourceKey) }
+func (s *ProfileStore) RemoveSlot(sourceKey string)      { s.store.RemoveSlot(sourceKey) }
+func (s *ProfileStore) IsActive(sourceKey string) bool   { return s.store.IsActive(sourceKey) }
 
-	if slot, ok := s.slots[sourceKey]; ok {
-		slot.LastRequestAt = now
-		return
-	}
-
-	if len(s.slots) >= s.maxSlots {
-		s.evictOldestSlotLocked()
-	}
-
-	s.slots[sourceKey] = &Slot{
-		LastRequestAt: now,
-		Buffer:        telemetrycache.NewBoundedBuffer(s.slotMaxBytes),
-	}
+// AddProfileData stores one OTLP chunk under (sourceKey, profileTypeKey).
+// Silently dropped if no slot exists for sourceKey.
+func (s *ProfileStore) AddProfileData(sourceKey, profileTypeKey string, chunk []byte) {
+	s.store.AddProfileIfActive(sourceKey, profileTypeKey, time.Now(), chunk)
 }
 
-func (s *ProfileStore) RemoveSlot(sourceKey string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.slots, sourceKey)
-}
-
-// ClearAllSlots removes every slot (e.g. when cluster profiling is turned off via effective-config).
-func (s *ProfileStore) ClearAllSlots() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.slots = make(map[string]*Slot)
-}
-
-// ClearSlotBuffer removes all buffered profile chunks for sourceKey but keeps the slot
-func (s *ProfileStore) ClearSlotBuffer(sourceKey string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	slot, ok := s.slots[sourceKey]
-	if !ok || slot == nil {
-		return false
-	}
-	slot.LastRequestAt = time.Now()
-	if slot.Buffer != nil {
-		slot.Buffer.Clear()
-	}
-	return true
-}
-
-func (s *ProfileStore) MaxSlots() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.maxSlots
-}
-
-// MemoryStats returns total bytes buffered across slots and the configured limits for debugging purposes
-func (s *ProfileStore) MemoryStats() common.ProfileMemoryStats {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var totalBytes int
-	for _, slot := range s.slots {
-		if slot.Buffer != nil {
-			totalBytes += slot.Buffer.Size()
-		}
-	}
-	return common.ProfileMemoryStats{
-		TotalBytes:          totalBytes,
-		MaxSlots:            s.maxSlots,
-		SlotMaxBytes:        s.slotMaxBytes,
-		SlotTTLSeconds:      s.ttlSeconds,
-		MaxTotalBytesBudget: s.maxSlots * s.slotMaxBytes,
-	}
-}
-
-// AddProfileData appends serialized profile data to the slot for sourceKey if it exists.
-func (s *ProfileStore) AddProfileData(sourceKey string, chunk []byte) {
-	s.mu.RLock()
-	slot, ok := s.slots[sourceKey]
-	var buf *telemetrycache.BoundedBuffer
-	if ok && slot != nil {
-		buf = slot.Buffer
-	}
-	s.mu.RUnlock()
-	if buf == nil {
-		return
-	}
-	buf.Add(time.Now(), chunk)
-}
-
-// GetProfileData returns a shallow snapshot of buffered chunks for the given source key (see BoundedBuffer.Snapshot).
+// GetProfileData returns all profile chunks for a source, all types merged.
 func (s *ProfileStore) GetProfileData(sourceKey string) [][]byte {
-	s.mu.Lock()
-	slot, ok := s.slots[sourceKey]
-	if ok {
-		slot.LastRequestAt = time.Now()
-	}
-	s.mu.Unlock()
-	if !ok {
-		return nil
-	}
-	return slot.Buffer.Snapshot()
+	s.store.EnsureSlot(sourceKey) // refresh TTL on read (mirrors old LastRequestAt touch)
+	return s.store.GetProfileData(sourceKey)
 }
 
-func (s *ProfileStore) IsActive(sourceKey string) bool {
-	s.mu.RLock()
-	_, ok := s.slots[sourceKey]
-	s.mu.RUnlock()
-	return ok
+// ListProfileTypes returns profile sub-types with buffered data for sourceKey.
+func (s *ProfileStore) ListProfileTypes(sourceKey string) []string {
+	return s.store.ListProfileTypes(sourceKey)
 }
 
-// ActiveSlots returns source keys for all open slots and the subset that have buffered data.
+// ClearSlotBuffer empties profile data without removing the slot.
+func (s *ProfileStore) ClearSlotBuffer(sourceKey string) bool {
+	return s.store.ClearSlotBuffer(sourceKey)
+}
+
+// ClearAllSlots removes every slot (e.g. when cluster profiling is turned off).
+func (s *ProfileStore) ClearAllSlots() { s.store.ClearAll() }
+
+// MaxSlots returns the maximum number of simultaneous profiling slots.
+func (s *ProfileStore) MaxSlots() int { return s.store.MaxSlots() }
+
+// ActiveSlots returns all slot keys and the subset with buffered data.
 func (s *ProfileStore) ActiveSlots() (activeKeys []string, keysWithData []string) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for k, slot := range s.slots {
-		activeKeys = append(activeKeys, k)
-		if slot.Buffer != nil && slot.Buffer.Size() > 0 {
-			keysWithData = append(keysWithData, k)
-		}
-	}
-	return activeKeys, keysWithData
+	return s.store.ActiveSlots()
 }
 
-// RunCleanup is used for ttlSeconds based background goroutine for store slots cleanup.
+// MemoryStats returns cache occupancy and configured limits for the UI.
+func (s *ProfileStore) MemoryStats() fecommon.ProfileMemoryStats {
+	st := s.store.Stats()
+	return fecommon.ProfileMemoryStats{
+		TotalBytes:          st.TotalBytes,
+		MaxSlots:            st.MaxSlots,
+		SlotMaxBytes:        st.SlotMaxBytes,
+		SlotTTLSeconds:      s.ttlSeconds,
+		MaxTotalBytesBudget: st.MaxSlots * st.SlotMaxBytes,
+	}
+}
+
+// RunCleanup spawns a background goroutine that sweeps idle slots until StopCleanup is called.
 func (s *ProfileStore) RunCleanup(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
-	s.stopCleanup = cancel
-	go func() {
-		ticker := time.NewTicker(s.cleanupInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s.cleanupExpired()
-			}
-		}
-	}()
+	s.cancelClean = cancel
+	go s.store.RunCleanup(ctx)
 }
 
-func (s *ProfileStore) cleanupExpired() {
-	cutoff := time.Now().Add(-time.Duration(s.ttlSeconds) * time.Second)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for k, slot := range s.slots {
-		if slot.LastRequestAt.Before(cutoff) {
-			delete(s.slots, k)
-		}
-	}
-}
-
-// StopCleanup stops the TTL cleanup goroutine
+// StopCleanup terminates the background TTL sweep goroutine.
 func (s *ProfileStore) StopCleanup() {
-	if s.stopCleanup != nil {
-		s.stopCleanup()
+	if s.cancelClean != nil {
+		s.cancelClean()
 	}
 }
