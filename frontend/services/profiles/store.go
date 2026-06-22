@@ -5,13 +5,13 @@ import (
 	"sync"
 	"time"
 
-	commonlogger "github.com/odigos-io/odigos/common/logger"
+	"github.com/odigos-io/odigos/common/telemetrycache"
 	"github.com/odigos-io/odigos/frontend/services/common"
 )
 
 type Slot struct {
 	LastRequestAt time.Time
-	Buffer        *BoundedBuffer
+	Buffer        *telemetrycache.BoundedBuffer
 }
 
 // ProfileStore holds at most maxSlots source-keyed slots with a TTL.
@@ -71,7 +71,7 @@ func (s *ProfileStore) EnsureSlot(sourceKey string) {
 
 	s.slots[sourceKey] = &Slot{
 		LastRequestAt: now,
-		Buffer:        NewBoundedBuffer(s.slotMaxBytes),
+		Buffer:        telemetrycache.NewBoundedBuffer(s.slotMaxBytes),
 	}
 }
 
@@ -132,7 +132,7 @@ func (s *ProfileStore) MemoryStats() common.ProfileMemoryStats {
 func (s *ProfileStore) AddProfileData(sourceKey string, chunk []byte) {
 	s.mu.RLock()
 	slot, ok := s.slots[sourceKey]
-	var buf *BoundedBuffer
+	var buf *telemetrycache.BoundedBuffer
 	if ok && slot != nil {
 		buf = slot.Buffer
 	}
@@ -140,11 +140,7 @@ func (s *ProfileStore) AddProfileData(sourceKey string, chunk []byte) {
 	if buf == nil {
 		return
 	}
-	if !buf.Add(chunk) {
-		commonlogger.LoggerCompat().With("subsystem", "backend-profiling").Warn(
-			"profile_chunk_dropped_oversized", "sourceKey", sourceKey,
-		)
-	}
+	buf.Add(time.Now(), chunk)
 }
 
 // GetProfileData returns a shallow snapshot of buffered chunks for the given source key (see BoundedBuffer.Snapshot).
