@@ -73,15 +73,29 @@ func profilingReceiverConfig(p *common.ProfilingConfiguration) config.GenericMap
 		if sampleSize == 0 {
 			sampleSize = 262144
 		}
+		nativeOn := boolOrDefault(p.Memory.Native, false)
+		injectOn := boolOrDefault(p.Memory.Inject, false)
 		mem := config.GenericMap{
-			"enabled":           true,
-			"inject":            boolOrDefault(p.Memory.Inject, false),
+			"enabled": true,
+			"inject":  injectOn,
+			// sample_size_bytes must be 128/256/512 KiB; report_interval must be >= 1s.
+			// The receiver validates (does not default) both, so always emit valid values.
 			"sample_size_bytes": sampleSize,
+			"report_interval":   "15s",
 			"languages": config.GenericMap{
 				"go":     boolOrDefault(p.Memory.Go, true),
 				"java":   boolOrDefault(p.Memory.Java, true),
-				"native": boolOrDefault(p.Memory.Native, false),
+				"native": nativeOn,
 			},
+		}
+		// When native heap profiling is on, native.mode must be non-off (the receiver
+		// rejects native language with mode=off). inject => no-restart; else restart.
+		if nativeOn {
+			mode := "restart"
+			if injectOn {
+				mode = "inject"
+			}
+			mem["native"] = config.GenericMap{"mode": mode}
 		}
 		cfg["memory"] = mem
 	}
