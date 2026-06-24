@@ -142,6 +142,8 @@ replaces:
   - github.com/odigos-io/odigos/collector/processors/odigosprofilesprocessor => ../processors/odigosprofilesprocessor
   - github.com/odigos-io/odigos/collector/processors/odigosvmprofileattrsprocessor => ../processors/odigosvmprofileattrsprocessor
   - github.com/odigos-io/odigos/collector/processors/odigossymbolizeprocessor => ../processors/odigossymbolizeprocessor
+  # memory-profiling fork of the ebpf-profiler (CPU + out-of-process heap profiling). Local path replace staged into the Docker build context.
+  - go.opentelemetry.io/ebpf-profiler => ../../ebpf-profiler-src
   - go.opentelemetry.io/collector/confmap/provider/odigosk8scmprovider => ../providers/odigosk8scmprovider
   - github.com/odigos-io/odigos/collector/connectors/odigosrouterconnector => ../connectors/odigosrouterconnector
   - github.com/odigos-io/odigos/collector/connectors/serviceioconnector => ../connectors/serviceioconnector

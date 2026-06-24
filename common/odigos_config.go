@@ -590,6 +590,34 @@ type ProfilingConfiguration struct {
 	// Symbolization controls how native (C/C++/Rust) frames are resolved to
 	// function names. Mirrors the VM agent's profiling.symbolization.native flag.
 	Symbolization *ProfilingSymbolizationConfiguration `json:"symbolization,omitempty" yaml:"symbolization,omitempty"`
+	// Memory enables out-of-process heap profiling (alloc_*/inuse_*) alongside CPU,
+	// emitted by the ebpf-profiler receiver and symbolized centrally like CPU frames.
+	Memory *ProfilingMemoryConfiguration `json:"memory,omitempty" yaml:"memory,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+// ProfilingMemoryConfiguration is out-of-process heap profiling (alloc_*/inuse_*).
+type ProfilingMemoryConfiguration struct {
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// SampleSizeBytes is the target average bytes between sampled allocations.
+	// One of 131072/262144/524288; defaults to 262144 (256KiB) when zero.
+	SampleSizeBytes int `json:"sampleSizeBytes,omitempty" yaml:"sampleSizeBytes,omitempty"`
+	// Per-runtime toggles (default: go=true, java=true, native=false).
+	Go     *bool `json:"go,omitempty" yaml:"go,omitempty"`
+	Java   *bool `json:"java,omitempty" yaml:"java,omitempty"`
+	Native *bool `json:"native,omitempty" yaml:"native,omitempty"`
+	// Inject enables no-restart ptrace enablement (write MemProfileRate for Go
+	// services that disabled heap profiling). Off by default.
+	Inject *bool `json:"inject,omitempty" yaml:"inject,omitempty"`
+}
+
+// MemoryEnabled reports whether memory profiling should run: profiling itself
+// must be enabled and profiling.memory.enabled must be true.
+func (p *ProfilingConfiguration) MemoryEnabled() bool {
+	if p == nil || p.Enabled == nil || !*p.Enabled {
+		return false
+	}
+	return p.Memory != nil && p.Memory.Enabled != nil && *p.Memory.Enabled
 }
 
 // +kubebuilder:object:generate=true

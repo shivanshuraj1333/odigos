@@ -43,7 +43,7 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 
 	return config.Config{
 		Receivers: config.GenericMap{
-			commonconf.ProfilingReceiver: config.GenericMap{},
+			commonconf.ProfilingReceiver: profilingReceiverConfig(profiling),
 		},
 		Processors: processors,
 		Exporters: config.GenericMap{
@@ -59,4 +59,34 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 			},
 		},
 	}
+}
+
+// profilingReceiverConfig builds the "profiling" receiver config. CPU profiling is
+// on by the receiver's own defaults; when memory profiling is enabled we add the
+// memory block (mapped to the ebpf-profiler receiver's collector/config.MemoryConfig).
+func profilingReceiverConfig(p *common.ProfilingConfiguration) config.GenericMap {
+	cfg := config.GenericMap{}
+	if p.MemoryEnabled() {
+		mem := config.GenericMap{
+			"enabled": true,
+			"inject":  boolOrDefault(p.Memory.Inject, false),
+			"languages": config.GenericMap{
+				"go":     boolOrDefault(p.Memory.Go, true),
+				"java":   boolOrDefault(p.Memory.Java, true),
+				"native": boolOrDefault(p.Memory.Native, false),
+			},
+		}
+		if p.Memory.SampleSizeBytes > 0 {
+			mem["sample_size_bytes"] = p.Memory.SampleSizeBytes
+		}
+		cfg["memory"] = mem
+	}
+	return cfg
+}
+
+func boolOrDefault(b *bool, def bool) bool {
+	if b != nil {
+		return *b
+	}
+	return def
 }

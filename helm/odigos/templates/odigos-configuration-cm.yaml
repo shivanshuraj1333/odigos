@@ -83,6 +83,14 @@ data:
         slotTTLSeconds: {{ $pui.slotTTLSeconds | default 300 | int }}
         maxSlots: {{ $pui.maxSlots | default 32 | int }}
         slotMaxBytes: {{ $pui.slotMaxBytes | default 8388608 | int }}
+      {{- if .Values.profiling.symbolization }}
+      symbolization:
+        {{- toYaml .Values.profiling.symbolization | nindent 8 }}
+      {{- end }}
+      {{- if .Values.profiling.memory }}
+      memory:
+        {{- toYaml .Values.profiling.memory | nindent 8 }}
+      {{- end }}
     {{- end }}
     {{- if .Values.collectorGateway }}
     {{- $gwLimiter := include "collector.gateway.memoryLimiter" . | fromYaml }}
