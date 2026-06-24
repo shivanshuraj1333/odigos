@@ -8,106 +8,136 @@ import (
 	fecommon "github.com/odigos-io/odigos/frontend/services/common"
 )
 
-const (
-	defaultMaxSlots     = 50
-	defaultTTLSeconds   = 600 // 10 min
-	defaultSlotMaxBytes = 64 << 20 // 64 MiB per profile sub-type
-)
-
-// ProfileStore holds at most maxSlots source-keyed slots with a TTL.
-// Slots must be explicitly opened via EnsureSlot before data is stored
-// (on-demand model; data arriving for unknown keys is silently dropped).
-// Internally backed by telemetrycache.Store from common.
+// ProfileStore is a thin wrapper over TelemetryCache scoped to the profiles
+// signal.  The explicit-gate model (k8s frontend): slots are opened via
+// EnsureSlot; chunks arriving for unknown sourceKeys are silently dropped.
 type ProfileStore struct {
-	store      *telemetrycache.Store
-	ttlSeconds int
-	cancelClean context.CancelFunc
+	tc       *telemetrycache.TelemetryCache
+	active   map[string]struct{} // guarded by activeMu
+	activeMu chan struct{}        // single-element channel used as a mutex
 }
 
-func NewProfileStore(maxSlots, ttlSeconds, slotMaxBytes int, cleanupInterval time.Duration) *ProfileStore {
-	if maxSlots <= 0 {
-		maxSlots = defaultMaxSlots
+func NewProfileStore() *ProfileStore {
+	s := &ProfileStore{
+		tc:       telemetrycache.NewDefault(),
+		active:   make(map[string]struct{}),
+		activeMu: make(chan struct{}, 1),
 	}
-	if ttlSeconds <= 0 {
-		ttlSeconds = defaultTTLSeconds
-	}
-	if slotMaxBytes <= 0 {
-		slotMaxBytes = defaultSlotMaxBytes
-	}
-	if cleanupInterval <= 0 {
-		cleanupInterval = time.Minute
-	}
-	return &ProfileStore{
-		store: telemetrycache.NewWithTTL(
-			maxSlots,
-			0, // no global byte cap — per-type caps handle sizing
-			slotMaxBytes,
-			time.Duration(ttlSeconds)*time.Second,
-			cleanupInterval,
-		),
-		ttlSeconds: ttlSeconds,
-	}
+	s.activeMu <- struct{}{}
+	return s
 }
 
-func (s *ProfileStore) EnsureSlot(sourceKey string)      { s.store.EnsureSlot(sourceKey) }
-func (s *ProfileStore) RemoveSlot(sourceKey string)      { s.store.RemoveSlot(sourceKey) }
-func (s *ProfileStore) IsActive(sourceKey string) bool   { return s.store.IsActive(sourceKey) }
+func (s *ProfileStore) lockActive()   { <-s.activeMu }
+func (s *ProfileStore) unlockActive() { s.activeMu <- struct{}{} }
 
-// AddProfileData stores one OTLP chunk under (sourceKey, profileTypeKey).
-// Silently dropped if no slot exists for sourceKey.
+// EnsureSlot marks sourceKey as active so AddProfileData will store chunks.
+func (s *ProfileStore) EnsureSlot(sourceKey string) {
+	s.lockActive()
+	s.active[sourceKey] = struct{}{}
+	s.unlockActive()
+}
+
+// RemoveSlot marks sourceKey as inactive and drops its cached data.
+func (s *ProfileStore) RemoveSlot(sourceKey string) {
+	s.lockActive()
+	delete(s.active, sourceKey)
+	s.unlockActive()
+	s.tc.Drop(sourceKey)
+}
+
+// IsActive reports whether sourceKey has an open slot.
+func (s *ProfileStore) IsActive(sourceKey string) bool {
+	s.lockActive()
+	_, ok := s.active[sourceKey]
+	s.unlockActive()
+	return ok
+}
+
+// AddProfileData stores one OTLP chunk. Silently dropped if no slot exists.
 func (s *ProfileStore) AddProfileData(sourceKey, profileTypeKey string, chunk []byte) {
-	s.store.AddProfileIfActive(sourceKey, profileTypeKey, time.Now(), chunk)
+	if !s.IsActive(sourceKey) {
+		return
+	}
+	_ = s.tc.Write(telemetrycache.SignalProfiles, sourceKey, profileTypeKey, time.Now(), chunk)
 }
 
 // GetProfileData returns all profile chunks for a source, all types merged.
 func (s *ProfileStore) GetProfileData(sourceKey string) [][]byte {
-	s.store.EnsureSlot(sourceKey) // refresh TTL on read (mirrors old LastRequestAt touch)
-	return s.store.GetProfileData(sourceKey)
+	chunks, _ := s.tc.ReadAllSubTypes(telemetrycache.SignalProfiles, sourceKey)
+	return chunksToBytes(chunks)
 }
 
-// ListProfileTypes returns profile sub-types with buffered data for sourceKey.
+// ListProfileTypes returns profile sub-types with data for sourceKey.
 func (s *ProfileStore) ListProfileTypes(sourceKey string) []string {
-	return s.store.ListProfileTypes(sourceKey)
+	return s.tc.SubTypes(telemetrycache.SignalProfiles, sourceKey)
 }
 
 // ClearSlotBuffer empties profile data without removing the slot.
 func (s *ProfileStore) ClearSlotBuffer(sourceKey string) bool {
-	return s.store.ClearSlotBuffer(sourceKey)
+	if !s.IsActive(sourceKey) {
+		return false
+	}
+	s.tc.ClearSignal(telemetrycache.SignalProfiles)
+	return true
 }
 
-// ClearAllSlots removes every slot (e.g. when cluster profiling is turned off).
-func (s *ProfileStore) ClearAllSlots() { s.store.ClearAll() }
+// ClearAllSlots removes every slot.
+func (s *ProfileStore) ClearAllSlots() {
+	s.lockActive()
+	s.active = make(map[string]struct{})
+	s.unlockActive()
+	s.tc.ClearAll()
+}
 
-// MaxSlots returns the maximum number of simultaneous profiling slots.
-func (s *ProfileStore) MaxSlots() int { return s.store.MaxSlots() }
+// MaxSlots returns the number of ring slots for the profiles signal.
+func (s *ProfileStore) MaxSlots() int {
+	st, ok := s.tc.RingStatsFor(telemetrycache.SignalProfiles)
+	if !ok {
+		return 0
+	}
+	return int(st.NumSlots)
+}
 
-// ActiveSlots returns all slot keys and the subset with buffered data.
+// ActiveSlots returns (all slot keys, keys with buffered data).
 func (s *ProfileStore) ActiveSlots() (activeKeys []string, keysWithData []string) {
-	return s.store.ActiveSlots()
+	s.lockActive()
+	for k := range s.active {
+		activeKeys = append(activeKeys, k)
+	}
+	s.unlockActive()
+	keysWithData = s.tc.Sources(telemetrycache.SignalProfiles)
+	return
 }
 
-// MemoryStats returns cache occupancy and configured limits for the UI.
+// MemoryStats returns cache occupancy for the UI.
 func (s *ProfileStore) MemoryStats() fecommon.ProfileMemoryStats {
-	st := s.store.Stats()
+	st, ok := s.tc.RingStatsFor(telemetrycache.SignalProfiles)
+	if !ok {
+		return fecommon.ProfileMemoryStats{}
+	}
 	return fecommon.ProfileMemoryStats{
-		TotalBytes:          st.TotalBytes,
-		MaxSlots:            st.MaxSlots,
-		SlotMaxBytes:        st.SlotMaxBytes,
-		SlotTTLSeconds:      s.ttlSeconds,
-		MaxTotalBytesBudget: st.MaxSlots * st.SlotMaxBytes,
+		TotalBytes:          int(st.BytesUsed),
+		MaxSlots:            int(st.NumSlots),
+		SlotMaxBytes:        int(st.SlotSize),
+		SlotTTLSeconds:      0, // ring has no TTL
+		MaxTotalBytesBudget: int(st.Capacity),
 	}
 }
 
-// RunCleanup spawns a background goroutine that sweeps idle slots until StopCleanup is called.
-func (s *ProfileStore) RunCleanup(ctx context.Context) {
-	ctx, cancel := context.WithCancel(ctx)
-	s.cancelClean = cancel
-	go s.store.RunCleanup(ctx)
-}
+// RunCleanup is a no-op — the ring has no TTL sweeping.
+func (s *ProfileStore) RunCleanup(_ context.Context) {}
 
-// StopCleanup terminates the background TTL sweep goroutine.
-func (s *ProfileStore) StopCleanup() {
-	if s.cancelClean != nil {
-		s.cancelClean()
+// StopCleanup is a no-op.
+func (s *ProfileStore) StopCleanup() {}
+
+// chunksToBytes extracts the raw bytes from a Chunk slice.
+func chunksToBytes(chunks []telemetrycache.Chunk) [][]byte {
+	if len(chunks) == 0 {
+		return nil
 	}
+	out := make([][]byte, len(chunks))
+	for i, c := range chunks {
+		out[i] = c.Data
+	}
+	return out
 }

@@ -82,12 +82,7 @@ func Bootstrap(ctx context.Context, flags Flags, logger logr.Logger) (*Deps, err
 		log.Error("profiling: could not load initial effective config; ingest off until effective-config is readable", "err", profCfgErr)
 	}
 	profilingGate := profiles.NewProfilesIngestGate(profilingIngest)
-	profileStore := profiles.NewProfileStore(
-		profCfg.StoreLimits.MaxSlots,
-		profCfg.StoreLimits.SlotTTLSeconds,
-		profCfg.StoreLimits.SlotMaxBytes,
-		profCfg.CleanupInterval,
-	)
+	profileStore := profiles.NewProfileStore()
 	profileStore.RunCleanup(ctx)
 
 	profilesConsumer, err := profiles.NewOdigosProfilesConsumer(profileStore, profilingGate)
