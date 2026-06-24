@@ -1,6 +1,8 @@
 package clustercollector
 
 import (
+	"os"
+
 	"github.com/odigos-io/odigos/api/k8sconsts"
 	commonconf "github.com/odigos-io/odigos/autoscaler/controllers/common"
 	"github.com/odigos-io/odigos/common"
@@ -30,10 +32,23 @@ func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *c
 
 	c.Exporters[commonconf.ProfilingGatewayToUIExporter] = exp
 
+	exporters := []string{commonconf.ProfilingGatewayToUIExporter}
+
+	// Optionally tee the (already-symbolized) profiles to an external OTLP profiles backend
+	// such as Pyroscope. Enabled by setting ODIGOS_PROFILING_PYROSCOPE_ENDPOINT on the autoscaler.
+	if pyro := os.Getenv("ODIGOS_PROFILING_PYROSCOPE_ENDPOINT"); pyro != "" {
+		c.Exporters["otlp/pyroscope"] = config.GenericMap{
+			"endpoint":    pyro,
+			"tls":         config.GenericMap{"insecure": true},
+			"compression": "none",
+		}
+		exporters = append(exporters, "otlp/pyroscope")
+	}
+
 	c.Service.Pipelines["profiles"] = config.Pipeline{
 		Receivers:  []string{"otlp"},
 		Processors: nil,
-		Exporters:  []string{commonconf.ProfilingGatewayToUIExporter},
+		Exporters:  exporters,
 	}
 	return nil
 }
