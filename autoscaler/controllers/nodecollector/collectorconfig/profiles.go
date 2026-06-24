@@ -67,17 +67,21 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 func profilingReceiverConfig(p *common.ProfilingConfiguration) config.GenericMap {
 	cfg := config.GenericMap{}
 	if p.MemoryEnabled() {
+		// sample_size_bytes must be one of 128/256/512 KiB; the receiver rejects 0.
+		// Default to 256KiB when unset so the collector never gets an invalid config.
+		sampleSize := p.Memory.SampleSizeBytes
+		if sampleSize == 0 {
+			sampleSize = 262144
+		}
 		mem := config.GenericMap{
-			"enabled": true,
-			"inject":  boolOrDefault(p.Memory.Inject, false),
+			"enabled":           true,
+			"inject":            boolOrDefault(p.Memory.Inject, false),
+			"sample_size_bytes": sampleSize,
 			"languages": config.GenericMap{
 				"go":     boolOrDefault(p.Memory.Go, true),
 				"java":   boolOrDefault(p.Memory.Java, true),
 				"native": boolOrDefault(p.Memory.Native, false),
 			},
-		}
-		if p.Memory.SampleSizeBytes > 0 {
-			mem["sample_size_bytes"] = p.Memory.SampleSizeBytes
 		}
 		cfg["memory"] = mem
 	}
