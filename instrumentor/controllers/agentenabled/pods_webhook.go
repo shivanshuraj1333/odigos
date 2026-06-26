@@ -312,6 +312,17 @@ func (p *PodsWebhook) injectOdigosInstrumentation(ctx context.Context, pod *core
 		if err != nil {
 			return err
 		}
+
+		// Memory profiling for the preload runtimes (Python/Ruby/PHP/native):
+		// inject the libmemsample allocation interposer so the out-of-process
+		// memory profiler can read the workload's heap dumps. Runtime-protocol
+		// languages (Go/Java/.NET/Node) are profiled with no workload change and
+		// are excluded by MemorySamplerLanguage.
+		if config.Profiling != nil && config.Profiling.MemoryEnabled() &&
+			podswebhook.MemorySamplerLanguage(runtimeDetails.Language) {
+			musl := runtimeDetails.LibCType != nil && *runtimeDetails.LibCType == common.Musl
+			podswebhook.InjectMemorySampler(container, runtimeDetails.Language, musl)
+		}
 	}
 	return nil
 }
