@@ -86,6 +86,8 @@ func profilingReceiverConfig(p *common.ProfilingConfiguration) config.GenericMap
 				"go":     boolOrDefault(p.Memory.Go, true),
 				"java":   boolOrDefault(p.Memory.Java, true),
 				"native": nativeOn,
+				"dotnet": boolOrDefault(p.Memory.Dotnet, false),
+				"node":   boolOrDefault(p.Memory.Node, false),
 			},
 		}
 		// When native heap profiling is on, native.mode must be non-off (the receiver

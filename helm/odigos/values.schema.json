@@ -1808,6 +1808,18 @@
               "required": [],
               "title": "native"
             },
+            "dotnet": {
+              "default": "false",
+              "description": "Profile .NET/CoreCLR heap via EventPipe (allocation by managed type + call stacks).",
+              "required": [],
+              "title": "dotnet"
+            },
+            "node": {
+              "default": "false",
+              "description": "Profile Node.js heap via the V8 Inspector sampling heap profiler (JS call stacks).",
+              "required": [],
+              "title": "node"
+            },
             "inject": {
               "default": "false",
               "description": "No-restart ptrace enablement for Go services that disabled heap profiling.",

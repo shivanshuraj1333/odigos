@@ -602,10 +602,17 @@ type ProfilingMemoryConfiguration struct {
 	// SampleSizeBytes is the target average bytes between sampled allocations.
 	// One of 131072/262144/524288; defaults to 262144 (256KiB) when zero.
 	SampleSizeBytes int `json:"sampleSizeBytes,omitempty" yaml:"sampleSizeBytes,omitempty"`
-	// Per-runtime toggles (default: go=true, java=true, native=false).
+	// Per-runtime toggles (default: go=true, java=true, native=false,
+	// dotnet=false, node=false).
 	Go     *bool `json:"go,omitempty" yaml:"go,omitempty"`
 	Java   *bool `json:"java,omitempty" yaml:"java,omitempty"`
 	Native *bool `json:"native,omitempty" yaml:"native,omitempty"`
+	// Dotnet profiles .NET/CoreCLR via the EventPipe diagnostic socket
+	// (allocation by managed type + call stacks). No restart, no app change.
+	Dotnet *bool `json:"dotnet,omitempty" yaml:"dotnet,omitempty"`
+	// Node profiles Node.js via the V8 Inspector sampling heap profiler
+	// (allocation by JS call stack). Enabled on a running process via SIGUSR1.
+	Node *bool `json:"node,omitempty" yaml:"node,omitempty"`
 	// Inject enables no-restart ptrace enablement (write MemProfileRate for Go
 	// services that disabled heap profiling). Off by default.
 	Inject *bool `json:"inject,omitempty" yaml:"inject,omitempty"`
