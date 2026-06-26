@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: memcol, namespace: memprof-sys }
+spec:
+  selector: { matchLabels: { app: memcol } }
+  template:
+    metadata: { labels: { app: memcol } }
+    spec:
+      hostPID: true
+      containers:
+      - name: collector
+        image: local/odigos-collector:memcat2
+        imagePullPolicy: Never
+        command: ["/odigosotelcol","--config=/conf/config.yaml"]
+        securityContext: { privileged: true }
+        volumeMounts:
+        - { name: conf, mountPath: /conf }
+        - { name: debugfs, mountPath: /sys/kernel/debug }
+        - { name: tracefs, mountPath: /sys/kernel/tracing }
+      volumes:
+      - { name: conf, configMap: { name: memcol-conf } }
+      - { name: debugfs, hostPath: { path: /sys/kernel/debug, type: Directory } }
+      - { name: tracefs, hostPath: { path: /sys/kernel/tracing, type: Directory } }

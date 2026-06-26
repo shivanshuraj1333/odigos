@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: memdemo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dotnet-alloc
+  namespace: memdemo
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: dotnet-alloc } }
+  template:
+    metadata: { labels: { app: dotnet-alloc } }
+    spec:
+      containers:
+      - name: app
+        image: mcr.microsoft.com/dotnet/sdk:8.0
+        command: ["bash","-c"]
+        args:
+        - |
+          mkdir -p /app && cd /app && cat > Program.cs <<'CS'
+          using System;using System.Collections.Generic;using System.Threading;
+          class P{static List<byte[]> k=new();static byte[] Big()=>new byte[85000];
+          static void Main(){Console.WriteLine("start");while(true){for(int j=0;j<50;j++){var a=Big();a[0]=1;if(j%10==0)k.Add(a);}if(k.Count>4000)k.Clear();Thread.Sleep(5);}}}
+          CS
+          cat > app.csproj <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>
+          XML
+          dotnet run -c Release
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-alloc
+  namespace: memdemo
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: node-alloc } }
+  template:
+    metadata: { labels: { app: node-alloc } }
+    spec:
+      containers:
+      - name: app
+        image: node:20
+        command: ["node","-e"]
+        args:
+        - |
+          const big=[];function mk(){return Buffer.allocUnsafe(100*1024);}
+          function churn(){const s=[];for(let i=0;i<2000;i++)s.push({i,n:'x'+i,b:Buffer.alloc(512)});return s;}
+          setInterval(()=>{big.push(mk());churn();if(big.length>400)big.length=0;},4);
+          console.log('node alloc pid',process.pid);

@@ -1,0 +1,22 @@
+# Vendored build of the odigos collector embedding the memory-profiling fork of
+# the ebpf-profiler (CPU + out-of-process .NET/Node/Go/Java/native heap profiling).
+#
+# Reproduce (host, with GOPRIVATE auth for github.com/odigos-io/ebpf-core):
+#   cp -r <memprof-cat2-checkout> ebpf-profiler-src && rm -rf ebpf-profiler-src/.git
+#   cd collector/odigosotelcol
+#   printf '\nreplace go.opentelemetry.io/ebpf-profiler => ../../ebpf-profiler-src\n' >> go.mod
+#   GOFLAGS=-mod=mod GOPRIVATE=github.com/odigos-io/* go mod tidy && go mod vendor
+#   DOCKER_BUILDKIT=1 docker build -t <img> . -f collector/Dockerfile.memprof-vendored
+FROM --platform=$BUILDPLATFORM golang:1.26.2-trixie AS builder
+RUN apt-get update && apt-get install -y gcc libc6-dev >/dev/null 2>&1 || true
+COPY ./collector/ /go/src/collector
+COPY ./common/ /go/src/common
+WORKDIR /go/src/collector/odigosotelcol
+# Build straight from the pre-generated + vendored module so the fork (and its
+# private deps) need no network/auth in the image.
+ENV GOFLAGS=-mod=vendor CGO_ENABLED=1
+ARG TARGETARCH
+RUN GOOS=linux GOARCH=$TARGETARCH go build -ldflags="-s -w -checklinkname=0" -o odigosotelcol .
+FROM gcr.io/distroless/base:latest
+COPY --from=builder /go/src/collector/odigosotelcol/odigosotelcol /odigosotelcol
+CMD ["/odigosotelcol"]
