@@ -26,6 +26,13 @@ func addProfilingGatewayPipeline(c *config.Config, odigosNs string, profiling *c
 		"endpoint":    endpoint,
 		"tls":         config.GenericMap{"insecure": true},
 		"compression": "none",
+		// See nodecollector profiles.go: profiles fan out to many small exports,
+		// so a 5s default timeout can retry-storm and backlog against a slow
+		// destination, aging profile timestamps out of live query windows. Tuned
+		// defaults; user profiling.exporter overrides win.
+		"timeout":          "30s",
+		"sending_queue":    config.GenericMap{"enabled": true, "num_consumers": 4, "queue_size": 512},
+		"retry_on_failure": config.GenericMap{"enabled": true, "initial_interval": "2s", "max_interval": "10s", "max_elapsed_time": "120s"},
 	}, profiling.Exporter)
 
 	c.Exporters[commonconf.ProfilingGatewayToUIExporter] = exp

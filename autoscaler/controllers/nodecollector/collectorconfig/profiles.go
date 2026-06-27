@@ -19,6 +19,15 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 		"endpoint":    endpoint,
 		"tls":         config.GenericMap{"insecure": true},
 		"compression": "none",
+		// Defaults sized for profiles fan-out: a node emits ~5 profile types per
+		// workload per tick, so a slow/contended downstream can exceed the OTLP
+		// exporter's 5s default timeout, retry-storm, and build a backlog that
+		// drags profile timestamps minutes behind live query windows (renders
+		// empty). A 30s timeout plus a bounded sending queue absorb bursts and
+		// keep delivery fresh. User-supplied profiling.exporter overrides win.
+		"timeout":          "30s",
+		"sending_queue":    config.GenericMap{"enabled": true, "num_consumers": 4, "queue_size": 512},
+		"retry_on_failure": config.GenericMap{"enabled": true, "initial_interval": "2s", "max_interval": "10s", "max_elapsed_time": "120s"},
 	}, profiling.Exporter)
 
 	processors := config.GenericMap{
