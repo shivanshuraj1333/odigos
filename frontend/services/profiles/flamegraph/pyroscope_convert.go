@@ -46,8 +46,11 @@ func ParseExportProfilesServiceRequest(chunk []byte) (*pprofileotlp.ExportProfil
 const (
 	// SampleTypeCPU renders the CPU flame graph (existing default behavior).
 	SampleTypeCPU = "cpu"
-	// SampleTypeAllocSpace renders the memory (allocated bytes) flame graph.
-	SampleTypeAllocSpace = "alloc_space"
+	// The four heap sample types, mirroring a Go runtime heap profile.
+	SampleTypeAllocSpace   = "alloc_space"   // cumulative bytes allocated
+	SampleTypeAllocObjects = "alloc_objects" // cumulative objects allocated
+	SampleTypeInuseSpace   = "inuse_space"   // live bytes
+	SampleTypeInuseObjects = "inuse_objects" // live objects
 )
 
 // DefaultSampleType is the profile sample type used when the caller does not request one.
@@ -57,10 +60,30 @@ const DefaultSampleType = SampleTypeCPU
 // to CPU for empty or unrecognized input so existing CPU behavior is never regressed.
 func NormalizeProfileType(profileType string) string {
 	switch profileType {
-	case SampleTypeAllocSpace:
-		return SampleTypeAllocSpace
+	case SampleTypeAllocSpace, SampleTypeAllocObjects, SampleTypeInuseSpace, SampleTypeInuseObjects:
+		return profileType
 	default:
 		return SampleTypeCPU
+	}
+}
+
+// IsMemoryType reports whether the (normalized) profile type is one of the four heap sample types.
+func IsMemoryType(profileType string) bool {
+	switch NormalizeProfileType(profileType) {
+	case SampleTypeAllocSpace, SampleTypeAllocObjects, SampleTypeInuseSpace, SampleTypeInuseObjects:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsObjectCountType reports whether the type counts objects (unit "objects") rather than bytes.
+func IsObjectCountType(profileType string) bool {
+	switch NormalizeProfileType(profileType) {
+	case SampleTypeAllocObjects, SampleTypeInuseObjects:
+		return true
+	default:
+		return false
 	}
 }
 

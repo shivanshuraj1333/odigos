@@ -31,9 +31,10 @@ func buildPyroscopeProfileFromChunks(ctx context.Context, chunks [][]byte, profi
 		if adapted.FlamebearerProfile.Metadata.Format == "" {
 			// Empty/aggregate-only profile: ExportToFlamebearer was not used, so fill metadata ourselves.
 			adapted.FlamebearerProfile.Metadata = pyroscopeMetadataFor(profileType)
-		} else if profileType == flamegraph.SampleTypeAllocSpace {
+		} else if flamegraph.IsMemoryType(profileType) {
 			// ExportToFlamebearer already set Format/levels; normalize the memory metadata to the
-			// Odigos contract (name "memory", units "bytes"). CPU output is left byte-identical to today.
+			// Odigos contract (name "memory", units "bytes"/"objects"). CPU output is left
+			// byte-identical to today.
 			md := pyroscopeMetadataFor(profileType)
 			adapted.FlamebearerProfile.Metadata.Units = md.Units
 			adapted.FlamebearerProfile.Metadata.Name = md.Name
@@ -51,22 +52,29 @@ const (
 	// pyroscopeMetadataSampleRate matches Grafana ExportToFlamebearer for CPU (nanoseconds period hint).
 	pyroscopeMetadataSampleRate = 1_000_000_000
 
-	// Memory (alloc_space) reports byte weights; Pyroscope's bytes unit drives byte-formatted ticks.
+	// Memory space types report byte weights; object types report counts. Pyroscope's unit drives
+	// byte- vs count-formatted ticks.
 	pyroscopeMetadataUnitsBytes        = "bytes"
+	pyroscopeMetadataUnitsObjects      = "objects"
 	pyroscopeMetadataProfileNameMemory = "memory"
 	// Memory profiles have no per-second rate; ExportToFlamebearer uses 100 for non-CPU types.
 	pyroscopeMetadataSampleRateMemory = 100
 )
 
 // pyroscopeMetadataFor returns the flamebearer metadata for a given profile type. CPU keeps the exact
-// samples/nanoseconds shape used historically; alloc_space reports bytes under the "memory" name.
+// samples/nanoseconds shape used historically; the four heap types report bytes (space) or objects
+// (count) under the "memory" name.
 func pyroscopeMetadataFor(profileType string) pyrofb.FlamebearerMetadataV1 {
-	if flamegraph.NormalizeProfileType(profileType) == flamegraph.SampleTypeAllocSpace {
+	if flamegraph.IsMemoryType(profileType) {
+		units := pyroscopeMetadataUnitsBytes
+		if flamegraph.IsObjectCountType(profileType) {
+			units = pyroscopeMetadataUnitsObjects
+		}
 		return pyrofb.FlamebearerMetadataV1{
 			Format:     pyroscopeMetadataFormatSingle,
 			SpyName:    "",
 			SampleRate: pyroscopeMetadataSampleRateMemory,
-			Units:      pyrometadata.Units(pyroscopeMetadataUnitsBytes),
+			Units:      pyrometadata.Units(units),
 			Name:       pyroscopeMetadataProfileNameMemory,
 		}
 	}
