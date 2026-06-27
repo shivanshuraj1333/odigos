@@ -1825,6 +1825,12 @@
               "description": "No-restart ptrace enablement for Go services that disabled heap profiling.",
               "required": [],
               "title": "inject"
+            },
+            "metrics": {
+              "default": "false",
+              "description": "Enable the memory profiler's self-observability metrics (throughput, per-language overhead, samples/sec, traffic) and a Prometheus pull endpoint (:8888) on the node collector. Off by default; removed when disabled or on helm uninstall.",
+              "required": [],
+              "title": "metrics"
             }
           },
           "required": [],

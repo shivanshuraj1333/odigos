@@ -616,6 +616,11 @@ type ProfilingMemoryConfiguration struct {
 	// Inject enables no-restart ptrace enablement (write MemProfileRate for Go
 	// services that disabled heap profiling). Off by default.
 	Inject *bool `json:"inject,omitempty" yaml:"inject,omitempty"`
+	// Metrics enables the memory profiler's self-observability metrics
+	// (throughput, per-language overhead, samples/sec, traffic) and a Prometheus
+	// pull endpoint on the node collector. Off by default; fully removed when off
+	// or on helm uninstall.
+	Metrics *bool `json:"metrics,omitempty" yaml:"metrics,omitempty"`
 }
 
 // MemoryEnabled reports whether memory profiling should run: profiling itself
@@ -625,6 +630,16 @@ func (p *ProfilingConfiguration) MemoryEnabled() bool {
 		return false
 	}
 	return p.Memory != nil && p.Memory.Enabled != nil && *p.Memory.Enabled
+}
+
+// MemoryMetricsEnabled reports whether the memory profiler's self-observability
+// metrics + Prometheus endpoint should be generated. Requires memory profiling
+// to be on and profiling.memory.metrics=true.
+func (p *ProfilingConfiguration) MemoryMetricsEnabled() bool {
+	if !p.MemoryEnabled() {
+		return false
+	}
+	return p.Memory.Metrics != nil && *p.Memory.Metrics
 }
 
 // +kubebuilder:object:generate=true

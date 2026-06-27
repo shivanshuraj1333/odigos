@@ -50,6 +50,33 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 	}
 	pipelineProcessors = append(pipelineProcessors, commonconf.ProfilingNodeServiceNameProcessor)
 
+	svc := config.Service{
+		Pipelines: map[string]config.Pipeline{
+			"profiles": {
+				Receivers:  []string{commonconf.ProfilingReceiver},
+				Processors: pipelineProcessors,
+				Exporters:  []string{commonconf.ProfilingNodeToGatewayExporter},
+			},
+		},
+	}
+	// Expose the memory profiler's self-observability metrics on a Prometheus
+	// pull endpoint, only when profiling.memory.metrics=true. level=detailed is
+	// required or the attribute-bearing instruments get aggregated away. When the
+	// value is false (or the chart is uninstalled) this block is absent, so the
+	// collector serves no endpoint and the profiler emits nothing.
+	if profiling.MemoryMetricsEnabled() {
+		svc.Telemetry = config.Telemetry{
+			Metrics: config.MetricsConfig{
+				Level: "detailed",
+				Readers: []config.GenericMap{
+					{"pull": config.GenericMap{"exporter": config.GenericMap{
+						"prometheus": config.GenericMap{"host": "0.0.0.0", "port": 8888},
+					}}},
+				},
+			},
+		}
+	}
+
 	return config.Config{
 		Receivers: config.GenericMap{
 			commonconf.ProfilingReceiver: profilingReceiverConfig(profiling),
@@ -58,15 +85,7 @@ func ProfilingPipelineConfig(odigosNamespace string, profiling *common.Profiling
 		Exporters: config.GenericMap{
 			commonconf.ProfilingNodeToGatewayExporter: exp,
 		},
-		Service: config.Service{
-			Pipelines: map[string]config.Pipeline{
-				"profiles": {
-					Receivers:  []string{commonconf.ProfilingReceiver},
-					Processors: pipelineProcessors,
-					Exporters:  []string{commonconf.ProfilingNodeToGatewayExporter},
-				},
-			},
-		},
+		Service: svc,
 	}
 }
 
@@ -107,6 +126,12 @@ func profilingReceiverConfig(p *common.ProfilingConfiguration) config.GenericMap
 				mode = "inject"
 			}
 			mem["native"] = config.GenericMap{"mode": mode}
+		}
+		// Self-observability metrics are opt-in: only emit the receiver's metrics
+		// toggle when profiling.memory.metrics=true (paired with the Prometheus
+		// telemetry block on the service below).
+		if p.MemoryMetricsEnabled() {
+			mem["metrics"] = true
 		}
 		cfg["memory"] = mem
 	}
