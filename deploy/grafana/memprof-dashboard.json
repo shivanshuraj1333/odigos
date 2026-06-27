@@ -1,0 +1,148 @@
+{
+  "__comment": "Odigos Memory Profiler — self-observability dashboard. Import into Grafana with a Prometheus datasource scraping the node collector's :8888 endpoint (enabled via profiling.memory.metrics=true). Proves throughput and per-language overhead live.",
+  "title": "Odigos Memory Profiler — Throughput & Overhead",
+  "uid": "odigos-memprof",
+  "tags": ["odigos", "memory-profiler", "profiling"],
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "language",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(profiler_mem_readers_active, language)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    { "type": "row", "title": "Headline (best-in-class proof)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+    {
+      "type": "stat", "title": "Profiler CPU overhead (cores)",
+      "description": "Whole node-collector CPU (CPU profiler + memory profiler + pipeline combined).",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 3, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] } } },
+      "targets": [ { "expr": "sum(rate(profiler_process_cpu_millis_milliseconds_total[5m])) / 1000", "legendFormat": "cores" } ]
+    },
+    {
+      "type": "stat", "title": "Profiler RSS",
+      "description": "Whole node-collector resident memory (statm).",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [ { "expr": "max(profiler_process_rss_bytes)", "legendFormat": "rss" } ]
+    },
+    {
+      "type": "stat", "title": "Allocation visibility (bytes sampled/s)",
+      "description": "Unbiased allocation throughput the profiler is making visible, all languages.",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [ { "expr": "sum(rate(profiler_mem_alloc_bytes_sampled_bytes_total[5m]))", "legendFormat": "alloc B/s" } ]
+    },
+    {
+      "type": "stat", "title": "Languages profiling",
+      "description": "Distinct language families with active readers.",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "none" } },
+      "targets": [ { "expr": "count(count by (language) (profiler_mem_readers_active > 0))", "legendFormat": "languages" } ]
+    },
+
+    { "type": "row", "title": "Throughput", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 } },
+    {
+      "type": "timeseries", "title": "CPU samples / sec",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "cps", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [ { "expr": "sum by (cpu_mode) (rate(profiler_cpu_samples_total[1m]))", "legendFormat": "cpu {{cpu_mode}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Memory samples / sec — by language",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "cps", "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } } },
+      "targets": [ { "expr": "sum by (language) (rate(profiler_mem_samples_total{language=~\"$language\"}[1m]))", "legendFormat": "{{language}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Allocation sites (records) / sec — by language",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+      "fieldConfig": { "defaults": { "unit": "cps", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [ { "expr": "sum by (language) (rate(profiler_mem_records_total{language=~\"$language\"}[1m]))", "legendFormat": "{{language}}" } ]
+    },
+
+    { "type": "row", "title": "Overhead", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 } },
+    {
+      "type": "timeseries", "title": "Node-collector CPU (cores)",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 3, "custom": { "drawStyle": "line", "fillOpacity": 15 } } },
+      "targets": [ { "expr": "rate(profiler_process_cpu_millis_milliseconds_total[1m]) / 1000", "legendFormat": "cores" } ]
+    },
+    {
+      "type": "timeseries", "title": "Node-collector RSS",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 15 } } },
+      "targets": [ { "expr": "profiler_process_rss_bytes", "legendFormat": "rss" } ]
+    },
+
+    { "type": "row", "title": "Per-language detail", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 } },
+    {
+      "type": "timeseries", "title": "alloc_space sampled — bytes/s by language",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [ { "expr": "sum by (language) (rate(profiler_mem_alloc_bytes_sampled_bytes_total{language=~\"$language\"}[1m]))", "legendFormat": "{{language}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "inuse_space (live heap) — bytes by language",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [ { "expr": "sum by (language) (profiler_mem_inuse_bytes{language=~\"$language\"})", "legendFormat": "{{language}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Active readers + read errors/s by language",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 23 },
+      "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "fillOpacity": 5 } } },
+      "targets": [
+        { "expr": "sum by (language) (profiler_mem_readers_active{language=~\"$language\"})", "legendFormat": "readers {{language}}" },
+        { "expr": "sum by (language) (rate(profiler_mem_read_errors_total{language=~\"$language\"}[5m]))", "legendFormat": "errors/s {{language}}" }
+      ]
+    },
+
+    { "type": "row", "title": "Traffic", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 } },
+    {
+      "type": "timeseries", "title": "Profile bytes exported / sec — by signal",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 31 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [ { "expr": "sum by (signal) (rate(profiler_export_bytes_bytes_total[1m]))", "legendFormat": "{{signal}}" } ]
+    },
+    {
+      "type": "timeseries", "title": "Node NIC received bytes / sec",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 31 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } } },
+      "targets": [ { "expr": "rate(profiler_node_network_receive_bytes_bytes_total[1m])", "legendFormat": "rx" } ]
+    }
+  ]
+}
