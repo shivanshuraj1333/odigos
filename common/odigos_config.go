@@ -590,6 +590,54 @@ type ProfilingConfiguration struct {
 	// Symbolization controls how native (C/C++/Rust) frames are resolved to
 	// function names. Mirrors the VM agent's profiling.symbolization.native flag.
 	Symbolization *ProfilingSymbolizationConfiguration `json:"symbolization,omitempty" yaml:"symbolization,omitempty"`
+	// Memory is the heap/allocation profiling sub-vertical, layered on top of the
+	// (CPU) profiling pipeline: same node-wide agent, same Source enrollment (an
+	// enabled odigos Source = an InstrumentationConfig), same central-symbolize →
+	// Pyroscope path. Requires Profiling.Enabled (the pipeline must exist). Mirrors
+	// the agent-side collector/config.MemoryConfig knobs.
+	Memory *ProfilingMemoryConfiguration `json:"memory,omitempty" yaml:"memory,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+// ProfilingMemoryConfiguration is the control-plane mirror of the agent's
+// MemoryConfig. It is opt-in (Enabled) and only takes effect when the parent
+// Profiling pipeline is active. Go is profiled with no app restart (the node
+// agent reads runtime.mbuckets out-of-process); native and Java need a one-time
+// odigos-injected restart (LD_PRELOAD / JFR startup flag).
+type ProfilingMemoryConfiguration struct {
+	// Enabled turns on memory profiling for enabled Sources. Default false.
+	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// SampleSizeBytes is the target average bytes between sampled allocations
+	// (one of 131072/262144/524288; default 262144 = 256KiB).
+	SampleSizeBytes int `json:"sampleSizeBytes,omitempty" yaml:"sampleSizeBytes,omitempty"`
+	// ReportIntervalSeconds is how often heap profiles are collected (default 15).
+	ReportIntervalSeconds int `json:"reportIntervalSeconds,omitempty" yaml:"reportIntervalSeconds,omitempty"`
+	// InuseTracking enables the live-heap (leak) signals inuse_space/inuse_objects
+	// in addition to the cumulative alloc_*. Default true.
+	InuseTracking *bool `json:"inuseTracking,omitempty" yaml:"inuseTracking,omitempty"`
+	// Languages selects which runtimes to profile. Defaults when memory is enabled:
+	// go=true, java=true, native/dotnet/node=false.
+	Languages *ProfilingMemoryLanguages `json:"languages,omitempty" yaml:"languages,omitempty"`
+	// NativeMode is how native allocators are enabled: off|inject|restart. Default off.
+	NativeMode string `json:"nativeMode,omitempty" yaml:"nativeMode,omitempty"`
+	// JavaMode selects the Java engine: "jfr" (default; built-in, no-ptrace,
+	// startup-flag injected, OldObjectSample leak + off-heap, JDK8u262+) or "asprof"
+	// (async-profiler runtime attach; deeper alloc stacks, needs hostPID/writable-tmp).
+	JavaMode string `json:"javaMode,omitempty" yaml:"javaMode,omitempty"`
+	// Debuginfod is an optional internal/private debuginfod base URL for resolving
+	// stripped native binaries. Empty = in-container/on-host symbols only (never a
+	// hard dependency; unresolved frames degrade to module+offset).
+	Debuginfod string `json:"debuginfod,omitempty" yaml:"debuginfod,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+// ProfilingMemoryLanguages toggles per-runtime memory profiling.
+type ProfilingMemoryLanguages struct {
+	Go     *bool `json:"go,omitempty" yaml:"go,omitempty"`
+	Java   *bool `json:"java,omitempty" yaml:"java,omitempty"`
+	Native *bool `json:"native,omitempty" yaml:"native,omitempty"`
+	Dotnet *bool `json:"dotnet,omitempty" yaml:"dotnet,omitempty"`
+	Node   *bool `json:"node,omitempty" yaml:"node,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
@@ -694,4 +742,18 @@ func ProfilingPipelineActive(p *ProfilingConfiguration) bool {
 // ProfilingEnabled reports whether profiling is explicitly enabled on this configuration.
 func (o *OdigosConfiguration) ProfilingEnabled() bool {
 	return o != nil && ProfilingPipelineActive(o.Profiling)
+}
+
+// MemoryProfilingActive reports whether heap/allocation profiling should run.
+// It requires the parent profiling pipeline to be active (memory rides the same
+// node-wide agent, Source gate, and Pyroscope pipeline as CPU) AND memory to be
+// explicitly enabled. nil/false at either level keeps memory profiling off.
+func MemoryProfilingActive(p *ProfilingConfiguration) bool {
+	return ProfilingPipelineActive(p) &&
+		p.Memory != nil && p.Memory.Enabled != nil && *p.Memory.Enabled
+}
+
+// MemoryProfilingEnabled reports whether memory profiling is active on this config.
+func (o *OdigosConfiguration) MemoryProfilingEnabled() bool {
+	return o != nil && MemoryProfilingActive(o.Profiling)
 }

@@ -57,6 +57,48 @@ func TestProfilingPipelineConfig_Enabled(t *testing.T) {
 	assert.Equal(t, k8sconsts.OdigosConfigK8sExtensionType, odigosProfilesCfg["odigos_config_extension"])
 }
 
+// TestProfilingPipelineConfig_Memory verifies the "memory" block is rendered onto
+// the profiling receiver when Profiling.Memory is enabled, with resolved defaults.
+func TestProfilingPipelineConfig_Memory(t *testing.T) {
+	on := true
+
+	// Memory off (nil) -> receiver config has no "memory" block.
+	got := ProfilingPipelineConfig("odigos-system", &common.ProfilingConfiguration{Enabled: &on})
+	rc, _ := got.Receivers[commonconf.ProfilingReceiver].(config.GenericMap)
+	assert.NotContains(t, rc, "memory")
+
+	// Memory on -> "memory" block with defaults (256KiB, 15s, inuse on, go+java).
+	got = ProfilingPipelineConfig("odigos-system", &common.ProfilingConfiguration{
+		Enabled: &on,
+		Memory:  &common.ProfilingMemoryConfiguration{Enabled: &on},
+	})
+	rc, ok := got.Receivers[commonconf.ProfilingReceiver].(config.GenericMap)
+	require.True(t, ok)
+	mem, ok := rc["memory"].(config.GenericMap)
+	require.True(t, ok, "memory block must be present")
+	assert.Equal(t, true, mem["enabled"])
+	assert.Equal(t, 262144, mem["sample_size_bytes"])
+	assert.Equal(t, "15s", mem["report_interval"])
+	assert.Equal(t, true, mem["inuse_tracking"])
+	langs := mem["languages"].(config.GenericMap)
+	assert.Equal(t, true, langs["go"])
+	assert.Equal(t, true, langs["java"])
+	assert.Equal(t, false, langs["native"])
+
+	// Native memory on -> symbolize processor is forced even if not separately enabled.
+	off := false
+	got = ProfilingPipelineConfig("odigos-system", &common.ProfilingConfiguration{
+		Enabled:       &on,
+		Symbolization: &common.ProfilingSymbolizationConfiguration{Native: &off}, // user opted out of CPU-native symbolization
+		Memory: &common.ProfilingMemoryConfiguration{
+			Enabled:   &on,
+			Languages: &common.ProfilingMemoryLanguages{Native: &on},
+		},
+	})
+	require.Contains(t, got.Processors, commonconf.ProfilingNodeSymbolizeProcessor,
+		"native memory frames require central symbolization regardless of the CPU symbolization opt-out")
+}
+
 // TestProfilingPipelineConfig_NativeSymbolizationDisabled drops the symbolize
 // processor when a user explicitly opts out (profiling.symbolization.native: false).
 func TestProfilingPipelineConfig_NativeSymbolizationDisabled(t *testing.T) {

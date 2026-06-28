@@ -113,8 +113,15 @@ func TestProcessProfilesFillsNativeLines(t *testing.T) {
 	require.Equal(t, "odigos.symbol.source", dict.StringTable().At(int(attr.KeyStrindex())))
 	require.Equal(t, "symtab", attr.Value().Str())
 
-	// The unresolvable native location stays empty.
-	require.Equal(t, 0, lt.At(1).Lines().Len(), "unresolvable location must stay raw")
+	// The unresolvable native location is never dropped: it now carries a
+	// synthetic "module+0xoffset" Line so the sample survives and stays
+	// offline-symbolizable from the mapping's build-id.
+	raw := lt.At(1)
+	require.Equal(t, 1, raw.Lines().Len(), "unresolvable location must get a synthetic module+offset Line")
+	rawNameIdx := dict.FunctionTable().At(int(raw.Lines().At(0).FunctionIndex())).NameStrindex()
+	require.Equal(t, "libfix.so+0x2000", dict.StringTable().At(int(rawNameIdx)))
+	// The synthetic frame is NOT tagged as an instrumentable symbol source.
+	require.Equal(t, 0, raw.AttributeIndices().Len(), "synthetic frame must not be tagged instrumentable")
 
 	// The already-symbolized location is untouched (still its original Line).
 	require.Equal(t, 1, lt.At(namedLoc).Lines().Len())
@@ -123,6 +130,26 @@ func TestProcessProfilesFillsNativeLines(t *testing.T) {
 	// Correct pid was used.
 	require.Equal(t, int64(4242), fr.gotPID)
 	require.Equal(t, "libfix.so", fr.gotName)
+}
+
+func TestSyntheticName(t *testing.T) {
+	// PIE: a runtime address normalizes to a load-bias-stable file offset, so the
+	// same code site produces the same name regardless of where it mapped.
+	pie := moduleRef{Name: "/usr/lib/libssl.so.3", MemoryStart: 0x7f0000000000, FileOffset: 0x1000}
+	require.Equal(t, "libssl.so.3+0x1abc",
+		syntheticName(pie, 0x7f0000000abc), "addr - memStart + fileOffset")
+
+	// Non-PIE / vaddr already absolute (MemoryStart 0): use the address as-is.
+	require.Equal(t, "app+0x4015a0",
+		syntheticName(moduleRef{Name: "app", MemoryStart: 0}, 0x4015a0))
+
+	// addr below MemoryStart (abstract/edge): fall back to the raw address.
+	require.Equal(t, "libfix.so+0x2000",
+		syntheticName(moduleRef{Name: "libfix.so", MemoryStart: 0x7f0000000000}, 0x2000))
+
+	// No usable module name -> "" so the caller drops the frame.
+	require.Equal(t, "", syntheticName(moduleRef{Name: ""}, 0x1000))
+	require.Equal(t, "", syntheticName(moduleRef{Name: "/"}, 0x1000))
 }
 
 func TestProcessProfilesNoPIDSkips(t *testing.T) {

@@ -1,0 +1,70 @@
+package podswebhook
+
+import (
+	"strings"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+func TestInjectJavaMemoryProfiling(t *testing.T) {
+	c := &corev1.Container{Name: "app"}
+	got := InjectJavaMemoryProfiling(GetEnvVarNamesSet(c), c)
+
+	if _, ok := got[jdkJavaOptionsEnvVar]; !ok {
+		t.Fatalf("expected %s to be tracked as injected", jdkJavaOptionsEnvVar)
+	}
+	if len(c.Env) != 1 || c.Env[0].Name != jdkJavaOptionsEnvVar {
+		t.Fatalf("expected one %s env var, got %+v", jdkJavaOptionsEnvVar, c.Env)
+	}
+	v := c.Env[0].Value
+	for _, want := range []string{"StartFlightRecording", "name=odigos", "old-object-queue-size"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("JFR flags missing %q: %s", want, v)
+		}
+	}
+}
+
+func TestInjectNativeMemoryProfiling(t *testing.T) {
+	c := &corev1.Container{Name: "svc"}
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c)
+
+	env := map[string]string{}
+	for _, e := range c.Env {
+		env[e.Name] = e.Value
+	}
+	if env[ldPreloadEnvVar] != jemallocProfSoPath {
+		t.Errorf("LD_PRELOAD = %q, want %q", env[ldPreloadEnvVar], jemallocProfSoPath)
+	}
+	for _, want := range []string{"prof:true", "lg_prof_sample:19", "prof_prefix:/tmp/odigos-jeprof"} {
+		if !strings.Contains(env[mallocConfEnvVar], want) {
+			t.Errorf("MALLOC_CONF missing %q: %s", want, env[mallocConfEnvVar])
+		}
+	}
+}
+
+func TestInjectNativeMemoryProfiling_NoOpWhenPresent(t *testing.T) {
+	// App with its own allocator/LD_PRELOAD must not be clobbered.
+	c := &corev1.Container{
+		Name: "svc",
+		Env:  []corev1.EnvVar{{Name: ldPreloadEnvVar, Value: "/opt/mymalloc.so"}},
+	}
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c)
+	for _, e := range c.Env {
+		if e.Name == ldPreloadEnvVar && e.Value != "/opt/mymalloc.so" {
+			t.Fatalf("must not overwrite existing LD_PRELOAD, got %q", e.Value)
+		}
+	}
+}
+
+func TestInjectJavaMemoryProfiling_NoOpWhenPresent(t *testing.T) {
+	// If the container already sets JDK_JAVA_OPTIONS, we must not clobber it.
+	c := &corev1.Container{
+		Name: "app",
+		Env:  []corev1.EnvVar{{Name: jdkJavaOptionsEnvVar, Value: "-Xss512k"}},
+	}
+	InjectJavaMemoryProfiling(GetEnvVarNamesSet(c), c)
+	if len(c.Env) != 1 || c.Env[0].Value != "-Xss512k" {
+		t.Fatalf("must not overwrite existing %s, got %+v", jdkJavaOptionsEnvVar, c.Env)
+	}
+}

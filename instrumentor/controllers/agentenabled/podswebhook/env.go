@@ -47,6 +47,52 @@ func InjectConstEnvVarToPodContainer(existingEnvNames EnvVarNamesMap, container 
 	return existingEnvNames
 }
 
+// jdkJavaOptionsEnvVar carries the Java memory-profiling startup flags. We use
+// JDK_JAVA_OPTIONS (honored by JDK 9+, applied additively alongside
+// JAVA_TOOL_OPTIONS) so we never disturb the tracing agent's JAVA_TOOL_OPTIONS.
+const jdkJavaOptionsEnvVar = "JDK_JAVA_OPTIONS"
+
+// javaJFRMemoryFlags starts a continuous Flight Recording at JVM init with the
+// leak profiler (jdk.OldObjectSample) initialized. old-object tracking can only
+// be set up at startup — a runtime attach cannot enable it — which is why memory
+// leak profiling requires this startup flag (a one-time pod restart). The agent
+// then periodically dumps the "odigos" recording for alloc + leak signals.
+const javaJFRMemoryFlags = "-XX:StartFlightRecording=name=odigos,settings=profile,maxsize=100m " +
+	"-XX:FlightRecorderOptions=old-object-queue-size=256"
+
+// InjectJavaMemoryProfiling enables the JVM-side startup recording the JFR memory
+// engine reads. No-op if the container already sets JDK_JAVA_OPTIONS.
+func InjectJavaMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container) EnvVarNamesMap {
+	return InjectConstEnvVarToPodContainer(existingEnvNames, container, jdkJavaOptionsEnvVar, javaJFRMemoryFlags)
+}
+
+const (
+	ldPreloadEnvVar  = "LD_PRELOAD"
+	mallocConfEnvVar = "MALLOC_CONF"
+	// jemallocProfSoPath is the prof-enabled jemalloc the odiglet delivers; for
+	// glibc/default C/C++/Rust we preload it so the allocator profiles itself
+	// (Poisson-sampled, real live-heap, out-of-band dumps) — the production model,
+	// not a home-grown malloc shim.
+	jemallocProfSoPath = "/var/odigos/memprof/libjemalloc-prof.so"
+	// jemallocProfConf enables jemalloc's heap profiler: Poisson sampling at
+	// 2^19=512KiB (lg_prof_sample), cumulative accounting, auto-dump every
+	// 2^24=16MiB allocated (lg_prof_interval) to a prefix the agent reads
+	// out-of-process via /proc/<pid>/root.
+	jemallocProfConf = "prof:true,prof_active:true,prof_accum:true,lg_prof_sample:19,lg_prof_interval:24,prof_prefix:/tmp/odigos-jeprof"
+)
+
+// InjectNativeMemoryProfiling enables allocator-integrated heap profiling for a
+// C/C++/Rust container: it preloads the prof-enabled jemalloc and sets MALLOC_CONF
+// so jemalloc samples its own fast path and writes dumps the agent consumes. No-op
+// for either var if the container already sets it (e.g. an app with its own
+// allocator), in which case profiling falls back to whatever that allocator
+// exposes. The /var/odigos volume mount + lib delivery are handled separately.
+func InjectNativeMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container) EnvVarNamesMap {
+	existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, jemallocProfSoPath)
+	existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, mallocConfEnvVar, jemallocProfConf)
+	return existingEnvNames
+}
+
 func InjectTemplatedEnvVarToPodContainer(existingEnvNames EnvVarNamesMap, container *corev1.Container, envVarName string, envVarValueTemplate *template.Template, distroParams map[string]string) (EnvVarNamesMap, error) {
 	if _, exists := existingEnvNames[envVarName]; exists {
 		return existingEnvNames, nil
