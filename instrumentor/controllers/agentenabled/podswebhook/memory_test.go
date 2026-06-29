@@ -40,7 +40,7 @@ func TestInjectNativeMemoryProfiling_Glibc(t *testing.T) {
 	if env[ldPreloadEnvVar] != jemallocProfSoPath {
 		t.Errorf("LD_PRELOAD = %q, want %q", env[ldPreloadEnvVar], jemallocProfSoPath)
 	}
-	for _, want := range []string{"prof:true", "lg_prof_sample:19", "prof_prefix:/tmp/odigos-jeprof"} {
+	for _, want := range []string{"prof:true", "lg_prof_sample:18", "prof_prefix:/tmp/odigos-jeprof"} {
 		if !strings.Contains(env[mallocConfEnvVar], want) {
 			t.Errorf("MALLOC_CONF missing %q: %s", want, env[mallocConfEnvVar])
 		}

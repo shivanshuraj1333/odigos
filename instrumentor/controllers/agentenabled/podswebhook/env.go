@@ -92,7 +92,28 @@ const (
 	// glibc jemalloc-prof lib cannot be loaded — it instruments the default
 	// (musl) allocator directly and writes the same heap_v2 dumps the agent reads.
 	libmemsampleMuslSoPath = "/var/odigos/memprof/libmemsample-musl.so"
+	// libmemsampleSoPath is the glibc-built sampling interposer. Preloaded into
+	// interpreted runtimes (CPython/Ruby/PHP) so the interpreter's own glibc malloc
+	// is sampled and dumped for the agent — the same heap_v2 dumps the native reader
+	// consumes, but with interpreter-aware frames.
+	libmemsampleSoPath = "/var/odigos/memprof/libmemsample.so"
 )
+
+// InjectInterpretedMemoryProfiling LD_PRELOADs the libmemsample malloc interposer
+// into a Python/Ruby/PHP container so allocations made by the interpreter are
+// sampled. libc-aware exactly like the native path: the glibc lib for glibc, the
+// musl lib for musl, nothing for unknown libc (a wrong preload aborts musl). The
+// dumps land at the libmemsample default prefix the agent's glibc-native reader
+// already discovers, so no MALLOC_CONF is needed.
+func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, libc *common.LibCType) EnvVarNamesMap {
+	switch {
+	case libc != nil && *libc == common.Glibc:
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleSoPath)
+	case libc != nil && *libc == common.Musl:
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleMuslSoPath)
+	}
+	return existingEnvNames
+}
 
 // NativeMemoryPreloads reports whether InjectNativeMemoryProfiling will LD_PRELOAD
 // a lib (and therefore the caller must mount the /var/odigos/memprof dir). True for

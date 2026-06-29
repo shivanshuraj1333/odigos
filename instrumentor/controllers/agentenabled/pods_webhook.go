@@ -507,6 +507,19 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 				podswebhook.MountPodVolumeToHostPath(pod)
 			}
 			injected = true
+		case common.PythonProgrammingLanguage, common.RubyProgrammingLanguage, common.PhpProgrammingLanguage:
+			if !nativeRestart {
+				// Interpreted runtimes are sampled by LD_PRELOAD'ing libmemsample,
+				// which (like the native path) needs a one-time pod restart — gated on
+				// the same profiling.memory.native.restart opt-in.
+				continue
+			}
+			podswebhook.InjectInterpretedMemoryProfiling(existing, c, rd.LibCType)
+			if podswebhook.NativeMemoryPreloads(rd.LibCType) {
+				podswebhook.MountDirectory(c, k8sconsts.OdigosAgentsDirectory+"/memprof")
+				podswebhook.MountPodVolumeToHostPath(pod)
+			}
+			injected = true
 		}
 	}
 	return injected
