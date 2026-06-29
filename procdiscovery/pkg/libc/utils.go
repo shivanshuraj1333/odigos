@@ -9,10 +9,23 @@ import (
 	"github.com/odigos-io/odigos/procdiscovery/pkg/process"
 )
 
-// ShouldInspectForLanguage returns true if we should inspect libc type for the given language
-// Currently, we only inspect for .NET
+// ShouldInspectForLanguage returns true if we should inspect libc type for the given language.
+//   - .NET: selects the glibc vs musl CoreCLR profiler variant (ModifyEnvVarsForMusl).
+//   - C++/Rust: memory profiling LD_PRELOADs a glibc-built jemalloc; the instrumentor
+//     gates that preload on a detected glibc libc, because musl's dynamic loader aborts
+//     the process on an incompatible/missing preload (glibc's only warns). Without this
+//     signal the gate fails closed and native-default profiling never engages. A
+//     statically-linked native binary has no PT_INTERP, so InspectType returns nil and
+//     the preload is correctly skipped (you cannot LD_PRELOAD a static binary anyway).
 func ShouldInspectForLanguage(lang common.ProgrammingLanguage) bool {
-	return lang == common.DotNetProgrammingLanguage
+	switch lang {
+	case common.DotNetProgrammingLanguage,
+		common.CPlusPlusProgrammingLanguage,
+		common.RustProgrammingLanguage:
+		return true
+	default:
+		return false
+	}
 }
 
 // ModifyEnvVarsForMusl modifies the environment variables for the given language if musl libc is detected
