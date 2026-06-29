@@ -132,6 +132,37 @@ profiling:
     # description: Max bytes per slot (default 8 MiB).
     # @schema
     slotMaxBytes: 8388608
+  # @schema
+  # description: |-
+  #   Heap / allocation (memory) profiling, layered on top of the profiling pipeline above
+  #   (requires profiling.enabled). Default off. The two enablement mechanisms below are
+  #   independent fallbacks — both default off; turn on either, or both:
+  #     - inject:         no-restart live enablement via ptrace (Go heap sampling today),
+  #                       zero pod disruption.
+  #     - native.restart: LD_PRELOAD a prof-enabled allocator into C/C++/Rust workloads at
+  #                       process start (one-time pod roll).
+  # @schema
+  memory:
+    # @schema
+    # description: Turn on memory profiling for enabled Sources. Requires profiling.enabled.
+    # @schema
+    enabled: false
+    # @schema
+    # description: No-restart enablement via ptrace (Go heap sampling). Zero pod disruption. Default off.
+    # @schema
+    inject: false
+    # @schema
+    # description: Native (C/C++/Rust) allocator enablement.
+    # @schema
+    native:
+      # @schema
+      # description: LD_PRELOAD a prof-enabled allocator (MALLOC_CONF) at process start. Needs a one-time pod restart. Default off.
+      # @schema
+      restart: false
+    # @schema
+    # description: Track live-heap (leak) signals inuse_space/inuse_objects alongside cumulative alloc_*. Default true.
+    # @schema
+    inuseTracking: true
 
 # @schema
 # description: Configuration for OpenTelemetry (OTEL) agents instrumentation environment variables.

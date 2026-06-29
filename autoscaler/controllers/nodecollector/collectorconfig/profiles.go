@@ -52,6 +52,10 @@ func memoryReceiverConfig(m *common.ProfilingMemoryConfiguration) config.Generic
 		"sample_size_bytes": sample,
 		"report_interval":   fmt.Sprintf("%ds", intervalSec),
 		"inuse_tracking":    boolOrDefault(m.InuseTracking, true),
+		// inject is the no-restart enablement mechanism (ptrace; Go heap sampling
+		// today). Off by default and independent of native.mode — the agent's
+		// memory subsystem reads it as the top-level "inject" mapstructure key.
+		"inject": boolOrDefault(m.Inject, false),
 		"languages": config.GenericMap{
 			"go": goOn, "java": javaOn, "native": nativeOn, "dotnet": dotnetOn, "node": nodeOn,
 		},

@@ -143,7 +143,7 @@ func (p *PodsWebhook) injectOdigos(ctx context.Context, pod *corev1.Pod, req adm
 	// it applies even when tracing is disabled for this Source.
 	memoryInjected := false
 	if odigosConfiguration.MemoryProfilingEnabled() {
-		memoryInjected = p.injectMemoryProfilingEnvs(pod, &ic)
+		memoryInjected = p.injectMemoryProfilingEnvs(pod, &ic, odigosConfiguration.MemoryNativeRestartEnabled())
 	}
 
 	if !ic.Spec.AgentInjectionEnabled {
@@ -469,7 +469,12 @@ func (p *PodsWebhook) injectOdigosToContainer(containerConfig *odigosv1.Containe
 // Java gets a JFR startup recording (built-in, no lib); C++/Rust get
 // allocator-integrated jemalloc (LD_PRELOAD + MALLOC_CONF). Go/Python/Ruby/PHP/
 // .NET/Node use node-wide or runtime mechanisms that need no per-pod env here.
-func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig) bool {
+//
+// nativeRestart gates the C/C++/Rust LD_PRELOAD path: that env is the "restart"
+// enablement mechanism (it needs a one-time pod roll). When native mode is not
+// "restart" (e.g. only the no-restart inject path is enabled, or native is off),
+// we leave the pod's env untouched so no workload is forced to restart.
+func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig, nativeRestart bool) bool {
 	injected := false
 	for i := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[i]
@@ -483,6 +488,12 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 			podswebhook.InjectJavaMemoryProfiling(existing, c)
 			injected = true
 		case common.CPlusPlusProgrammingLanguage, common.RustProgrammingLanguage:
+			if !nativeRestart {
+				// Native restart mechanism is off — do not LD_PRELOAD, do not
+				// force a pod restart. Native sampling stays disabled for this
+				// container until the operator opts into profiling.memory.native.restart.
+				continue
+			}
 			// crash-safety: only LD_PRELOAD our glibc jemalloc into a container we
 			// KNOW is glibc — musl's loader aborts the process on an incompatible
 			// preload, glibc's only warns. For musl/unknown libc we inject MALLOC_CONF

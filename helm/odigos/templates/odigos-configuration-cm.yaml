@@ -83,6 +83,20 @@ data:
         slotTTLSeconds: {{ $pui.slotTTLSeconds | default 300 | int }}
         maxSlots: {{ $pui.maxSlots | default 32 | int }}
         slotMaxBytes: {{ $pui.slotMaxBytes | default 8388608 | int }}
+      {{- $pmem := .Values.profiling.memory | default dict }}
+      {{- if $pmem.enabled }}
+      {{- $pnative := $pmem.native | default dict }}
+      {{- /* Two independent enablement mechanisms, both default off:
+             inject = no-restart ptrace (Go); native.restart = LD_PRELOAD (C/C++/Rust).
+             nativeMode is "restart" only when native.restart is set, else "off". */}}
+      memory:
+        enabled: true
+        inject: {{ $pmem.inject | default false }}
+        inuseTracking: {{ $pmem.inuseTracking | default true }}
+        nativeMode: {{ if $pnative.restart }}"restart"{{ else }}"off"{{ end }}
+        languages:
+          native: {{ $pnative.restart | default false }}
+      {{- end }}
     {{- end }}
     {{- if .Values.collectorGateway }}
     {{- $gwLimiter := include "collector.gateway.memoryLimiter" . | fromYaml }}

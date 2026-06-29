@@ -618,7 +618,16 @@ type ProfilingMemoryConfiguration struct {
 	// Languages selects which runtimes to profile. Defaults when memory is enabled:
 	// go=true, java=true, native/dotnet/node=false.
 	Languages *ProfilingMemoryLanguages `json:"languages,omitempty" yaml:"languages,omitempty"`
-	// NativeMode is how native allocators are enabled: off|inject|restart. Default off.
+	// Inject enables the no-restart enablement mechanism: the node agent attaches
+	// to a live process via ptrace and turns sampling on in place — zero pod
+	// disruption. Today this drives Go heap sampling (writes runtime.MemProfileRate
+	// into binaries that never imported runtime/pprof). Off by default (ptrace is
+	// invasive). This is the "live-attach" fallback, independent of NativeMode —
+	// either, both, or neither may be set.
+	Inject *bool `json:"inject,omitempty" yaml:"inject,omitempty"`
+	// NativeMode is how native (C/C++/Rust) allocators are enabled: off|inject|restart.
+	// "restart" LD_PRELOADs a prof-enabled allocator at process start (one-time pod
+	// roll). Default off. Independent of Inject.
 	NativeMode string `json:"nativeMode,omitempty" yaml:"nativeMode,omitempty"`
 	// JavaMode selects the Java engine: "jfr" (default; built-in, no-ptrace,
 	// startup-flag injected, OldObjectSample leak + off-heap, JDK8u262+) or "asprof"
@@ -756,4 +765,17 @@ func MemoryProfilingActive(p *ProfilingConfiguration) bool {
 // MemoryProfilingEnabled reports whether memory profiling is active on this config.
 func (o *OdigosConfiguration) MemoryProfilingEnabled() bool {
 	return o != nil && MemoryProfilingActive(o.Profiling)
+}
+
+// MemoryNativeRestartEnabled reports whether native (C/C++/Rust) memory profiling
+// uses the restart mechanism — i.e. the instrumentor should LD_PRELOAD a
+// prof-enabled allocator (MALLOC_CONF) into the workload at admission, which
+// requires a one-time pod roll. This is gated independently of the no-restart
+// Inject path: when native mode is anything other than "restart" we never touch
+// the pod's env (no LD_PRELOAD, no forced restart).
+func (o *OdigosConfiguration) MemoryNativeRestartEnabled() bool {
+	if !o.MemoryProfilingEnabled() {
+		return false
+	}
+	return o.Profiling.Memory.NativeMode == "restart"
 }
