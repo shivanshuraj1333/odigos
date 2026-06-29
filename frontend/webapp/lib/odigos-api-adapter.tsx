@@ -34,6 +34,7 @@ import {
 } from '@odigos/ui-kit/contexts/odigos-api';
 import type {
   Action,
+  ClearProfilingBufferResult,
   EffectiveConfig,
   EnableProfilingResult,
   ExtendedPodInfo,
@@ -98,6 +99,7 @@ import {
   DELETE_INSTRUMENTATION_RULE,
   DELETE_NOISY_OPERATION_RULE,
   ENABLE_SOURCE_PROFILING,
+  CLEAR_SOURCE_PROFILING_BUFFER,
   PERSIST_NAMESPACES,
   PERSIST_SOURCES,
   RECOVER_FROM_ROLLBACK,
@@ -323,6 +325,10 @@ const operations: OdigosApiOperations = {
   ENABLE_SOURCE_PROFILING: {
     document: ENABLE_SOURCE_PROFILING,
     transformResult: (raw: unknown) => (raw as { enableSourceProfiling?: EnableProfilingResult } | null | undefined)?.enableSourceProfiling,
+  },
+  CLEAR_SOURCE_PROFILING_BUFFER: {
+    document: CLEAR_SOURCE_PROFILING_BUFFER,
+    transformResult: (raw: unknown) => (raw as { clearSourceProfilingBuffer?: ClearProfilingBufferResult } | null | undefined)?.clearSourceProfilingBuffer,
   },
 
   // pipeline collectors — bare-shape slots. The standalone backend's
