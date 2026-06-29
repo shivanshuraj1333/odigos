@@ -81,7 +81,12 @@ const (
 	// 2^19=512KiB (lg_prof_sample), cumulative accounting, auto-dump every
 	// 2^24=16MiB allocated (lg_prof_interval) to a prefix the agent reads
 	// out-of-process via /proc/<pid>/root.
-	jemallocProfConf = "prof:true,prof_active:true,prof_accum:true,lg_prof_sample:19,lg_prof_interval:24,prof_prefix:/tmp/odigos-jeprof"
+	// lg_prof_sample:18 = 256 KiB Poisson sample (matches the default sampleSizeBytes);
+	// lg_prof_interval:21 = auto-dump every 2 MiB allocated. The previous 16 MiB
+	// interval meant low-allocation services never produced a first dump (so native
+	// looked empty in quiet/demo clusters); 2 MiB keeps overhead low while ensuring
+	// data appears. The reader unbiases the sampled counts either way.
+	jemallocProfConf = "prof:true,prof_active:true,prof_accum:true,lg_prof_sample:18,lg_prof_interval:21,prof_prefix:/tmp/odigos-jeprof"
 	// libmemsampleMuslSoPath is the musl-built sampling interposer the odiglet
 	// delivers. We preload it into musl containers (Alpine/scratch) where the
 	// glibc jemalloc-prof lib cannot be loaded — it instruments the default
