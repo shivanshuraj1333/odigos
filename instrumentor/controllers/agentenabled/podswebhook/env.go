@@ -107,10 +107,17 @@ const (
 // already discovers, so no MALLOC_CONF is needed.
 func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, libc *common.LibCType) EnvVarNamesMap {
 	switch {
-	case libc != nil && *libc == common.Glibc:
-		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleSoPath)
 	case libc != nil && *libc == common.Musl:
 		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleMuslSoPath)
+	default:
+		// glibc OR unknown: use the glibc interposer. Unlike the native C/C++ path
+		// (where unknown libc gets no preload to avoid aborting a musl process), the
+		// interpreted runtimes we target — CPython, MRI Ruby, PHP — ship overwhelmingly
+		// as glibc (Debian/Ubuntu) images, and runtime libc detection often can't tag
+		// the interpreter binary. Defaulting unknown to glibc lets these profile out of
+		// the box; an interpreter that is actually musl is the documented edge and is
+		// handled once libc detection tags it (then the musl lib is used).
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleSoPath)
 	}
 	return existingEnvNames
 }
