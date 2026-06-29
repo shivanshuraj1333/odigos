@@ -1771,33 +1771,102 @@
               "default": false,
               "description": "Turn on memory profiling for enabled Sources."
             },
+            "languages": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Per-runtime toggles (native = C/C++/Rust driven by native.restart).",
+              "properties": {
+                "go": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "java": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "dotnet": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "node": {
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            },
             "inject": {
               "type": "boolean",
               "default": false,
-              "description": "No-restart enablement via ptrace (Go heap sampling). Zero pod disruption."
-            },
-            "inuseTracking": {
-              "type": "boolean",
-              "default": true,
-              "description": "Track live-heap (leak) signals inuse_space/inuse_objects alongside cumulative alloc_*."
+              "description": "No-restart ptrace enablement (Go heap sampling)."
             },
             "native": {
               "type": "object",
               "additionalProperties": true,
-              "description": "Native (C/C++/Rust) allocator enablement.",
               "properties": {
                 "restart": {
                   "type": "boolean",
                   "default": false,
-                  "description": "LD_PRELOAD a prof-enabled allocator (MALLOC_CONF) at process start. Needs a one-time pod restart."
+                  "description": "LD_PRELOAD prof-allocator/libmemsample at start (C/C++/Rust). One-time pod restart."
                 }
               }
+            },
+            "java": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "jfr",
+                    "asprof"
+                  ],
+                  "default": "jfr"
+                }
+              }
+            },
+            "inuseTracking": {
+              "type": "boolean",
+              "default": true,
+              "description": "Live-heap (leak) signals inuse_space/inuse_objects."
+            },
+            "sampleSizeBytes": {
+              "type": "integer",
+              "enum": [
+                131072,
+                262144,
+                524288
+              ],
+              "default": 262144,
+              "description": "Avg bytes between sampled allocations."
+            },
+            "reportIntervalSeconds": {
+              "type": "integer",
+              "default": 15,
+              "description": "Heap profile collection interval (seconds)."
+            },
+            "metrics": {
+              "type": "boolean",
+              "default": false,
+              "description": "Profiler internal performance counters (Grafana scrape source)."
+            },
+            "debuginfod": {
+              "type": "string",
+              "default": "",
+              "description": "Optional debuginfod base URL for stripped native binaries."
             }
           }
         },
         "symbolization": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "description": "Native frame symbolization.",
+          "properties": {
+            "native": {
+              "type": "boolean",
+              "default": true,
+              "description": "On-host native symbolization in the node collector."
+            }
+          }
         }
       },
       "required": [],

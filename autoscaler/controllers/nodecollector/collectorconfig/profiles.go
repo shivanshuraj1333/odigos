@@ -61,6 +61,9 @@ func memoryReceiverConfig(m *common.ProfilingMemoryConfiguration) config.Generic
 		},
 		"java":   config.GenericMap{"mode": javaMode},
 		"native": config.GenericMap{"mode": nativeMode},
+		// metrics turns on the memory subsystem's internal perf counters (spike-free,
+		// batched). Off by default; the scrape source for the memprof dashboard.
+		"metrics": boolOrDefault(m.Metrics, false),
 	}
 }
 

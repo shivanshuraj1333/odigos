@@ -83,19 +83,37 @@ data:
         slotTTLSeconds: {{ $pui.slotTTLSeconds | default 300 | int }}
         maxSlots: {{ $pui.maxSlots | default 32 | int }}
         slotMaxBytes: {{ $pui.slotMaxBytes | default 8388608 | int }}
+      {{- $psym := .Values.profiling.symbolization | default dict }}
+      {{- if hasKey $psym "native" }}
+      symbolization:
+        native: {{ $psym.native }}
+      {{- end }}
       {{- $pmem := .Values.profiling.memory | default dict }}
       {{- if $pmem.enabled }}
       {{- $pnative := $pmem.native | default dict }}
-      {{- /* Two independent enablement mechanisms, both default off:
-             inject = no-restart ptrace (Go); native.restart = LD_PRELOAD (C/C++/Rust).
-             nativeMode is "restart" only when native.restart is set, else "off". */}}
+      {{- $plangs := $pmem.languages | default dict }}
+      {{- $pjava := $pmem.java | default dict }}
+      {{- /* native (C/C++/Rust) is driven by native.restart: nativeMode "restart" when set
+             (else "off"), and languages.native mirrors it. inject = no-restart ptrace (Go).
+             Both enablement mechanisms default off. metrics = profiler perf counters. */}}
       memory:
         enabled: true
         inject: {{ $pmem.inject | default false }}
         inuseTracking: {{ $pmem.inuseTracking | default true }}
+        sampleSizeBytes: {{ $pmem.sampleSizeBytes | default 262144 | int }}
+        reportIntervalSeconds: {{ $pmem.reportIntervalSeconds | default 15 | int }}
+        metrics: {{ $pmem.metrics | default false }}
         nativeMode: {{ if $pnative.restart }}"restart"{{ else }}"off"{{ end }}
+        javaMode: {{ $pjava.mode | default "jfr" | quote }}
+        {{- if $pmem.debuginfod }}
+        debuginfod: {{ $pmem.debuginfod | quote }}
+        {{- end }}
         languages:
+          go: {{ $plangs.go | default true }}
+          java: {{ $plangs.java | default true }}
           native: {{ $pnative.restart | default false }}
+          dotnet: {{ $plangs.dotnet | default false }}
+          node: {{ $plangs.node | default false }}
       {{- end }}
     {{- end }}
     {{- if .Values.collectorGateway }}

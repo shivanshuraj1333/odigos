@@ -637,6 +637,12 @@ type ProfilingMemoryConfiguration struct {
 	// stripped native binaries. Empty = in-container/on-host symbols only (never a
 	// hard dependency; unresolved frames degrade to module+offset).
 	Debuginfod string `json:"debuginfod,omitempty" yaml:"debuginfod,omitempty"`
+	// Metrics turns on the memory subsystem's internal performance counters
+	// (procs tracked/profiled, samples emitted, tick duration, read errors, cache
+	// size, per-language readers). Batched through the standard metrics pipeline,
+	// so it is spike-free; off by default and a no-op when off. Scrape target for
+	// the memprof Grafana dashboard. Default false.
+	Metrics *bool `json:"metrics,omitempty" yaml:"metrics,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
