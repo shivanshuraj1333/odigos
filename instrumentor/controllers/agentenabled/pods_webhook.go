@@ -514,7 +514,7 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 				// the same profiling.memory.native.restart opt-in.
 				continue
 			}
-			podswebhook.InjectInterpretedMemoryProfiling(existing, c, rd.LibCType)
+			podswebhook.InjectInterpretedMemoryProfiling(existing, c, rd.LibCType, rd.Language)
 			// Interpreted runtimes always get a preload (glibc by default), so always
 			// mount the delivered lib dir onto the container rootfs.
 			podswebhook.MountDirectory(c, k8sconsts.OdigosAgentsDirectory+"/memprof")

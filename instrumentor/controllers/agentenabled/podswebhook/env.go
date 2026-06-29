@@ -69,6 +69,16 @@ func InjectJavaMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev
 const (
 	ldPreloadEnvVar  = "LD_PRELOAD"
 	mallocConfEnvVar = "MALLOC_CONF"
+	// useZendAllocEnvVar=0 makes PHP route ZendMM/emalloc allocations through the
+	// system malloc; without it PHP userland allocations stay in Zend's arena and
+	// are invisible to the libmemsample interposer (so only C-extension mallocs —
+	// TLS/cert parsing — get captured, which looks like noise). pythonMallocEnvVar
+	// =malloc does the same for CPython's pymalloc small-object arena. Both route
+	// the interpreter's own allocations to malloc so the interposer can attribute
+	// them to interpreter (file:function:line) frames. They cost some throughput
+	// and are only set when memory profiling is enabled for that container.
+	useZendAllocEnvVar = "USE_ZEND_ALLOC"
+	pythonMallocEnvVar = "PYTHONMALLOC"
 	// jemallocProfSoPath is the prof-enabled jemalloc the odiglet delivers; for
 	// glibc/default C/C++/Rust we preload it so the allocator profiles itself
 	// (Poisson-sampled, real live-heap, out-of-band dumps) — the production model,
@@ -109,7 +119,7 @@ const (
 // musl lib for musl, nothing for unknown libc (a wrong preload aborts musl). The
 // dumps land at the libmemsample default prefix the agent's glibc-native reader
 // already discovers, so no MALLOC_CONF is needed.
-func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, libc *common.LibCType) EnvVarNamesMap {
+func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, libc *common.LibCType, lang common.ProgrammingLanguage) EnvVarNamesMap {
 	switch {
 	case libc != nil && *libc == common.Musl:
 		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleMuslSoPath)
@@ -122,6 +132,19 @@ func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container
 		// the box; an interpreter that is actually musl is the documented edge and is
 		// handled once libc detection tags it (then the musl lib is used).
 		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleSoPath)
+	}
+	// Route the interpreter's own allocations through malloc so the interposer can
+	// see and attribute them. Without this the interpreter's arena/GC hides userland
+	// allocations from the malloc interposer and only incidental C-extension mallocs
+	// (TLS handshakes, etc.) are captured — real bytes, but the wrong layer.
+	switch lang {
+	case common.PhpProgrammingLanguage:
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, useZendAllocEnvVar, "0")
+	case common.PythonProgrammingLanguage:
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, pythonMallocEnvVar, "malloc")
+		// Ruby: heap objects come from GC pages with no safe "use malloc" switch, but
+		// strings/arrays/buffers already go through ruby_xmalloc -> malloc, which the
+		// interposer captures via rb_profile_frames. No extra env needed.
 	}
 	return existingEnvNames
 }
