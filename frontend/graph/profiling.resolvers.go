@@ -10,11 +10,24 @@ import (
 	"fmt"
 
 	"github.com/odigos-io/odigos/frontend/graph/model"
+	"github.com/odigos-io/odigos/frontend/services"
 	"github.com/odigos-io/odigos/frontend/services/profiles"
 )
 
+// profilingIsEnterprise reports whether the current install is the enterprise
+// (on-prem) tier. Profiling is an enterprise feature: the data plane is shared in
+// OSS, but the user-facing serving + control resolvers are gated here so the
+// capability cannot be reached via the API in the community tier (defense in depth
+// behind the UI tab gate). Reads return empty for community; mutations error.
+func profilingIsEnterprise(ctx context.Context) bool {
+	return services.GetTier(ctx) == model.TierOnprem
+}
+
 // Profiling is the resolver for the profiling field.
 func (r *k8sActualSourceResolver) Profiling(ctx context.Context, obj *model.K8sActualSource, profileType *string) (*model.SourceProfilingResult, error) {
+	if !profilingIsEnterprise(ctx) {
+		return nil, nil
+	}
 	if r.ProfileStore == nil {
 		return nil, nil
 	}
@@ -35,6 +48,9 @@ func (r *k8sActualSourceResolver) Profiling(ctx context.Context, obj *model.K8sA
 
 // EnableSourceProfiling is the resolver for the enableSourceProfiling field.
 func (r *mutationResolver) EnableSourceProfiling(ctx context.Context, namespace string, kind string, name string) (*model.EnableProfilingResult, error) {
+	if !profilingIsEnterprise(ctx) {
+		return nil, fmt.Errorf("profiling is an enterprise (on-prem) feature")
+	}
 	if r.ProfileStore == nil {
 		return nil, fmt.Errorf("profiling store not configured")
 	}
@@ -52,6 +68,9 @@ func (r *mutationResolver) EnableSourceProfiling(ctx context.Context, namespace 
 
 // DisableSourceProfiling is the resolver for the disableSourceProfiling field.
 func (r *mutationResolver) DisableSourceProfiling(ctx context.Context, namespace string, kind string, name string) (*model.DisableProfilingResult, error) {
+	if !profilingIsEnterprise(ctx) {
+		return nil, fmt.Errorf("profiling is an enterprise (on-prem) feature")
+	}
 	if r.ProfileStore == nil {
 		return nil, fmt.Errorf("profiling store not configured")
 	}
@@ -68,6 +87,9 @@ func (r *mutationResolver) DisableSourceProfiling(ctx context.Context, namespace
 
 // ClearSourceProfilingBuffer is the resolver for the clearSourceProfilingBuffer field.
 func (r *mutationResolver) ClearSourceProfilingBuffer(ctx context.Context, namespace string, kind string, name string) (*model.ClearProfilingBufferResult, error) {
+	if !profilingIsEnterprise(ctx) {
+		return nil, fmt.Errorf("profiling is an enterprise (on-prem) feature")
+	}
 	if r.ProfileStore == nil {
 		return nil, fmt.Errorf("profiling store not configured")
 	}
@@ -84,6 +106,9 @@ func (r *mutationResolver) ClearSourceProfilingBuffer(ctx context.Context, names
 
 // ProfilingSlots is the resolver for the profilingSlots field.
 func (r *queryResolver) ProfilingSlots(ctx context.Context) (*model.ProfilingSlots, error) {
+	if !profilingIsEnterprise(ctx) {
+		return nil, nil
+	}
 	if r.ProfileStore == nil {
 		return nil, nil
 	}
