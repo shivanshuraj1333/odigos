@@ -121,9 +121,16 @@ profiling:
   # @schema
   ui:
     # @schema
-    # description: Slot TTL in seconds.
+    # description: How long an EMPTY profile slot (a tab opened on a source that produced nothing) is kept after the last request, in seconds. Default 120.
     # @schema
-    slotTTLSeconds: 300
+    slotTTLSeconds: 120
+    # @schema
+    # description: |-
+    #   Minimum time a slot that HAS received profile data is kept past the last chunk, even with no UI
+    #   polling — so a populated flamegraph stays visible instead of vanishing when the tab stops refreshing.
+    #   In seconds. Default 600 (10 minutes).
+    # @schema
+    dataRetentionSeconds: 600
     # @schema
     # description: Max in-memory profile slots.
     # @schema

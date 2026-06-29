@@ -1752,10 +1752,14 @@
               "title": "slotMaxBytes"
             },
             "slotTTLSeconds": {
-              "default": "300",
-              "description": "Slot TTL in seconds.",
-              "required": [],
-              "title": "slotTTLSeconds"
+              "type": "integer",
+              "default": 120,
+              "description": "TTL (s) for EMPTY slots."
+            },
+            "dataRetentionSeconds": {
+              "type": "integer",
+              "default": 600,
+              "description": "Minimum retention (s) for slots that received data, with no polling. Default 600 (10 min)."
             }
           },
           "required": [],

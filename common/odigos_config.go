@@ -577,9 +577,16 @@ type SamplingConfiguration struct {
 // +kubebuilder:object:generate=true
 // ProfilingUiConfiguration holds optional UI resource limits and OTLP listen overrides for profiling.
 type ProfilingUiConfiguration struct {
+	// SlotTTLSeconds is how long an EMPTY slot (a tab opened on a source that never
+	// produced) is kept after the last request. Default 120.
 	SlotTTLSeconds int `json:"slotTTLSeconds,omitempty" yaml:"slotTTLSeconds,omitempty"`
-	MaxSlots       int `json:"maxSlots,omitempty" yaml:"maxSlots,omitempty"`
-	SlotMaxBytes   int `json:"slotMaxBytes,omitempty" yaml:"slotMaxBytes,omitempty"`
+	// DataRetentionSeconds is the minimum time a slot that HAS received profile data
+	// is kept past the last chunk, even with no UI polling — so a populated profile
+	// stays visible instead of vanishing when the tab stops refreshing. Default 600
+	// (10 minutes).
+	DataRetentionSeconds int `json:"dataRetentionSeconds,omitempty" yaml:"dataRetentionSeconds,omitempty"`
+	MaxSlots             int `json:"maxSlots,omitempty" yaml:"maxSlots,omitempty"`
+	SlotMaxBytes         int `json:"slotMaxBytes,omitempty" yaml:"slotMaxBytes,omitempty"`
 }
 
 // +kubebuilder:object:generate=true
@@ -596,6 +603,11 @@ type ProfilingConfiguration struct {
 	// Pyroscope path. Requires Profiling.Enabled (the pipeline must exist). Mirrors
 	// the agent-side collector/config.MemoryConfig knobs.
 	Memory *ProfilingMemoryConfiguration `json:"memory,omitempty" yaml:"memory,omitempty"`
+	// UI tunes the in-memory profile store in the UI pod (slot count, retention,
+	// per-slot size). Previously emitted to config by Helm but NOT parsed here, so
+	// the knobs were inert and the store fell back to built-in defaults — the cause
+	// of profiles aging out after ~2 minutes. Now read by the UI at startup.
+	UI *ProfilingUiConfiguration `json:"ui,omitempty" yaml:"ui,omitempty"`
 }
 
 // +kubebuilder:object:generate=true

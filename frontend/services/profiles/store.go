@@ -3,6 +3,7 @@ package profiles
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commonlogger "github.com/odigos-io/odigos/common/logger"
@@ -11,30 +12,53 @@ import (
 
 type Slot struct {
 	LastRequestAt time.Time
-	Buffer        *BoundedBuffer
+	// LastDataAt is the UnixNano of the most recent profile chunk that landed in
+	// this slot (0 = none yet). Updated atomically from the OTLP ingest path so it
+	// needs no write lock. It drives data-arrival retention: a slot holding data is
+	// kept for at least dataRetentionSeconds after that data arrived, independent of
+	// whether anyone is polling — so a populated flamegraph does not vanish the
+	// moment the UI tab stops refreshing.
+	LastDataAt atomic.Int64
+	Buffer     *BoundedBuffer
 }
 
-// ProfileStore holds at most maxSlots source-keyed slots with a TTL.
-// Eviction: when full, the slot with the oldest LastRequestAt is removed.
-// TTL: slots with no request in the last ttlSeconds are removed by a background goroutine.
+// ProfileStore holds at most maxSlots source-keyed slots.
+// Eviction: when full, the slot whose most-recent activity (request OR data) is
+// oldest is removed.
+// Retention: a slot is removed by the background sweep only when it has had no
+// request in ttlSeconds AND no data in dataRetentionSeconds. Empty slots (a tab
+// open on a source that never produced) age out on ttlSeconds; slots that ever
+// received data live for at least dataRetentionSeconds past the last chunk.
 type ProfileStore struct {
-	mu              sync.RWMutex
-	slots           map[string]*Slot
-	maxSlots        int
-	ttlSeconds      int
-	slotMaxBytes    int
-	cleanupInterval time.Duration
+	mu                   sync.RWMutex
+	slots                map[string]*Slot
+	maxSlots             int
+	ttlSeconds           int
+	dataRetentionSeconds int
+	slotMaxBytes         int
+	cleanupInterval      time.Duration
 	// StopCleanup invokes it to end the TTL goroutine.
 	stopCleanup func()
 }
 
-// evictOldestSlotLocked removes the slot with the smallest LastRequestAt.
+// slotActivityNano returns the slot's most-recent activity time (the later of its
+// last request and last data arrival) in UnixNano.
+func slotActivityNano(slot *Slot) int64 {
+	act := slot.LastRequestAt.UnixNano()
+	if d := slot.LastDataAt.Load(); d > act {
+		act = d
+	}
+	return act
+}
+
+// evictOldestSlotLocked removes the slot with the oldest activity (request or data).
 func (s *ProfileStore) evictOldestSlotLocked() {
 	var oldestKey string
-	var oldestTime time.Time
+	var oldestNano int64
 	for k, slot := range s.slots {
-		if oldestKey == "" || slot.LastRequestAt.Before(oldestTime) {
-			oldestTime = slot.LastRequestAt
+		act := slotActivityNano(slot)
+		if oldestKey == "" || act < oldestNano {
+			oldestNano = act
 			oldestKey = k
 		}
 	}
@@ -43,13 +67,14 @@ func (s *ProfileStore) evictOldestSlotLocked() {
 	}
 }
 
-func NewProfileStore(maxSlots, ttlSeconds, slotMaxBytes int, cleanupInterval time.Duration) *ProfileStore {
+func NewProfileStore(maxSlots, ttlSeconds, dataRetentionSeconds, slotMaxBytes int, cleanupInterval time.Duration) *ProfileStore {
 	return &ProfileStore{
-		slots:           make(map[string]*Slot),
-		maxSlots:        maxSlots,
-		ttlSeconds:      ttlSeconds,
-		slotMaxBytes:    slotMaxBytes,
-		cleanupInterval: cleanupInterval,
+		slots:                make(map[string]*Slot),
+		maxSlots:             maxSlots,
+		ttlSeconds:           ttlSeconds,
+		dataRetentionSeconds: dataRetentionSeconds,
+		slotMaxBytes:         slotMaxBytes,
+		cleanupInterval:      cleanupInterval,
 	}
 }
 
@@ -144,6 +169,14 @@ func (s *ProfileStore) AddProfileData(sourceKey string, chunk []byte) {
 		commonlogger.LoggerCompat().With("subsystem", "backend-profiling").Warn(
 			"profile_chunk_dropped_oversized", "sourceKey", sourceKey,
 		)
+		return
+	}
+	// Stamp the data-arrival time so retention keeps this slot alive for at least
+	// dataRetentionSeconds past now, regardless of UI polling. Atomic store is safe
+	// while holding only the read lock (slot pointer stays valid even if the map
+	// entry is later deleted).
+	if slot != nil {
+		slot.LastDataAt.Store(time.Now().UnixNano())
 	}
 }
 
@@ -200,13 +233,22 @@ func (s *ProfileStore) RunCleanup(ctx context.Context) {
 }
 
 func (s *ProfileStore) cleanupExpired() {
-	cutoff := time.Now().Add(-time.Duration(s.ttlSeconds) * time.Second)
+	now := time.Now()
+	reqCutoff := now.Add(-time.Duration(s.ttlSeconds) * time.Second)
+	dataCutoffNano := now.Add(-time.Duration(s.dataRetentionSeconds) * time.Second).UnixNano()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k, slot := range s.slots {
-		if slot.LastRequestAt.Before(cutoff) {
-			delete(s.slots, k)
+		// Keep while a request is recent (an open tab keeps the source warm)...
+		if !slot.LastRequestAt.Before(reqCutoff) {
+			continue
 		}
+		// ...or while it holds data that arrived within the retention window, so a
+		// populated profile survives at least dataRetentionSeconds with no polling.
+		if d := slot.LastDataAt.Load(); d != 0 && d >= dataCutoffNano {
+			continue
+		}
+		delete(s.slots, k)
 	}
 }
 
