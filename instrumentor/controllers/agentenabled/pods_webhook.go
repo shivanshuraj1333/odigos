@@ -494,16 +494,15 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 				// container until the operator opts into profiling.memory.native.restart.
 				continue
 			}
-			// crash-safety: only LD_PRELOAD our glibc jemalloc into a container we
-			// KNOW is glibc — musl's loader aborts the process on an incompatible
-			// preload, glibc's only warns. For musl/unknown libc we inject MALLOC_CONF
-			// alone (a no-op unless the app already links jemalloc-prof), never risking
-			// the application. When we do preload, mount the delivered lib so it is
-			// present on the rootfs (a missing preload is at best wasted, at worst —
-			// on musl — fatal).
-			preload := rd.LibCType != nil && *rd.LibCType == common.Glibc
-			podswebhook.InjectNativeMemoryProfiling(existing, c, preload)
-			if preload {
+			// Pick the preload by libc (crash-safety handled inside): glibc gets the
+			// prof-jemalloc lib, musl gets the musl-built libmemsample interposer
+			// (the glibc lib would abort a musl process), unknown libc gets no preload
+			// at all. When a lib IS preloaded, mount the delivered dir so it is present
+			// on the container rootfs (a missing preload is wasted at best, fatal at
+			// worst). This extends native coverage to musl-DYNAMIC Rust/C++; musl-static
+			// has no dynamic loader and is covered by the uprobe path instead.
+			podswebhook.InjectNativeMemoryProfiling(existing, c, rd.LibCType)
+			if podswebhook.NativeMemoryPreloads(rd.LibCType) {
 				podswebhook.MountDirectory(c, k8sconsts.OdigosAgentsDirectory+"/memprof")
 				podswebhook.MountPodVolumeToHostPath(pod)
 			}

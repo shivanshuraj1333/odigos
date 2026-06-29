@@ -4,8 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/odigos-io/odigos/common"
 	corev1 "k8s.io/api/core/v1"
 )
+
+func libcPtr(t common.LibCType) *common.LibCType { return &t }
 
 func TestInjectJavaMemoryProfiling(t *testing.T) {
 	c := &corev1.Container{Name: "app"}
@@ -25,10 +28,10 @@ func TestInjectJavaMemoryProfiling(t *testing.T) {
 	}
 }
 
-func TestInjectNativeMemoryProfiling(t *testing.T) {
-	// glibc container: preload=true → both LD_PRELOAD and MALLOC_CONF.
+func TestInjectNativeMemoryProfiling_Glibc(t *testing.T) {
+	// glibc container: LD_PRELOAD prof-jemalloc + MALLOC_CONF.
 	c := &corev1.Container{Name: "svc"}
-	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, true)
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, libcPtr(common.Glibc))
 
 	env := map[string]string{}
 	for _, e := range c.Env {
@@ -42,28 +45,53 @@ func TestInjectNativeMemoryProfiling(t *testing.T) {
 			t.Errorf("MALLOC_CONF missing %q: %s", want, env[mallocConfEnvVar])
 		}
 	}
+	if !NativeMemoryPreloads(libcPtr(common.Glibc)) {
+		t.Error("NativeMemoryPreloads(glibc) = false, want true")
+	}
 }
 
-func TestInjectNativeMemoryProfiling_MuslNoPreload(t *testing.T) {
-	// musl/unknown libc: preload=false → MALLOC_CONF only, NEVER LD_PRELOAD
-	// (musl's loader aborts the app on an incompatible preload). This is the
-	// crash-safety guarantee.
+func TestInjectNativeMemoryProfiling_MuslPreloadsMuslLib(t *testing.T) {
+	// musl container: LD_PRELOAD the musl-built interposer (safe), NOT the glibc
+	// jemalloc lib (which would abort a musl process). MALLOC_CONF is jemalloc-only
+	// and is omitted here.
 	c := &corev1.Container{Name: "svc"}
-	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, false)
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, libcPtr(common.Musl))
 
+	env := map[string]string{}
 	for _, e := range c.Env {
-		if e.Name == ldPreloadEnvVar {
-			t.Fatalf("must NOT inject LD_PRELOAD when preload=false (musl crash risk), got %q", e.Value)
-		}
+		env[e.Name] = e.Value
 	}
+	if env[ldPreloadEnvVar] != libmemsampleMuslSoPath {
+		t.Errorf("LD_PRELOAD = %q, want musl lib %q", env[ldPreloadEnvVar], libmemsampleMuslSoPath)
+	}
+	if env[ldPreloadEnvVar] == jemallocProfSoPath {
+		t.Fatal("must NOT preload the glibc jemalloc lib into a musl container (abort risk)")
+	}
+	if !NativeMemoryPreloads(libcPtr(common.Musl)) {
+		t.Error("NativeMemoryPreloads(musl) = false, want true")
+	}
+}
+
+func TestInjectNativeMemoryProfiling_UnknownNoPreload(t *testing.T) {
+	// Unknown libc: MALLOC_CONF only, NEVER LD_PRELOAD (we cannot know which loader
+	// it is, and an incompatible preload aborts a musl process). Crash-safety.
+	c := &corev1.Container{Name: "svc"}
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, nil)
+
 	var hasConf bool
 	for _, e := range c.Env {
+		if e.Name == ldPreloadEnvVar {
+			t.Fatalf("must NOT inject LD_PRELOAD for unknown libc (musl crash risk), got %q", e.Value)
+		}
 		if e.Name == mallocConfEnvVar {
 			hasConf = true
 		}
 	}
 	if !hasConf {
 		t.Fatalf("expected MALLOC_CONF to still be injected (harmless, helps jemalloc-prof apps)")
+	}
+	if NativeMemoryPreloads(nil) {
+		t.Error("NativeMemoryPreloads(nil) = true, want false")
 	}
 }
 
@@ -73,7 +101,7 @@ func TestInjectNativeMemoryProfiling_NoOpWhenPresent(t *testing.T) {
 		Name: "svc",
 		Env:  []corev1.EnvVar{{Name: ldPreloadEnvVar, Value: "/opt/mymalloc.so"}},
 	}
-	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, true)
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, libcPtr(common.Glibc))
 	for _, e := range c.Env {
 		if e.Name == ldPreloadEnvVar && e.Value != "/opt/mymalloc.so" {
 			t.Fatalf("must not overwrite existing LD_PRELOAD, got %q", e.Value)

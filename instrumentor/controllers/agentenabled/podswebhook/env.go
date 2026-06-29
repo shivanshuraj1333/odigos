@@ -79,25 +79,48 @@ const (
 	// 2^24=16MiB allocated (lg_prof_interval) to a prefix the agent reads
 	// out-of-process via /proc/<pid>/root.
 	jemallocProfConf = "prof:true,prof_active:true,prof_accum:true,lg_prof_sample:19,lg_prof_interval:24,prof_prefix:/tmp/odigos-jeprof"
+	// libmemsampleMuslSoPath is the musl-built sampling interposer the odiglet
+	// delivers. We preload it into musl containers (Alpine/scratch) where the
+	// glibc jemalloc-prof lib cannot be loaded — it instruments the default
+	// (musl) allocator directly and writes the same heap_v2 dumps the agent reads.
+	libmemsampleMuslSoPath = "/var/odigos/memprof/libmemsample-musl.so"
 )
 
+// NativeMemoryPreloads reports whether InjectNativeMemoryProfiling will LD_PRELOAD
+// a lib (and therefore the caller must mount the /var/odigos/memprof dir). True for
+// both known glibc and known musl; false for unknown libc (where preload is unsafe).
+func NativeMemoryPreloads(libc *common.LibCType) bool {
+	return libc != nil && (*libc == common.Glibc || *libc == common.Musl)
+}
+
 // InjectNativeMemoryProfiling enables allocator-integrated heap profiling for a
-// C/C++/Rust container: it sets MALLOC_CONF so a prof-enabled jemalloc samples its
-// own fast path and writes dumps the agent consumes out-of-process.
+// C/C++/Rust container. The mechanism is chosen by libc:
 //
-// crash-safety: LD_PRELOAD is injected ONLY when preload is true, which the caller
-// sets exclusively for glibc containers whose /var/odigos lib mount it has also
-// added. This matters because the two dynamic loaders disagree on a failed preload:
-// glibc's ld.so warns and continues (non-fatal), but musl's loader ABORTS the
-// process. So we never preload into a musl/unknown-libc container — it would risk
-// crashing the application, which is unacceptable. MALLOC_CONF alone is always safe:
-// an allocator that isn't jemalloc-prof simply ignores it. No-op for either var if
-// the container already sets it (e.g. an app with its own allocator).
-func InjectNativeMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, preload bool) EnvVarNamesMap {
-	if preload {
+//   - glibc: LD_PRELOAD prof-enabled jemalloc + MALLOC_CONF — the allocator samples
+//     its own fast path (Poisson, real live-heap) and writes dumps the agent reads.
+//   - musl:  LD_PRELOAD the musl-built libmemsample interposer, which samples the
+//     default musl allocator and writes the same heap_v2 dumps. (jemalloc-prof is a
+//     glibc binary and would abort a musl process, so we use the musl-safe lib.)
+//   - unknown libc: NO preload — only MALLOC_CONF, which is a no-op unless the app
+//     already links jemalloc-prof. Never risk a crash on an unidentified loader.
+//
+// crash-safety: the two loaders disagree on a failed preload — glibc's ld.so warns
+// and continues, but musl's loader ABORTS. We therefore only ever preload a lib
+// that matches the detected libc; for unknown libc we preload nothing. No-op for any
+// var the container already sets (e.g. an app with its own allocator).
+func InjectNativeMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, libc *common.LibCType) EnvVarNamesMap {
+	switch {
+	case libc != nil && *libc == common.Glibc:
 		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, jemallocProfSoPath)
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, mallocConfEnvVar, jemallocProfConf)
+	case libc != nil && *libc == common.Musl:
+		// musl-safe interposer; MALLOC_CONF is jemalloc-specific so it is omitted here.
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleMuslSoPath)
+	default:
+		// Unknown libc: no preload. MALLOC_CONF alone is safe and a no-op unless the
+		// app already links a prof-enabled jemalloc.
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, mallocConfEnvVar, jemallocProfConf)
 	}
-	existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, mallocConfEnvVar, jemallocProfConf)
 	return existingEnvNames
 }
 
