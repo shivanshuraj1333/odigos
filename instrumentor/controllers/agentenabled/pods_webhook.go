@@ -483,7 +483,19 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 			podswebhook.InjectJavaMemoryProfiling(existing, c)
 			injected = true
 		case common.CPlusPlusProgrammingLanguage, common.RustProgrammingLanguage:
-			podswebhook.InjectNativeMemoryProfiling(existing, c)
+			// crash-safety: only LD_PRELOAD our glibc jemalloc into a container we
+			// KNOW is glibc — musl's loader aborts the process on an incompatible
+			// preload, glibc's only warns. For musl/unknown libc we inject MALLOC_CONF
+			// alone (a no-op unless the app already links jemalloc-prof), never risking
+			// the application. When we do preload, mount the delivered lib so it is
+			// present on the rootfs (a missing preload is at best wasted, at worst —
+			// on musl — fatal).
+			preload := rd.LibCType != nil && *rd.LibCType == common.Glibc
+			podswebhook.InjectNativeMemoryProfiling(existing, c, preload)
+			if preload {
+				podswebhook.MountDirectory(c, k8sconsts.OdigosAgentsDirectory+"/memprof")
+				podswebhook.MountPodVolumeToHostPath(pod)
+			}
 			injected = true
 		}
 	}

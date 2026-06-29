@@ -26,8 +26,9 @@ func TestInjectJavaMemoryProfiling(t *testing.T) {
 }
 
 func TestInjectNativeMemoryProfiling(t *testing.T) {
+	// glibc container: preload=true → both LD_PRELOAD and MALLOC_CONF.
 	c := &corev1.Container{Name: "svc"}
-	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c)
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, true)
 
 	env := map[string]string{}
 	for _, e := range c.Env {
@@ -43,13 +44,36 @@ func TestInjectNativeMemoryProfiling(t *testing.T) {
 	}
 }
 
+func TestInjectNativeMemoryProfiling_MuslNoPreload(t *testing.T) {
+	// musl/unknown libc: preload=false → MALLOC_CONF only, NEVER LD_PRELOAD
+	// (musl's loader aborts the app on an incompatible preload). This is the
+	// crash-safety guarantee.
+	c := &corev1.Container{Name: "svc"}
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, false)
+
+	for _, e := range c.Env {
+		if e.Name == ldPreloadEnvVar {
+			t.Fatalf("must NOT inject LD_PRELOAD when preload=false (musl crash risk), got %q", e.Value)
+		}
+	}
+	var hasConf bool
+	for _, e := range c.Env {
+		if e.Name == mallocConfEnvVar {
+			hasConf = true
+		}
+	}
+	if !hasConf {
+		t.Fatalf("expected MALLOC_CONF to still be injected (harmless, helps jemalloc-prof apps)")
+	}
+}
+
 func TestInjectNativeMemoryProfiling_NoOpWhenPresent(t *testing.T) {
 	// App with its own allocator/LD_PRELOAD must not be clobbered.
 	c := &corev1.Container{
 		Name: "svc",
 		Env:  []corev1.EnvVar{{Name: ldPreloadEnvVar, Value: "/opt/mymalloc.so"}},
 	}
-	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c)
+	InjectNativeMemoryProfiling(GetEnvVarNamesSet(c), c, true)
 	for _, e := range c.Env {
 		if e.Name == ldPreloadEnvVar && e.Value != "/opt/mymalloc.so" {
 			t.Fatalf("must not overwrite existing LD_PRELOAD, got %q", e.Value)

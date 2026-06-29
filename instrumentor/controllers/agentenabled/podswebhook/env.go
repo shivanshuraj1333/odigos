@@ -82,13 +82,21 @@ const (
 )
 
 // InjectNativeMemoryProfiling enables allocator-integrated heap profiling for a
-// C/C++/Rust container: it preloads the prof-enabled jemalloc and sets MALLOC_CONF
-// so jemalloc samples its own fast path and writes dumps the agent consumes. No-op
-// for either var if the container already sets it (e.g. an app with its own
-// allocator), in which case profiling falls back to whatever that allocator
-// exposes. The /var/odigos volume mount + lib delivery are handled separately.
-func InjectNativeMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container) EnvVarNamesMap {
-	existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, jemallocProfSoPath)
+// C/C++/Rust container: it sets MALLOC_CONF so a prof-enabled jemalloc samples its
+// own fast path and writes dumps the agent consumes out-of-process.
+//
+// crash-safety: LD_PRELOAD is injected ONLY when preload is true, which the caller
+// sets exclusively for glibc containers whose /var/odigos lib mount it has also
+// added. This matters because the two dynamic loaders disagree on a failed preload:
+// glibc's ld.so warns and continues (non-fatal), but musl's loader ABORTS the
+// process. So we never preload into a musl/unknown-libc container — it would risk
+// crashing the application, which is unacceptable. MALLOC_CONF alone is always safe:
+// an allocator that isn't jemalloc-prof simply ignores it. No-op for either var if
+// the container already sets it (e.g. an app with its own allocator).
+func InjectNativeMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, preload bool) EnvVarNamesMap {
+	if preload {
+		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, jemallocProfSoPath)
+	}
 	existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, mallocConfEnvVar, jemallocProfConf)
 	return existingEnvNames
 }
