@@ -99,7 +99,10 @@ type GetProfilingOutput struct {
 }
 
 // GetProfilingForSource returns the aggregated profile for a workload.
-func GetProfilingForSource(ctx context.Context, store common.ProfileStoreRef, namespace, kindStr, name string) (*GetProfilingOutput, error) {
+// GetProfilingForSource renders the flamegraph for one workload. sampleType selects
+// the signal: "" or "cpu" = CPU; otherwise one of alloc_space, alloc_objects,
+// inuse_space, inuse_objects so each memory type is a distinct flamegraph.
+func GetProfilingForSource(ctx context.Context, store common.ProfileStoreRef, namespace, kindStr, name, sampleType string) (*GetProfilingOutput, error) {
 	id, err := SourceIDFromStrings(namespace, kindStr, name)
 	if err != nil {
 		return nil, err
@@ -110,7 +113,7 @@ func GetProfilingForSource(ctx context.Context, store common.ProfileStoreRef, na
 	if chunks == nil {
 		return &GetProfilingOutput{Profile: emptyFlamebearerProfile()}, nil
 	}
-	return &GetProfilingOutput{Profile: buildPyroscopeProfileFromChunks(ctx, chunks)}, nil
+	return &GetProfilingOutput{Profile: buildPyroscopeProfileFromChunks(ctx, chunks, sampleType)}, nil
 }
 
 func emptyFlamebearerProfile() flamegraph.FlamebearerProfile {

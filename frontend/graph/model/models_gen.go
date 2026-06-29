@@ -756,7 +756,9 @@ type K8sActualSource struct {
 	Conditions                []*Condition       `json:"conditions,omitempty"`
 	ManifestYaml              *string            `json:"manifestYAML,omitempty"`
 	InstrumentationConfigYaml *string            `json:"instrumentationConfigYAML,omitempty"`
-	// Buffered CPU profile for this source
+	// Buffered profile for this source. profileType selects the signal:
+	// "" or "cpu" = CPU; or one of alloc_space, alloc_objects, inuse_space,
+	// inuse_objects to render that memory signal as its own flamegraph.
 	Profiling *SourceProfilingResult `json:"profiling,omitempty"`
 }
 
