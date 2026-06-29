@@ -141,13 +141,17 @@ func (p *PodsWebhook) injectOdigos(ctx context.Context, pod *corev1.Pod, req adm
 	// be memory-profiled (node-wide agent + per-language env) without the tracing
 	// agent. Inject the memory env here, before the AgentInjectionEnabled gate, so
 	// it applies even when tracing is disabled for this Source.
+	memoryInjected := false
 	if odigosConfiguration.MemoryProfilingEnabled() {
-		p.injectMemoryProfilingEnvs(pod, &ic)
+		memoryInjected = p.injectMemoryProfilingEnvs(pod, &ic)
 	}
 
 	if !ic.Spec.AgentInjectionEnabled {
-		// instrumentation config exists, but no tracing agent should be injected by
-		// webhook. Memory env (above) has already been applied.
+		// No tracing agent for this Source. If we mutated the pod for memory
+		// profiling, return nil so Handle applies that patch; otherwise skip.
+		if memoryInjected {
+			return nil
+		}
 		return ErrInjectionDisabled
 	}
 
@@ -465,7 +469,8 @@ func (p *PodsWebhook) injectOdigosToContainer(containerConfig *odigosv1.Containe
 // Java gets a JFR startup recording (built-in, no lib); C++/Rust get
 // allocator-integrated jemalloc (LD_PRELOAD + MALLOC_CONF). Go/Python/Ruby/PHP/
 // .NET/Node use node-wide or runtime mechanisms that need no per-pod env here.
-func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig) {
+func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig) bool {
+	injected := false
 	for i := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[i]
 		rd := getRuntimeInfoForContainerName(ic, c.Name)
@@ -476,10 +481,13 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 		switch rd.Language {
 		case common.JavaProgrammingLanguage:
 			podswebhook.InjectJavaMemoryProfiling(existing, c)
+			injected = true
 		case common.CPlusPlusProgrammingLanguage, common.RustProgrammingLanguage:
 			podswebhook.InjectNativeMemoryProfiling(existing, c)
+			injected = true
 		}
 	}
+	return injected
 }
 
 func getRuntimeInfoForContainerName(ic *odigosv1.InstrumentationConfig, containerName string) *odigosv1.RuntimeDetailsByContainer {
