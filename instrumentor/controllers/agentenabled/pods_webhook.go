@@ -132,14 +132,23 @@ func (p *PodsWebhook) injectOdigos(ctx context.Context, pod *corev1.Pod, req adm
 		return fmt.Errorf("%w: %v", ErrMissingInstrumentationConfig, err)
 	}
 
-	if !ic.Spec.AgentInjectionEnabled {
-		// instrumentation config exists, but no agent should be injected by webhook
-		return ErrInjectionDisabled
-	}
-
 	odigosConfiguration, err := k8sutils.GetCurrentOdigosConfiguration(ctx, p.Client)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrMissingOdigosConfiguration, err)
+	}
+
+	// Memory profiling is DECOUPLED from tracing agent injection: a workload can
+	// be memory-profiled (node-wide agent + per-language env) without the tracing
+	// agent. Inject the memory env here, before the AgentInjectionEnabled gate, so
+	// it applies even when tracing is disabled for this Source.
+	if odigosConfiguration.MemoryProfilingEnabled() {
+		p.injectMemoryProfilingEnvs(pod, &ic)
+	}
+
+	if !ic.Spec.AgentInjectionEnabled {
+		// instrumentation config exists, but no tracing agent should be injected by
+		// webhook. Memory env (above) has already been applied.
+		return ErrInjectionDisabled
 	}
 
 	if odigosConfiguration.MountMethod == nil {
@@ -416,25 +425,6 @@ func (p *PodsWebhook) injectOdigosToContainer(containerConfig *odigosv1.Containe
 		existingEnvNames = podswebhook.InjectConstEnvVarToPodContainer(existingEnvNames, podContainerSpec, "ODIGOS_AGENT_SPAN_RENAMER", string(spanRenamerConfigJson))
 	}
 
-	// Memory profiling (Java): when memory profiling is enabled and this container
-	// is a Java workload, inject a JVM startup Flight Recording so the JFR memory
-	// engine can read allocation + leak (jdk.OldObjectSample) signals. The leak
-	// profiler can only be initialized at JVM startup, so this is a startup flag
-	// (the pod restarts once). Decoupled from the tracing distro — it applies to
-	// any Java container of an enabled Source, regardless of tracing.
-	if config.MemoryProfilingEnabled() {
-		if rd := getRuntimeInfoForContainerName(ic, podContainerSpec.Name); rd != nil {
-			switch rd.Language {
-			case common.JavaProgrammingLanguage:
-				existingEnvNames = podswebhook.InjectJavaMemoryProfiling(existingEnvNames, podContainerSpec)
-			case common.CPlusPlusProgrammingLanguage, common.RustProgrammingLanguage:
-				// Native: allocator-integrated profiling (jemalloc). Go/Python/
-				// Ruby/PHP/.NET/Node have their own runtime mechanisms elsewhere.
-				existingEnvNames = podswebhook.InjectNativeMemoryProfiling(existingEnvNames, podContainerSpec)
-			}
-		}
-	}
-
 	volumeMounted := false
 	containerDirsToCopy := make(map[string]struct{})
 	if distroMetadata.RuntimeAgent != nil {
@@ -468,6 +458,28 @@ func (p *PodsWebhook) injectOdigosToContainer(containerConfig *odigosv1.Containe
 	}
 
 	return volumeMounted, containerDirsToCopy, nil
+}
+
+// injectMemoryProfilingEnvs injects the per-language memory-profiling env into
+// each container with a detected language, independent of the tracing agent.
+// Java gets a JFR startup recording (built-in, no lib); C++/Rust get
+// allocator-integrated jemalloc (LD_PRELOAD + MALLOC_CONF). Go/Python/Ruby/PHP/
+// .NET/Node use node-wide or runtime mechanisms that need no per-pod env here.
+func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig) {
+	for i := range pod.Spec.Containers {
+		c := &pod.Spec.Containers[i]
+		rd := getRuntimeInfoForContainerName(ic, c.Name)
+		if rd == nil {
+			continue
+		}
+		existing := podswebhook.GetEnvVarNamesSet(c)
+		switch rd.Language {
+		case common.JavaProgrammingLanguage:
+			podswebhook.InjectJavaMemoryProfiling(existing, c)
+		case common.CPlusPlusProgrammingLanguage, common.RustProgrammingLanguage:
+			podswebhook.InjectNativeMemoryProfiling(existing, c)
+		}
+	}
 }
 
 func getRuntimeInfoForContainerName(ic *odigosv1.InstrumentationConfig, containerName string) *odigosv1.RuntimeDetailsByContainer {
