@@ -121,24 +121,24 @@ profiling:
   # @schema
   ui:
     # @schema
-    # description: How long an EMPTY profile slot (a tab opened on a source that produced nothing) is kept after the last request, in seconds. Default 120.
+    # description: How long an EMPTY profile slot (a tab opened on a source that produced nothing) is kept after the last request, in seconds. Default 300 (5 minutes).
     # @schema
-    slotTTLSeconds: 120
+    slotTTLSeconds: 300
     # @schema
     # description: |-
     #   Minimum time a slot that HAS received profile data is kept past the last chunk, even with no UI
     #   polling — so a populated flamegraph stays visible instead of vanishing when the tab stops refreshing.
-    #   In seconds. Default 600 (10 minutes).
+    #   In seconds. Default 1800 (30 minutes).
     # @schema
-    dataRetentionSeconds: 600
+    dataRetentionSeconds: 1800
     # @schema
     # description: Max in-memory profile slots.
     # @schema
     maxSlots: 32
     # @schema
-    # description: Max bytes per slot (default 8 MiB).
+    # description: Max bytes per slot (default 10 MiB). Note the UI cache ceiling is maxSlots*slotMaxBytes; keep it under the UI memory limit.
     # @schema
-    slotMaxBytes: 8388608
+    slotMaxBytes: 10485760
   # @schema
   # description: |-
   #   Heap / allocation (memory) profiling, layered on top of the profiling pipeline above

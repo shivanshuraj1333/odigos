@@ -80,10 +80,10 @@ data:
           maxElapsedTime: {{ $pretry.maxElapsedTime | default "300s" }}
       {{- $pui := .Values.profiling.ui | default dict }}
       ui:
-        slotTTLSeconds: {{ $pui.slotTTLSeconds | default 120 | int }}
-        dataRetentionSeconds: {{ $pui.dataRetentionSeconds | default 600 | int }}
+        slotTTLSeconds: {{ $pui.slotTTLSeconds | default 300 | int }}
+        dataRetentionSeconds: {{ $pui.dataRetentionSeconds | default 1800 | int }}
         maxSlots: {{ $pui.maxSlots | default 32 | int }}
-        slotMaxBytes: {{ $pui.slotMaxBytes | default 8388608 | int }}
+        slotMaxBytes: {{ $pui.slotMaxBytes | default 10485760 | int }}
       {{- $psym := .Values.profiling.symbolization | default dict }}
       {{- if hasKey $psym "native" }}
       symbolization:
