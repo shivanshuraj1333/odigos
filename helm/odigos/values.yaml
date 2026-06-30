@@ -176,6 +176,22 @@ profiling:
       # description: Node.js heap sampling via the V8 Inspector (runtime attach). Default false.
       # @schema
       node: false
+      # @schema
+      # description: Native C/C++/Rust allocator profiling (jemalloc-prof / libmemsample). Requires native.restart. Default false.
+      # @schema
+      native: false
+      # @schema
+      # description: PHP allocation profiling (libmemsample + Zend call stacks). Rides native.restart; enabled by default when restart is on. Set false to disable PHP only.
+      # @schema
+      php: true
+      # @schema
+      # description: Python allocation profiling (libmemsample + CPython frames). Rides native.restart; enabled by default when restart is on. Set false to disable Python only.
+      # @schema
+      python: true
+      # @schema
+      # description: Ruby allocation profiling (libmemsample + rb_profile_frames). Rides native.restart; enabled by default when restart is on. Set false to disable Ruby only.
+      # @schema
+      ruby: true
     # @schema
     # description: No-restart enablement via ptrace (Go heap sampling). Zero pod disruption. Default off.
     # @schema

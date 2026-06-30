@@ -665,7 +665,30 @@ type ProfilingMemoryLanguages struct {
 	Native *bool `json:"native,omitempty" yaml:"native,omitempty"`
 	Dotnet *bool `json:"dotnet,omitempty" yaml:"dotnet,omitempty"`
 	Node   *bool `json:"node,omitempty" yaml:"node,omitempty"`
+	// Interpreted runtimes use the libmemsample interposer like Native. Each can be
+	// toggled independently; when unset they default to the Native toggle so the
+	// existing "native" switch keeps controlling them.
+	Php    *bool `json:"php,omitempty" yaml:"php,omitempty"`
+	Python *bool `json:"python,omitempty" yaml:"python,omitempty"`
+	Ruby   *bool `json:"ruby,omitempty" yaml:"ruby,omitempty"`
 }
+
+// interpretedEnabled reports whether an interpreted runtime (php/python/ruby) is
+// memory-profiled: its own per-language toggle when explicitly set, otherwise
+// ENABLED by default. Interpreted runtimes are gated upstream by
+// profiling.memory.native.restart (the one-time pod-roll opt-in); these toggles
+// are an opt-OUT to silence a specific interpreter, so unset means "on".
+func (l *ProfilingMemoryLanguages) interpretedEnabled(own *bool) bool {
+	if l == nil || own == nil {
+		return true
+	}
+	return *own
+}
+
+// PhpEnabled / PythonEnabled / RubyEnabled report the effective per-interpreter toggle.
+func (l *ProfilingMemoryLanguages) PhpEnabled() bool    { return l.interpretedEnabled(l.Php) }
+func (l *ProfilingMemoryLanguages) PythonEnabled() bool { return l.interpretedEnabled(l.Python) }
+func (l *ProfilingMemoryLanguages) RubyEnabled() bool   { return l.interpretedEnabled(l.Ruby) }
 
 // +kubebuilder:object:generate=true
 // ProfilingSymbolizationConfiguration controls native frame symbolization.
@@ -796,4 +819,12 @@ func (o *OdigosConfiguration) MemoryNativeRestartEnabled() bool {
 		return false
 	}
 	return o.Profiling.Memory.NativeMode == "restart"
+}
+
+// MemoryLanguages returns the per-language memory toggles (nil-safe).
+func (o *OdigosConfiguration) MemoryLanguages() *ProfilingMemoryLanguages {
+	if o == nil || o.Profiling == nil || o.Profiling.Memory == nil {
+		return nil
+	}
+	return o.Profiling.Memory.Languages
 }

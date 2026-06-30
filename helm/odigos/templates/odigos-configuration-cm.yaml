@@ -115,6 +115,9 @@ data:
           native: {{ $pnative.restart | default false }}
           dotnet: {{ $plangs.dotnet | default false }}
           node: {{ $plangs.node | default false }}
+          php: {{ $plangs.php | default true }}
+          python: {{ $plangs.python | default true }}
+          ruby: {{ $plangs.ruby | default true }}
       {{- end }}
     {{- end }}
     {{- if .Values.collectorGateway }}

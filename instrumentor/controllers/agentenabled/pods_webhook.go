@@ -143,7 +143,7 @@ func (p *PodsWebhook) injectOdigos(ctx context.Context, pod *corev1.Pod, req adm
 	// it applies even when tracing is disabled for this Source.
 	memoryInjected := false
 	if odigosConfiguration.MemoryProfilingEnabled() {
-		memoryInjected = p.injectMemoryProfilingEnvs(pod, &ic, odigosConfiguration.MemoryNativeRestartEnabled())
+		memoryInjected = p.injectMemoryProfilingEnvs(pod, &ic, odigosConfiguration.MemoryNativeRestartEnabled(), odigosConfiguration.MemoryLanguages())
 	}
 
 	if !ic.Spec.AgentInjectionEnabled {
@@ -474,7 +474,24 @@ func (p *PodsWebhook) injectOdigosToContainer(containerConfig *odigosv1.Containe
 // enablement mechanism (it needs a one-time pod roll). When native mode is not
 // "restart" (e.g. only the no-restart inject path is enabled, or native is off),
 // we leave the pod's env untouched so no workload is forced to restart.
-func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig, nativeRestart bool) bool {
+func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.InstrumentationConfig, nativeRestart bool, langs *common.ProfilingMemoryLanguages) bool {
+	// interpretedEnabled gates an interpreted runtime by its own toggle (defaulting
+	// to the native toggle when unset). nil langs => allow (back-compat: the native
+	// switch alone governed interpreted runtimes before per-language toggles).
+	interpretedEnabled := func(lang common.ProgrammingLanguage) bool {
+		if langs == nil {
+			return true
+		}
+		switch lang {
+		case common.PhpProgrammingLanguage:
+			return langs.PhpEnabled()
+		case common.PythonProgrammingLanguage:
+			return langs.PythonEnabled()
+		case common.RubyProgrammingLanguage:
+			return langs.RubyEnabled()
+		}
+		return true
+	}
 	injected := false
 	for i := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[i]
@@ -512,6 +529,10 @@ func (p *PodsWebhook) injectMemoryProfilingEnvs(pod *corev1.Pod, ic *odigosv1.In
 				// Interpreted runtimes are sampled by LD_PRELOAD'ing libmemsample,
 				// which (like the native path) needs a one-time pod restart — gated on
 				// the same profiling.memory.native.restart opt-in.
+				continue
+			}
+			if !interpretedEnabled(rd.Language) {
+				// This interpreter was explicitly disabled via its per-language toggle.
 				continue
 			}
 			podswebhook.InjectInterpretedMemoryProfiling(existing, c, rd.LibCType, rd.Language)
