@@ -120,6 +120,7 @@ const (
 // dumps land at the libmemsample default prefix the agent's glibc-native reader
 // already discovers, so no MALLOC_CONF is needed.
 func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container *corev1.Container, libc *common.LibCType, lang common.ProgrammingLanguage) EnvVarNamesMap {
+	preloaded := false
 	switch {
 	case libc != nil && *libc == common.Musl:
 		// musl interpreted: SKIP the preload. The musl-built interposer loads cleanly
@@ -140,19 +141,22 @@ func InjectInterpretedMemoryProfiling(existingEnvNames EnvVarNamesMap, container
 		// the box; an interpreter that is actually musl is tagged by libc detection on a
 		// subsequent cycle and then takes the skip branch above (no preload, no crash).
 		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, ldPreloadEnvVar, libmemsampleSoPath)
+		preloaded = true
 	}
-	// Route the interpreter's own allocations through malloc so the interposer can
-	// see and attribute them. Without this the interpreter's arena/GC hides userland
-	// allocations from the malloc interposer and only incidental C-extension mallocs
-	// (TLS handshakes, etc.) are captured — real bytes, but the wrong layer.
-	switch lang {
-	case common.PhpProgrammingLanguage:
-		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, useZendAllocEnvVar, "0")
-	case common.PythonProgrammingLanguage:
-		existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, pythonMallocEnvVar, "malloc")
-		// Ruby: heap objects come from GC pages with no safe "use malloc" switch, but
-		// strings/arrays/buffers already go through ruby_xmalloc -> malloc, which the
-		// interposer captures via rb_profile_frames. No extra env needed.
+	// Route the interpreter's own allocations through malloc so the interposer can see
+	// and attribute them. This is ONLY meaningful when the interposer is actually
+	// preloaded: with no preload (the musl skip above) these env vars just change the
+	// allocator for no profiling benefit and add overhead, so we gate them on preloaded.
+	if preloaded {
+		switch lang {
+		case common.PhpProgrammingLanguage:
+			existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, useZendAllocEnvVar, "0")
+		case common.PythonProgrammingLanguage:
+			existingEnvNames = InjectConstEnvVarToPodContainer(existingEnvNames, container, pythonMallocEnvVar, "malloc")
+			// Ruby: heap objects come from GC pages with no safe "use malloc" switch, but
+			// strings/arrays/buffers already go through ruby_xmalloc -> malloc, which the
+			// interposer captures via rb_profile_frames. No extra env needed.
+		}
 	}
 	return existingEnvNames
 }
