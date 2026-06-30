@@ -339,6 +339,29 @@ func EnsureMemprofAgentLibs(srcAgentsDir, dstAgentsDir string) error {
 	return nil
 }
 
+// EnsureAgentDirsTraversable makes every directory under the host agent dir
+// world-traversable (adds r-x for group+other), so a NON-root application
+// container can enter the agent dirs and read the agents we mount into it.
+//
+// Agent dirs delivered at 0644 (drw-r--r--) silently break non-root workloads —
+// the classic symptom is a JVM crashing with "Error opening zip file or JAR
+// manifest missing: /var/odigos/java/javaagent.jar", or an LD_PRELOAD'd .so
+// failing with "cannot open shared object file" — even though the file is
+// present and valid, because the *directory* is not traversable. Root apps mask
+// this (CAP_DAC_OVERRIDE), so it only shows on security-hardened (runAsNonRoot)
+// workloads. The agents are not secret, so opening the dirs is safe.
+func EnsureAgentDirsTraversable(dstDir string) error {
+	return filepath.Walk(dstDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // best-effort: a vanished/locked entry must not abort delivery
+		}
+		if info.IsDir() && info.Mode().Perm()&0o055 != 0o055 {
+			_ = os.Chmod(path, info.Mode()|0o755)
+		}
+		return nil
+	})
+}
+
 func getCriticalFiles(bp string) map[string]struct{} {
 	cf := make(map[string]struct{})
 	cf[filepath.Join(bp, "nodejs-ebpf", "build", "Release", "dtrace-injector-native.node")] = struct{}{}
