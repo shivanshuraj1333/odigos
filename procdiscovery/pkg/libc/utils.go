@@ -21,7 +21,15 @@ func ShouldInspectForLanguage(lang common.ProgrammingLanguage) bool {
 	switch lang {
 	case common.DotNetProgrammingLanguage,
 		common.CPlusPlusProgrammingLanguage,
-		common.RustProgrammingLanguage:
+		common.RustProgrammingLanguage,
+		// Interpreted runtimes are LD_PRELOAD'd with the libmemsample interposer for
+		// memory profiling; the glibc-built lib ABORTS a musl (Alpine) process at load
+		// (missing __snprintf_chk / ld-linux-x86-64.so.2). Detect libc so the
+		// instrumentor preloads the musl-built variant into Alpine Python/Ruby/PHP
+		// instead of crashing the app.
+		common.PythonProgrammingLanguage,
+		common.RubyProgrammingLanguage,
+		common.PhpProgrammingLanguage:
 		return true
 	default:
 		return false
