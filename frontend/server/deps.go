@@ -85,6 +85,7 @@ func Bootstrap(ctx context.Context, flags Flags, logger logr.Logger) (*Deps, err
 	profileStore := profiles.NewProfileStore(
 		profCfg.StoreLimits.MaxSlots,
 		profCfg.StoreLimits.SlotTTLSeconds,
+		profCfg.StoreLimits.DataRetentionSeconds,
 		profCfg.StoreLimits.SlotMaxBytes,
 		profCfg.CleanupInterval,
 	)

@@ -51,9 +51,11 @@ type SourceProfilingResult {
 
 extend type K8sActualSource {
   """
-  Buffered CPU profile for this source
+  Buffered profile for this source. profileType selects the signal:
+  "" or "cpu" = CPU; or one of alloc_space, alloc_objects, inuse_space,
+  inuse_objects to render that memory signal as its own flamegraph.
   """
-  profiling: SourceProfilingResult
+  profiling(profileType: String): SourceProfilingResult
 }
 
 extend type Query {

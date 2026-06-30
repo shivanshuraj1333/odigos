@@ -15,10 +15,10 @@ export const GET_PROFILING_SLOTS = gql`
 `;
 
 export const GET_SOURCE_PROFILING = gql`
-  query GetSourceProfiling($namespace: String!, $kind: K8sResourceKind!, $name: String!) {
+  query GetSourceProfiling($namespace: String!, $kind: K8sResourceKind!, $name: String!, $profileType: String) {
     computePlatform {
       source(sourceId: { namespace: $namespace, kind: $kind, name: $name }) {
-        profiling {
+        profiling(profileType: $profileType) {
           profileJson
         }
       }

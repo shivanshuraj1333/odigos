@@ -16,8 +16,8 @@ import (
 
 const symdbFlameMaxNodesDefault int64 = 2048
 
-func BuildFlamebearerViaPyroscopeSymdb(ctx context.Context, chunks [][]byte, maxNodes int64) (*pyrofb.FlamebearerProfile, *phlaremodel.FunctionNameTree, error) {
-	gp, pt, extra := MergedGoogleProfileForPyroscopeSymdb(chunks)
+func BuildFlamebearerViaPyroscopeSymdb(ctx context.Context, chunks [][]byte, maxNodes int64, sampleType string) (*pyrofb.FlamebearerProfile, *phlaremodel.FunctionNameTree, error) {
+	gp, pt, extra := MergedGoogleProfileForPyroscopeSymdb(chunks, sampleType)
 	if maxNodes <= 0 {
 		maxNodes = symdbFlameMaxNodesDefault
 	}
@@ -103,18 +103,65 @@ func SymbolStatsFromFunctionNameTree(t *phlaremodel.FunctionNameTree) []SymbolSt
 	return sym.AggregateSymbolStats()
 }
 
-// MergedGoogleProfileForPyroscopeSymdb returns one Google pprof profile to feed symdb
-func MergedGoogleProfileForPyroscopeSymdb(chunks [][]byte) (*googleProfile.Profile, *typesv1.ProfileType, []Sample) {
+// sampleTypeMatches reports whether a merged bucket's pprof sample type (got)
+// satisfies the requested profile type. CPU is special: the collector emits the
+// CPU origin with pprof SampleType "samples" (period type "cpu"), so an empty or
+// "cpu"/"samples" request accepts either spelling. Memory types match exactly:
+// alloc_space, alloc_objects, inuse_space, inuse_objects.
+func sampleTypeMatches(got, requested string) bool {
+	switch requested {
+	case "", "cpu", "samples":
+		return got == "cpu" || got == "samples"
+	default:
+		return got == requested
+	}
+}
+
+// profileTypeForRequest is the ProfileType (name+unit) to report when no samples
+// of the requested kind exist yet, so the UI labels units correctly while empty.
+func profileTypeForRequest(requested string) *typesv1.ProfileType {
+	switch requested {
+	case "", "cpu", "samples":
+		return &typesv1.ProfileType{SampleType: "cpu", SampleUnit: "samples"}
+	case "alloc_space", "inuse_space":
+		return &typesv1.ProfileType{SampleType: requested, SampleUnit: "bytes"}
+	case "alloc_objects", "inuse_objects":
+		return &typesv1.ProfileType{SampleType: requested, SampleUnit: "count"}
+	default:
+		return &typesv1.ProfileType{SampleType: requested}
+	}
+}
+
+// MergedGoogleProfileForPyroscopeSymdb returns one Google pprof profile to feed
+// symdb, restricted to the requested sampleType so each of CPU + the four memory
+// signals (alloc_space, alloc_objects, inuse_space, inuse_objects) renders as its
+// own flamegraph instead of being collapsed together. An empty sampleType means CPU.
+func MergedGoogleProfileForPyroscopeSymdb(chunks [][]byte, sampleType string) (*googleProfile.Profile, *typesv1.ProfileType, []Sample) {
 	all := collectGoogleProfilesFromChunks(chunks)
 	merged, intraExtra := mergeGoogleProfilesGrouped(all)
+	// Keep only buckets whose sample type matches the request. intraExtra carries
+	// stacks from intra-bucket merge failures with no recoverable type, so when a
+	// specific type is requested we drop it rather than leak other-signal samples.
+	{
+		filtered := make(map[string]*googleProfile.Profile, len(merged))
+		for k, mp := range merged {
+			if mp != nil && sampleTypeMatches(profileTypeFromGoogleProfile(mp).SampleType, sampleType) {
+				filtered[k] = mp
+			}
+		}
+		if len(filtered) != len(merged) {
+			intraExtra = nil
+		}
+		merged = filtered
+	}
 	if len(merged) == 0 {
-		return nil, DefaultProfileType(), intraExtra
+		return nil, profileTypeForRequest(sampleType), intraExtra
 	}
 	keys := sortedKeys(merged)
 	if len(keys) == 1 {
 		mp := merged[keys[0]]
 		if mp == nil || len(mp.Sample) == 0 {
-			return nil, DefaultProfileType(), intraExtra
+			return nil, profileTypeForRequest(sampleType), intraExtra
 		}
 		return proto.Clone(mp).(*googleProfile.Profile), profileTypeFromGoogleProfile(mp), intraExtra
 	}
@@ -154,7 +201,7 @@ func MergedGoogleProfileForPyroscopeSymdb(chunks [][]byte) (*googleProfile.Profi
 	}
 	outExtra := append(append([]Sample(nil), intraExtra...), crossExtra...)
 	if rep == nil {
-		return nil, DefaultProfileType(), outExtra
+		return nil, profileTypeForRequest(sampleType), outExtra
 	}
 	return proto.Clone(rep).(*googleProfile.Profile), profileTypeFromGoogleProfile(rep), outExtra
 }
