@@ -9,11 +9,13 @@ import (
 )
 
 // buildPyroscopeProfileFromChunks builds a Pyroscope-shaped profile from OTLP chunks stored in the ProfileStore buffer.
-func buildPyroscopeProfileFromChunks(ctx context.Context, chunks [][]byte) flamegraph.FlamebearerProfile {
+// sampleType selects which signal to render: "" or "cpu" = CPU; otherwise one of the
+// four memory signals (alloc_space, alloc_objects, inuse_space, inuse_objects).
+func buildPyroscopeProfileFromChunks(ctx context.Context, chunks [][]byte, sampleType string) flamegraph.FlamebearerProfile {
 	const maxNodes = 2048
 	// flamebearerProfile: Grafana Pyroscope flame-tree JSON (levels, names, ticks) from merged OTLP chunks.
 	// functionNameTree: parallel structure used only for Odigos symbol statistics on top of the same merge.
-	flamebearerProfile, functionNameTree, err := flamegraph.BuildFlamebearerViaPyroscopeSymdb(ctx, chunks, maxNodes)
+	flamebearerProfile, functionNameTree, err := flamegraph.BuildFlamebearerViaPyroscopeSymdb(ctx, chunks, maxNodes, sampleType)
 	if err != nil {
 		flamebearerProfile = nil
 	}
@@ -26,7 +28,7 @@ func buildPyroscopeProfileFromChunks(ctx context.Context, chunks [][]byte) flame
 	symbols := flamegraph.SymbolStatsFromFunctionNameTree(functionNameTree)
 	adapted := flamegraph.AdaptPyroscopeFlamebearerProfile(flamebearerProfile, timeline, symbols)
 	if adapted.FlamebearerProfile != nil && adapted.FlamebearerProfile.Metadata.Format == "" {
-		adapted.FlamebearerProfile.Metadata = pyroscopeMetadata()
+		adapted.FlamebearerProfile.Metadata = pyroscopeMetadataFor(sampleType)
 	}
 	return adapted
 }
@@ -42,12 +44,30 @@ const (
 )
 
 func pyroscopeMetadata() pyrofb.FlamebearerMetadataV1 {
+	return pyroscopeMetadataFor("")
+}
+
+// pyroscopeMetadataFor returns the flamebearer metadata (name + units) for the
+// requested signal so each memory type is labelled with the right units (bytes vs
+// count) and CPU keeps its historical "samples" contract.
+func pyroscopeMetadataFor(sampleType string) pyrofb.FlamebearerMetadataV1 {
+	name := sampleType
+	units := pyroscopeMetadataUnitsSamples
+	switch sampleType {
+	case "", "cpu", "samples":
+		name = pyroscopeMetadataProfileNameCPU
+		units = pyroscopeMetadataUnitsSamples
+	case "alloc_space", "inuse_space":
+		units = "bytes"
+	case "alloc_objects", "inuse_objects":
+		units = "objects"
+	}
 	return pyrofb.FlamebearerMetadataV1{
 		Format:     pyroscopeMetadataFormatSingle,
 		SpyName:    "",
 		SampleRate: pyroscopeMetadataSampleRate,
-		Units:      pyrometadata.Units(pyroscopeMetadataUnitsSamples),
-		Name:       pyroscopeMetadataProfileNameCPU,
+		Units:      pyrometadata.Units(units),
+		Name:       name,
 	}
 }
 
