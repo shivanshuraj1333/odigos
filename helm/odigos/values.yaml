@@ -132,11 +132,16 @@ profiling:
     # @schema
     dataRetentionSeconds: 1800
     # @schema
-    # description: Max in-memory profile slots.
+    # description: Max in-memory profile source slots.
     # @schema
     maxSlots: 32
     # @schema
-    # description: Max bytes per slot (default 10 MiB). Note the UI cache ceiling is maxSlots*slotMaxBytes; keep it under the UI memory limit.
+    # description: |-
+    #   Rolling-buffer cap PER (source, profile type). Buffers are partitioned by type —
+    #   CPU and each memory signal (alloc_space/alloc_objects/inuse_space/inuse_objects)
+    #   get their own budget + TTL, so a high-volume CPU stream never evicts memory
+    #   samples. Worst-case UI cache ceiling ≈ maxSlots × 5 × slotMaxBytes; keep it under
+    #   the UI memory limit. Default 10 MiB.
     # @schema
     slotMaxBytes: 10485760
   # @schema

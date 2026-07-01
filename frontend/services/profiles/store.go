@@ -10,56 +10,86 @@ import (
 	"github.com/odigos-io/odigos/frontend/services/common"
 )
 
-type Slot struct {
+// numProfileTypes is the number of distinct profile-type buckets a source can hold:
+// cpu + alloc_space + alloc_objects + inuse_space + inuse_objects. Used only to
+// report the worst-case cache ceiling in MemoryStats.
+const numProfileTypes = 5
+
+// normalizeProfileType maps a request/pprof sample-type spelling to the canonical
+// bucket key. CPU is emitted as "samples" (period type "cpu"); an empty request
+// also means CPU. Memory types are used as-is.
+func normalizeProfileType(s string) string {
+	switch s {
+	case "", "cpu", "samples":
+		return "cpu"
+	default:
+		return s
+	}
+}
+
+// TypeBucket holds one profile type's chunks for one source, with its own byte
+// budget (BoundedBuffer) and its own request/data timestamps for independent TTL.
+// CPU and each memory signal (alloc_space, alloc_objects, inuse_space,
+// inuse_objects) get separate buckets, so a high-volume type can never FIFO-evict
+// another type's samples out of a shared buffer.
+type TypeBucket struct {
 	LastRequestAt time.Time
-	// LastDataAt is the UnixNano of the most recent profile chunk that landed in
-	// this slot (0 = none yet). Updated atomically from the OTLP ingest path so it
-	// needs no write lock. It drives data-arrival retention: a slot holding data is
-	// kept for at least dataRetentionSeconds after that data arrived, independent of
-	// whether anyone is polling — so a populated flamegraph does not vanish the
-	// moment the UI tab stops refreshing.
+	// LastDataAt is the UnixNano of the most recent chunk stored in this bucket
+	// (0 = none). Updated atomically from the OTLP ingest path; drives data-arrival
+	// retention independent of UI polling.
 	LastDataAt atomic.Int64
 	Buffer     *BoundedBuffer
 }
 
-// ProfileStore holds at most maxSlots source-keyed slots.
-// Eviction: when full, the slot whose most-recent activity (request OR data) is
-// oldest is removed.
-// Retention: a slot is removed by the background sweep only when it has had no
-// request in ttlSeconds AND no data in dataRetentionSeconds. Empty slots (a tab
-// open on a source that never produced) age out on ttlSeconds; slots that ever
-// received data live for at least dataRetentionSeconds past the last chunk.
+// Slot is one source's set of per-profile-type buckets.
+// LastRequestAt is the slot-level request time (bumped on enable and on any bucket
+// read) so a freshly-enabled but not-yet-populated source survives ttlSeconds.
+type Slot struct {
+	LastRequestAt time.Time
+	Buckets       map[string]*TypeBucket
+}
+
+// ProfileStore holds at most maxSlots source-keyed slots, each with per-profile-type
+// buckets. Budget (perTypeMaxBytes) and TTL/retention are applied PER (source, type):
+// each bucket has its own rolling buffer and its own request/data clocks.
+// Worst-case cache ceiling ≈ maxSlots × numProfileTypes × perTypeMaxBytes.
 type ProfileStore struct {
 	mu                   sync.RWMutex
 	slots                map[string]*Slot
 	maxSlots             int
 	ttlSeconds           int
 	dataRetentionSeconds int
-	slotMaxBytes         int
+	perTypeMaxBytes      int
 	cleanupInterval      time.Duration
-	// StopCleanup invokes it to end the TTL goroutine.
-	stopCleanup func()
+	stopCleanup          func()
 }
 
-// slotActivityNano returns the slot's most-recent activity time (the later of its
-// last request and last data arrival) in UnixNano.
+// slotActivityNano returns the slot's most-recent activity across all its buckets
+// (later of any bucket request/data) and the slot's own last request.
 func slotActivityNano(slot *Slot) int64 {
-	act := slot.LastRequestAt.UnixNano()
-	if d := slot.LastDataAt.Load(); d > act {
-		act = d
+	latest := slot.LastRequestAt.UnixNano()
+	for _, b := range slot.Buckets {
+		act := b.LastRequestAt.UnixNano()
+		if d := b.LastDataAt.Load(); d > act {
+			act = d
+		}
+		if act > latest {
+			latest = act
+		}
 	}
-	return act
+	return latest
 }
 
-// evictOldestSlotLocked removes the slot with the oldest activity (request or data).
 func (s *ProfileStore) evictOldestSlotLocked() {
 	var oldestKey string
 	var oldestNano int64
+	first := true
 	for k, slot := range s.slots {
 		act := slotActivityNano(slot)
-		if oldestKey == "" || act < oldestNano {
+		if first || act < oldestNano {
 			oldestNano = act
 			oldestKey = k
+			first = false
 		}
 	}
 	if oldestKey != "" {
@@ -67,37 +97,47 @@ func (s *ProfileStore) evictOldestSlotLocked() {
 	}
 }
 
-func NewProfileStore(maxSlots, ttlSeconds, dataRetentionSeconds, slotMaxBytes int, cleanupInterval time.Duration) *ProfileStore {
+func NewProfileStore(maxSlots, ttlSeconds, dataRetentionSeconds, perTypeMaxBytes int, cleanupInterval time.Duration) *ProfileStore {
 	return &ProfileStore{
 		slots:                make(map[string]*Slot),
 		maxSlots:             maxSlots,
 		ttlSeconds:           ttlSeconds,
 		dataRetentionSeconds: dataRetentionSeconds,
-		slotMaxBytes:         slotMaxBytes,
+		perTypeMaxBytes:      perTypeMaxBytes,
 		cleanupInterval:      cleanupInterval,
 	}
 }
 
-// EnsureSlot opens a slot for sourceKey if one does not already exist,
-// or refreshes its LastRequestAt if it does.
+// EnsureSlot opens a source slot (with no buckets yet) if absent, or refreshes its
+// slot-level LastRequestAt. Per-type buckets are created lazily on first data
+// (ingest) or first request (query) for that type.
 func (s *ProfileStore) EnsureSlot(sourceKey string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
-
 	if slot, ok := s.slots[sourceKey]; ok {
 		slot.LastRequestAt = now
 		return
 	}
-
 	if len(s.slots) >= s.maxSlots {
 		s.evictOldestSlotLocked()
 	}
+	s.slots[sourceKey] = &Slot{LastRequestAt: now, Buckets: make(map[string]*TypeBucket)}
+}
 
-	s.slots[sourceKey] = &Slot{
-		LastRequestAt: now,
-		Buffer:        NewBoundedBuffer(s.slotMaxBytes),
+// ensureBucketLocked returns the (source, ptype) bucket, creating it if the source
+// slot exists. Returns nil if the source is not active. Caller holds s.mu.
+func (s *ProfileStore) ensureBucketLocked(sourceKey, ptype string) *TypeBucket {
+	slot, ok := s.slots[sourceKey]
+	if !ok || slot == nil {
+		return nil
 	}
+	b, ok := slot.Buckets[ptype]
+	if !ok {
+		b = &TypeBucket{LastRequestAt: time.Now(), Buffer: NewBoundedBuffer(s.perTypeMaxBytes)}
+		slot.Buckets[ptype] = b
+	}
+	return b
 }
 
 func (s *ProfileStore) RemoveSlot(sourceKey string) {
@@ -106,14 +146,14 @@ func (s *ProfileStore) RemoveSlot(sourceKey string) {
 	delete(s.slots, sourceKey)
 }
 
-// ClearAllSlots removes every slot (e.g. when cluster profiling is turned off via effective-config).
+// ClearAllSlots removes every slot (e.g. when cluster profiling is turned off).
 func (s *ProfileStore) ClearAllSlots() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.slots = make(map[string]*Slot)
 }
 
-// ClearSlotBuffer removes all buffered profile chunks for sourceKey but keeps the slot
+// ClearSlotBuffer clears every per-type bucket for a source but keeps the slot.
 func (s *ProfileStore) ClearSlotBuffer(sourceKey string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -122,8 +162,11 @@ func (s *ProfileStore) ClearSlotBuffer(sourceKey string) bool {
 		return false
 	}
 	slot.LastRequestAt = time.Now()
-	if slot.Buffer != nil {
-		slot.Buffer.Clear()
+	for _, b := range slot.Buckets {
+		b.LastRequestAt = time.Now()
+		if b.Buffer != nil {
+			b.Buffer.Clear()
+		}
 	}
 	return true
 }
@@ -134,64 +177,74 @@ func (s *ProfileStore) MaxSlots() int {
 	return s.maxSlots
 }
 
-// MemoryStats returns total bytes buffered across slots and the configured limits for debugging purposes
+// MemoryStats returns total buffered bytes across all per-type buckets and the
+// configured limits. SlotMaxBytes here is the PER-(source,type) budget.
 func (s *ProfileStore) MemoryStats() common.ProfileMemoryStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var totalBytes int
 	for _, slot := range s.slots {
-		if slot.Buffer != nil {
-			totalBytes += slot.Buffer.Size()
+		for _, b := range slot.Buckets {
+			if b.Buffer != nil {
+				totalBytes += b.Buffer.Size()
+			}
 		}
 	}
 	return common.ProfileMemoryStats{
 		TotalBytes:          totalBytes,
 		MaxSlots:            s.maxSlots,
-		SlotMaxBytes:        s.slotMaxBytes,
+		SlotMaxBytes:        s.perTypeMaxBytes,
 		SlotTTLSeconds:      s.ttlSeconds,
-		MaxTotalBytesBudget: s.maxSlots * s.slotMaxBytes,
+		MaxTotalBytesBudget: s.maxSlots * numProfileTypes * s.perTypeMaxBytes,
 	}
 }
 
-// AddProfileData appends serialized profile data to the slot for sourceKey if it exists.
-func (s *ProfileStore) AddProfileData(sourceKey string, chunk []byte) {
-	s.mu.RLock()
-	slot, ok := s.slots[sourceKey]
-	var buf *BoundedBuffer
-	if ok && slot != nil {
-		buf = slot.Buffer
-	}
-	s.mu.RUnlock()
-	if buf == nil {
+// AddProfileDataTyped routes a chunk to the bucket for each profile type it carries.
+// ptypes must already be normalized. A memory chunk (which carries alloc_* and
+// inuse_* together) lands in each of its type buckets; CPU lands only in "cpu".
+func (s *ProfileStore) AddProfileDataTyped(sourceKey string, ptypes []string, chunk []byte) {
+	if len(ptypes) == 0 || len(chunk) == 0 {
 		return
 	}
-	if !buf.Add(chunk) {
-		commonlogger.LoggerCompat().With("subsystem", "backend-profiling").Warn(
-			"profile_chunk_dropped_oversized", "sourceKey", sourceKey,
-		)
-		return
-	}
-	// Stamp the data-arrival time so retention keeps this slot alive for at least
-	// dataRetentionSeconds past now, regardless of UI polling. Atomic store is safe
-	// while holding only the read lock (slot pointer stays valid even if the map
-	// entry is later deleted).
-	if slot != nil {
-		slot.LastDataAt.Store(time.Now().UnixNano())
-	}
-}
-
-// GetProfileData returns a shallow snapshot of buffered chunks for the given source key (see BoundedBuffer.Snapshot).
-func (s *ProfileStore) GetProfileData(sourceKey string) [][]byte {
 	s.mu.Lock()
-	slot, ok := s.slots[sourceKey]
-	if ok {
+	defer s.mu.Unlock()
+	if _, ok := s.slots[sourceKey]; !ok {
+		return
+	}
+	nowNano := time.Now().UnixNano()
+	for _, pt := range ptypes {
+		b := s.ensureBucketLocked(sourceKey, pt)
+		if b == nil {
+			continue
+		}
+		if !b.Buffer.Add(chunk) {
+			commonlogger.LoggerCompat().With("subsystem", "backend-profiling").Warn(
+				"profile_chunk_dropped_oversized", "sourceKey", sourceKey, "type", pt,
+			)
+			continue
+		}
+		b.LastDataAt.Store(nowNano)
+	}
+}
+
+// GetProfileData returns a snapshot of buffered chunks for one (source, profileType),
+// stamping the bucket's (and slot's) request time. profileType is normalized here,
+// so callers may pass "", "cpu", "samples", or a memory type.
+func (s *ProfileStore) GetProfileData(sourceKey, profileType string) [][]byte {
+	pt := normalizeProfileType(profileType)
+	s.mu.Lock()
+	if slot, ok := s.slots[sourceKey]; ok {
 		slot.LastRequestAt = time.Now()
 	}
+	b := s.ensureBucketLocked(sourceKey, pt)
+	if b != nil {
+		b.LastRequestAt = time.Now()
+	}
 	s.mu.Unlock()
-	if !ok {
+	if b == nil {
 		return nil
 	}
-	return slot.Buffer.Snapshot()
+	return b.Buffer.Snapshot()
 }
 
 func (s *ProfileStore) IsActive(sourceKey string) bool {
@@ -201,20 +254,24 @@ func (s *ProfileStore) IsActive(sourceKey string) bool {
 	return ok
 }
 
-// ActiveSlots returns source keys for all open slots and the subset that have buffered data.
+// ActiveSlots returns source keys for all open slots and the subset holding data
+// in at least one type bucket.
 func (s *ProfileStore) ActiveSlots() (activeKeys []string, keysWithData []string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for k, slot := range s.slots {
 		activeKeys = append(activeKeys, k)
-		if slot.Buffer != nil && slot.Buffer.Size() > 0 {
-			keysWithData = append(keysWithData, k)
+		for _, b := range slot.Buckets {
+			if b.Buffer != nil && b.Buffer.Size() > 0 {
+				keysWithData = append(keysWithData, k)
+				break
+			}
 		}
 	}
 	return activeKeys, keysWithData
 }
 
-// RunCleanup is used for ttlSeconds based background goroutine for store slots cleanup.
+// RunCleanup starts the background TTL sweep goroutine.
 func (s *ProfileStore) RunCleanup(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	s.stopCleanup = cancel
@@ -232,6 +289,10 @@ func (s *ProfileStore) RunCleanup(ctx context.Context) {
 	}()
 }
 
+// cleanupExpired sweeps per (source, type): a bucket is dropped when it has had no
+// request in ttlSeconds AND no data in dataRetentionSeconds. A source slot is
+// removed once it has no live buckets AND no recent slot-level request (so a
+// freshly-enabled empty source still survives ttlSeconds).
 func (s *ProfileStore) cleanupExpired() {
 	now := time.Now()
 	reqCutoff := now.Add(-time.Duration(s.ttlSeconds) * time.Second)
@@ -239,20 +300,28 @@ func (s *ProfileStore) cleanupExpired() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k, slot := range s.slots {
-		// Keep while a request is recent (an open tab keeps the source warm)...
-		if !slot.LastRequestAt.Before(reqCutoff) {
+		for pt, b := range slot.Buckets {
+			// Keep while a request is recent (an open tab keeps the type warm)...
+			if !b.LastRequestAt.Before(reqCutoff) {
+				continue
+			}
+			// ...or while it holds data that arrived within the retention window.
+			if d := b.LastDataAt.Load(); d != 0 && d >= dataCutoffNano {
+				continue
+			}
+			delete(slot.Buckets, pt)
+		}
+		if len(slot.Buckets) > 0 {
 			continue
 		}
-		// ...or while it holds data that arrived within the retention window, so a
-		// populated profile survives at least dataRetentionSeconds with no polling.
-		if d := slot.LastDataAt.Load(); d != 0 && d >= dataCutoffNano {
+		if !slot.LastRequestAt.Before(reqCutoff) {
 			continue
 		}
 		delete(s.slots, k)
 	}
 }
 
-// StopCleanup stops the TTL cleanup goroutine
+// StopCleanup stops the TTL cleanup goroutine.
 func (s *ProfileStore) StopCleanup() {
 	if s.stopCleanup != nil {
 		s.stopCleanup()

@@ -109,7 +109,9 @@ func GetProfilingForSource(ctx context.Context, store common.ProfileStoreRef, na
 	}
 	key := SourceKeyFromSourceID(id)
 	store.EnsureSlot(key)
-	chunks := store.GetProfileData(key)
+	// Pull only the requested type's bucket (CPU and each memory signal are stored
+	// separately), so a busy CPU stream never crowds memory out of the view.
+	chunks := store.GetProfileData(key, sampleType)
 	if chunks == nil {
 		return &GetProfilingOutput{Profile: emptyFlamebearerProfile()}, nil
 	}

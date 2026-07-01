@@ -18,8 +18,12 @@ const (
 	// Default settings for in-memory profile store. Kept in sync with the Helm
 	// profiling.ui defaults (helm/odigos/values.yaml); the UI deployment wires those
 	// values in as PROFILES_* env, and these are the fallback when env is unset.
-	// Cache memory ceiling is MaxSlots*SlotMaxBytes — keep it under the UI mem limit.
+	// Buffers are partitioned per (source, profile type) — CPU and each memory signal
+	// get their own SlotMaxBytes budget + TTL, so a busy CPU stream can never evict
+	// memory. Worst-case ceiling ≈ MaxSlots × profileTypes(5) × SlotMaxBytes; keep it
+	// under the UI mem limit.
 	DefaultProfilingMaxSlots = 32
+	// DefaultProfilingSlotMaxBytes is the rolling-buffer cap PER (source, profile type).
 	DefaultProfilingSlotMaxBytes = 10 * 1024 * 1024 // 10 MiB
 	// DefaultProfilingSlotTTLSeconds is how long an EMPTY slot (a tab open on a
 	// source that produced nothing) is kept after the last request.

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	commonlogger "github.com/odigos-io/odigos/common/logger"
+	"github.com/odigos-io/odigos/frontend/services/profiles/flamegraph"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/xconsumer"
 	"go.opentelemetry.io/collector/pdata/pprofile"
@@ -71,7 +72,26 @@ func appendResourceProfileChunk(store *ProfileStore, sourceKey string, incomingB
 		log.Warn("store_chunk", "sourceKey", sourceKey, "err", marshalErr)
 		return
 	}
-	store.AddProfileData(sourceKey, chunkBytes)
+	// Classify the chunk by the pprof sample type(s) it carries and route it to the
+	// matching per-type bucket(s). CPU lands only in "cpu"; a memory chunk (which
+	// carries alloc_*/inuse_* together) lands in each of those buckets. This keeps
+	// CPU and memory on completely separate byte budgets + TTLs so a high-volume CPU
+	// stream can never evict the sparser memory samples.
+	rawTypes := flamegraph.ProfileTypesInChunk(chunkBytes)
+	if len(rawTypes) == 0 {
+		return
+	}
+	seen := make(map[string]struct{}, len(rawTypes))
+	ptypes := make([]string, 0, len(rawTypes))
+	for _, t := range rawTypes {
+		n := normalizeProfileType(t)
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		ptypes = append(ptypes, n)
+	}
+	store.AddProfileDataTyped(sourceKey, ptypes, chunkBytes)
 }
 
 // buildSingleResourceProfilesFromBatch builds a standalone pprofile.Profiles message holding one ResourceProfiles entry from the batch.

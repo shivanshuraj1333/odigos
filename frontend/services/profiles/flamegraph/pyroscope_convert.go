@@ -47,6 +47,35 @@ func DefaultProfileType() *typesv1.ProfileType {
 	return &typesv1.ProfileType{SampleType: "cpu"}
 }
 
+// ProfileTypesInChunk returns the distinct pprof sample-type names present in one
+// stored OTLP chunk (e.g. "cpu"/"samples", "alloc_space", "alloc_objects",
+// "inuse_space", "inuse_objects"). The store uses it to route a chunk to the
+// per-type bucket(s) it belongs to so CPU and memory never share a byte budget.
+func ProfileTypesInChunk(chunk []byte) []string {
+	profs := collectGoogleProfilesFromChunks([][]byte{chunk})
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	for _, p := range profs {
+		if p == nil {
+			continue
+		}
+		for _, st := range p.SampleType {
+			if st == nil {
+				continue
+			}
+			name := stringFromPprofStringTable(p.StringTable, st.Type)
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
 func profileTypeFromGoogleProfile(p *googleProfile.Profile) *typesv1.ProfileType {
 	if p == nil || len(p.SampleType) == 0 {
 		return DefaultProfileType()
