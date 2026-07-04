@@ -49,6 +49,14 @@ func NewReceiver(port int) (*Receiver, error) {
 		Endpoint:  fmt.Sprintf("0.0.0.0:%d", port),
 		Transport: confignet.TransportTypeTCP,
 	}
+	// A single source's memory profile (native jemalloc with many allocation
+	// sites and deep stacks) routinely serializes to 5-6 MiB, well over gRPC's
+	// 4 MiB default MaxRecvMsgSize. Without this the gateway's profiles-to-ui
+	// export fails with ResourceExhausted ("received message larger than max")
+	// and EVERY profile batch is dropped -> all sources render empty. The batch
+	// processor cannot split the profiles signal (unsupported), so the receiver
+	// side must accept large messages. Match the gateway's own receiver (128).
+	grpcCfg.MaxRecvMsgSizeMiB = 128
 
 	// we only open gRPC port on 4317 and no http port
 	cfg.GRPC = configoptional.Some(grpcCfg)
