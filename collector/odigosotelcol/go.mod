@@ -121,7 +121,7 @@ require (
 	go.opentelemetry.io/collector/receiver v1.60.0
 	go.opentelemetry.io/collector/receiver/otlpreceiver v0.148.0
 	go.opentelemetry.io/collector/service v0.148.0
-	go.opentelemetry.io/ebpf-profiler v0.0.202631
+	go.opentelemetry.io/ebpf-profiler v0.0.202632
 	golang.org/x/sys v0.46.0
 )
 
@@ -813,7 +813,7 @@ replace go.opentelemetry.io/collector/config/configgrpc => ../config/configgrpc
 
 replace github.com/odigos-io/odigos/collector/extension/odigosconfigk8sextension => ../extension/odigosconfigk8sextension
 
-replace go.opentelemetry.io/ebpf-profiler => github.com/odigos-io/odigos-ebpf-profiler v0.0.202631
+replace go.opentelemetry.io/ebpf-profiler => github.com/odigos-io/odigos-ebpf-profiler v0.0.202632
 
 replace github.com/grafana/jfr-parser => ./third_party/jfr-parser
 
