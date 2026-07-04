@@ -28,6 +28,12 @@ import (
 
 const RequeueWaitingForWorkloadRollout = 10 * time.Second
 
+// reinjectRetryCooldown bounds how often a "rollout finished but pods are
+// uninjected" workload is re-rolled, so an absent/broken pods webhook cannot
+// churn tightly. In the common case (webhook came up shortly after) one re-roll
+// within a cooldown fixes it.
+const reinjectRetryCooldown = 2 * time.Minute
+
 type RolloutResult struct {
 	StatusChanged bool
 	// Result contains the controller result for requeue behavior.
@@ -208,6 +214,35 @@ func Do(ctx context.Context, c client.Client, ic *odigosv1alpha1.Instrumentation
 		statusChanged := false
 		// This is the happy flow - the workload is rolled out successfully
 		if rolloutDone {
+			// Hardening (self-healing re-roll): a deployment can report its rollout
+			// "done" while some of its running pods were never mutated by the pods
+			// webhook — e.g. the webhook was not yet serving when the pods were
+			// (re)created on a fresh install, or a workload with no tracing distro
+			// (native C/C++/Rust, AgentEnabled=false) had its pods come up in that
+			// window. Such pods carry no agents-meta-hash label, so the memory/agent
+			// preload was never injected even though the hashes now match and the
+			// deployment looks settled — the workload then latches as "finished" and
+			// only a manual restart fixes it. When we expect injection (non-empty
+			// hash) but the workload still reports uninjected pods, re-issue the
+			// rollout. Bounded two ways so a genuinely-broken/absent webhook cannot
+			// churn tightly: (1) a cooldown since the last rollout, and (2) the
+			// re-roll itself makes the workload not-rollout-done, so the next check
+			// waits for it to settle before re-evaluating. It stops as soon as the
+			// pods carry the label.
+			if newRolloutHash != "" && workloadHasUninjectedPods(ic) && reinjectCooldownElapsed(ic) {
+				rolloutErr := rolloutRestartWorkload(ctx, workloadObj, c, time.Now())
+				if rolloutErr != nil {
+					logger.Error(rolloutErr, "error re-rolling workload with uninjected pods",
+						"name", pw.Name, "namespace", pw.Namespace)
+				} else {
+					logger.Info("re-rolling workload: rollout finished but pods are missing the agent (webhook race)",
+						"name", pw.Name, "namespace", pw.Namespace)
+				}
+				now := metav1.NewTime(time.Now())
+				ic.Status.InstrumentationTime = &now
+				meta.SetStatusCondition(&ic.Status.Conditions, rolloutCondition(rolloutErr))
+				return RolloutResult{StatusChanged: true, Result: ctrl.Result{RequeueAfter: RequeueWaitingForWorkloadRollout}}, nil
+			}
 			statusChanged = meta.SetStatusCondition(&ic.Status.Conditions, conditionRolloutFinished)
 			// Rollout is complete - release the slot if we had one
 			rolloutConcurrencyLimiter.ReleaseWorkloadRolloutSlot(workloadKey)
@@ -439,6 +474,24 @@ func instrumentedPodsSelector(obj client.Object) (labels.Selector, error) {
 	}
 
 	return sel, nil
+}
+
+// workloadHasUninjectedPods reports whether the workload currently has running
+// pods the pods webhook never mutated (no agents-meta-hash label). This is
+// maintained by the podsinjectionstatus controller. Used to detect a rollout
+// that reported "done" but produced un-instrumented pods (webhook-not-ready
+// race), so the rollout can be re-issued instead of latching as finished.
+func workloadHasUninjectedPods(ic *odigosv1alpha1.InstrumentationConfig) bool {
+	s := ic.Status.PodsManifestInjectionStatus
+	return s != nil && s.HasUninjectedPods
+}
+
+// reinjectCooldownElapsed rate-limits the self-healing re-roll (see the
+// rolloutDone branch in Do): true if no rollout was recorded yet, or the last
+// one is older than reinjectRetryCooldown.
+func reinjectCooldownElapsed(ic *odigosv1alpha1.InstrumentationConfig) bool {
+	t := ic.Status.InstrumentationTime
+	return t == nil || time.Since(t.Time) >= reinjectRetryCooldown
 }
 
 // workloadHasOdigosAgents returns true if the workload still has *any* pod present in the instrumented-pod.
