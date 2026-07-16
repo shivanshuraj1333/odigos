@@ -1,21 +1,11 @@
 package common
 
-// ProfileMemoryStats summarizes buffered profiling data and configured limits for the UI / GraphQL.
-type ProfileMemoryStats struct {
-	TotalBytes          int
-	MaxSlots            int
-	SlotMaxBytes        int
-	SlotTTLSeconds      int
-	MaxTotalBytesBudget int // worst-case if every slot uses its full rolling buffer (maxSlots × slotMaxBytes)
-}
+import "github.com/odigos-io/odigos/common/profilecache"
 
-// ProfileStoreRef is the narrow API GraphQL and OTLP use from the profiling buffer.
-type ProfileStoreRef interface {
-	EnsureSlot(sourceKey string)
-	RemoveSlot(sourceKey string)
-	ClearSlotBuffer(sourceKey string) bool
-	GetProfileData(sourceKey string) [][]byte
-	MaxSlots() int
-	ActiveSlots() (activeKeys []string, keysWithData []string)
-	MemoryStats() ProfileMemoryStats
-}
+// The profiling buffer and its contract live in the shared common/profilecache
+// package (used by both the frontend and the vm-agent). These aliases keep the
+// existing common.ProfileMemoryStats / common.ProfileStoreRef spellings.
+type (
+	ProfileMemoryStats = profilecache.MemoryStats
+	ProfileStoreRef    = profilecache.StoreRef
+)
