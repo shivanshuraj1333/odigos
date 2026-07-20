@@ -47,8 +47,7 @@ func StartProfilingConfigWatcher(
 		if profilingEnabledOld != profilingEnabledNew {
 			log.Info("profiling OTLP ingest", "enabled", profilingEnabledNew)
 		}
-		// Apply cache-limit changes live so settings-page edits take effect
-		// without restarting the UI pod. Zero fields are left unchanged.
+		// Apply cache-limit changes live (zero fields left unchanged).
 		if cfg.Profiling != nil && cfg.Profiling.Ui != nil {
 			ui := cfg.Profiling.Ui
 			profileStore.Reconfigure(ui.MaxSlots, ui.SlotMaxBytes, ui.SlotTTLSeconds, 0)

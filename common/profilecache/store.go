@@ -52,9 +52,7 @@ type StoreRef interface {
 	MemoryStats() MemoryStats
 }
 
-// Default cache limits. NewStore substitutes these for any non-positive
-// argument, so both the frontend and the vm-agent construct through the one
-// common New instead of carrying their own defaulting.
+// Default cache limits, applied by NewStore for any non-positive argument.
 const (
 	DefaultMaxSlots        = 100
 	DefaultSlotMaxBytes    = 5 << 20   // 5 MiB per source
@@ -175,11 +173,8 @@ func (s *Store) MaxSlots() int {
 	return s.maxSlots
 }
 
-// Reconfigure updates cache limits at runtime; any argument <= 0 leaves that
-// limit unchanged. Changes apply immediately: a smaller maxSlots evicts LRU
-// slots, a smaller slotMaxBytes trims each buffer, a smaller maxTotalBytes runs
-// the global-cap eviction, and ttlSeconds takes effect on the next sweep. This
-// lets callers apply settings changes live without recreating the store.
+// Reconfigure changes cache limits at runtime; any argument <= 0 leaves that
+// limit unchanged. Evicts/trims to fit immediately; ttlSeconds applies next sweep.
 func (s *Store) Reconfigure(maxSlots, slotMaxBytes, ttlSeconds, maxTotalBytes int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
