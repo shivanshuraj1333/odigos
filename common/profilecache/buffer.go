@@ -52,7 +52,22 @@ func (b *BoundedBuffer) AddAt(capturedAt time.Time, data []byte) bool {
 	b.chunks = append(b.chunks, chunk{capturedAt: capturedAt, bytes: data})
 	b.totalBytes += len(data)
 	b.addedTotal++
+	b.trimLocked()
+	return true
+}
 
+// Resize changes the byte budget at runtime and trims the oldest chunks if the
+// new budget is smaller. maxBytes <= 0 leaves the buffer unbounded.
+func (b *BoundedBuffer) Resize(maxBytes int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.maxBytes = maxBytes
+	b.trimLocked()
+}
+
+// trimLocked evicts oldest chunks until the buffer is within budget, zeroing the
+// dropped entries and compacting the backing slice. The caller must hold b.mu.
+func (b *BoundedBuffer) trimLocked() {
 	dropped := 0
 	for dropped < len(b.chunks) && b.maxBytes > 0 && b.totalBytes > b.maxBytes {
 		b.totalBytes -= len(b.chunks[dropped].bytes)
@@ -60,7 +75,7 @@ func (b *BoundedBuffer) AddAt(capturedAt time.Time, data []byte) bool {
 		dropped++
 	}
 	if dropped == 0 {
-		return true
+		return
 	}
 	b.evictedTotal += uint64(dropped)
 
@@ -72,7 +87,6 @@ func (b *BoundedBuffer) AddAt(capturedAt time.Time, data []byte) bool {
 	} else {
 		b.chunks = live
 	}
-	return true
 }
 
 // Snapshot returns the bytes of every live chunk.

@@ -1,6 +1,5 @@
 // Package profilecache is the shared in-memory cache of raw OTLP CPU-profile
-// chunks used by both the Odigos frontend (buffering profiles for the flamegraph
-// UI) and the vm-agent (buffering profiles for the diagnostic bundle export).
+// chunks.
 // Each source gets one byte-bounded buffer; sourceKey is an opaque string chosen
 // by the caller (namespace/kind/name in k8s, service.name on a VM).
 package profilecache
@@ -53,6 +52,17 @@ type StoreRef interface {
 	MemoryStats() MemoryStats
 }
 
+// Default cache limits. NewStore substitutes these for any non-positive
+// argument, so both the frontend and the vm-agent construct through the one
+// common New instead of carrying their own defaulting.
+const (
+	DefaultMaxSlots        = 100
+	DefaultSlotMaxBytes    = 5 << 20   // 5 MiB per source
+	DefaultMaxTotalBytes   = 500 << 20 // 500 MiB across all sources
+	DefaultSlotTTLSeconds  = 15 * 60   // 15 minutes
+	DefaultCleanupInterval = time.Minute
+)
+
 // Option configures optional Store behavior.
 type Option func(*Store)
 
@@ -63,6 +73,18 @@ func WithGlobalByteCap(maxTotalBytes int) Option {
 }
 
 func NewStore(maxSlots, ttlSeconds, slotMaxBytes int, cleanupInterval time.Duration, opts ...Option) *Store {
+	if maxSlots <= 0 {
+		maxSlots = DefaultMaxSlots
+	}
+	if ttlSeconds <= 0 {
+		ttlSeconds = DefaultSlotTTLSeconds
+	}
+	if slotMaxBytes <= 0 {
+		slotMaxBytes = DefaultSlotMaxBytes
+	}
+	if cleanupInterval <= 0 {
+		cleanupInterval = DefaultCleanupInterval
+	}
 	s := &Store{
 		slots:           make(map[string]*Slot),
 		maxSlots:        maxSlots,
@@ -151,6 +173,44 @@ func (s *Store) MaxSlots() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.maxSlots
+}
+
+// Reconfigure updates cache limits at runtime; any argument <= 0 leaves that
+// limit unchanged. Changes apply immediately: a smaller maxSlots evicts LRU
+// slots, a smaller slotMaxBytes trims each buffer, a smaller maxTotalBytes runs
+// the global-cap eviction, and ttlSeconds takes effect on the next sweep. This
+// lets callers apply settings changes live without recreating the store.
+func (s *Store) Reconfigure(maxSlots, slotMaxBytes, ttlSeconds, maxTotalBytes int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if maxSlots > 0 {
+		s.maxSlots = maxSlots
+		for len(s.slots) > s.maxSlots {
+			if !s.evictOldestSlotLocked("") {
+				break
+			}
+		}
+	}
+	if slotMaxBytes > 0 && slotMaxBytes != s.slotMaxBytes {
+		s.slotMaxBytes = slotMaxBytes
+		for _, slot := range s.slots {
+			if slot.buffer != nil {
+				slot.buffer.Resize(slotMaxBytes)
+			}
+		}
+	}
+	if ttlSeconds > 0 {
+		s.ttlSeconds = ttlSeconds
+	}
+	if maxTotalBytes > 0 {
+		s.maxTotalBytes = maxTotalBytes
+	}
+	for s.maxTotalBytes > 0 && s.totalBytesLocked() > s.maxTotalBytes && len(s.slots) > 1 {
+		if !s.evictOldestSlotLocked("") {
+			break
+		}
+	}
 }
 
 func (s *Store) MemoryStats() MemoryStats {
