@@ -50,6 +50,7 @@ type StoreRef interface {
 	MaxSlots() int
 	ActiveSlots() (activeKeys []string, keysWithData []string)
 	MemoryStats() MemoryStats
+	Reconfigure(maxSlots, slotMaxBytes, ttlSeconds, maxTotalBytes int)
 }
 
 // Default cache limits, applied by NewStore for any non-positive argument.
